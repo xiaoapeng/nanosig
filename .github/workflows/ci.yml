@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: [linux-debug-asan, linux-debug-ubsan, linux-release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Audits
+        run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake --preset windows-debug-asan
+      - name: Build
+        run: cmake --build --preset windows-debug-asan
+      - name: Test
+        run: ctest --preset windows-debug-asan
+      - name: Audits
+        run: cmake --build --preset windows-debug-asan --target sanitize-all
