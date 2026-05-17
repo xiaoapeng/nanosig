@@ -1,0 +1,242 @@
+/**
+ * @file port.c
+ * @brief nanosig Windows loop-only platform backend.
+ * @date 2026-05-17
+ *
+ * @copyright Copyright (c) 2026 nanosig contributors
+ */
+
+#define WIN32_LEAN_AND_MEAN
+
+#include "platform/port.h"
+
+#include <stdint.h>
+#include <stdlib.h>
+#include <windows.h>
+
+struct ns_platform_tls_key {
+    DWORD index;
+};
+
+struct ns_platform_wakeup {
+    HANDLE event;
+};
+
+struct ns_platform_mutex {
+    SRWLOCK lock;
+};
+
+static DWORD ns_windows_timeout_ms(ns_platform_time_us_t timeout_us)
+{
+    uint64_t timeout_ms;
+
+    if(timeout_us == NS_PLATFORM_WAIT_INFINITE_US) return INFINITE;
+
+    timeout_ms = (timeout_us + 999u) / 1000u;
+    if(timeout_ms >= (uint64_t)INFINITE) return INFINITE - 1u;
+
+    return (DWORD)timeout_ms;
+}
+
+int ns_platform_init(void)
+{
+    return NS_OK;
+}
+
+int ns_platform_shutdown(void)
+{
+    return NS_OK;
+}
+
+void *ns_platform_alloc(size_t size)
+{
+    return malloc(size);
+}
+
+void ns_platform_free(void *ptr)
+{
+    free(ptr);
+}
+
+int ns_platform_tls_key_create(ns_platform_tls_key_t **out_key)
+{
+    ns_platform_tls_key_t *key;
+    DWORD index;
+
+    if(out_key == NULL) return NS_E_INVAL;
+
+    *out_key = NULL;
+    key = (ns_platform_tls_key_t *)ns_platform_alloc(sizeof(*key));
+    if(key == NULL) return NS_E_NOMEM;
+
+    index = TlsAlloc();
+    if(index == TLS_OUT_OF_INDEXES){
+        ns_platform_free(key);
+        return NS_E_NOMEM;
+    }
+
+    key->index = index;
+    *out_key = key;
+    return NS_OK;
+}
+
+int ns_platform_tls_key_destroy(ns_platform_tls_key_t *key)
+{
+    if(key == NULL) return NS_E_INVAL;
+
+    if(TlsFree(key->index) == 0){
+        ns_platform_free(key);
+        return NS_E_INVAL;
+    }
+
+    ns_platform_free(key);
+    return NS_OK;
+}
+
+int ns_platform_tls_get(ns_platform_tls_key_t *key, void **out_value)
+{
+    if((key == NULL) || (out_value == NULL)) return NS_E_INVAL;
+
+    *out_value = TlsGetValue(key->index);
+    return NS_OK;
+}
+
+int ns_platform_tls_set(ns_platform_tls_key_t *key, void *value)
+{
+    if(key == NULL) return NS_E_INVAL;
+    if(TlsSetValue(key->index, value) == 0) return NS_E_INVAL;
+
+    return NS_OK;
+}
+
+int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
+{
+    ns_platform_wakeup_t *wakeup;
+
+    (void)debug_name;
+
+    if(out_wakeup == NULL) return NS_E_INVAL;
+
+    *out_wakeup = NULL;
+    wakeup = (ns_platform_wakeup_t *)ns_platform_alloc(sizeof(*wakeup));
+    if(wakeup == NULL) return NS_E_NOMEM;
+
+    wakeup->event = CreateEventA(NULL, FALSE, FALSE, NULL);
+    if(wakeup->event == NULL){
+        ns_platform_free(wakeup);
+        return NS_E_NOMEM;
+    }
+
+    *out_wakeup = wakeup;
+    return NS_OK;
+}
+
+int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
+{
+    if(wakeup == NULL) return NS_E_INVAL;
+
+    if(CloseHandle(wakeup->event) == 0){
+        ns_platform_free(wakeup);
+        return NS_E_INVAL;
+    }
+
+    ns_platform_free(wakeup);
+    return NS_OK;
+}
+
+int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
+{
+    if(wakeup == NULL) return NS_E_INVAL;
+    if(SetEvent(wakeup->event) == 0) return NS_E_INVAL;
+
+    return NS_OK;
+}
+
+int ns_platform_wakeup_reset(ns_platform_wakeup_t *wakeup)
+{
+    if(wakeup == NULL) return NS_E_INVAL;
+    if(ResetEvent(wakeup->event) == 0) return NS_E_INVAL;
+
+    return NS_OK;
+}
+
+int ns_platform_wakeup_wait(
+    ns_platform_wakeup_t *wakeup,
+    ns_platform_time_us_t timeout_us,
+    ns_platform_wait_result_t *out_result)
+{
+    DWORD wait_result;
+
+    if((wakeup == NULL) || (out_result == NULL)) return NS_E_INVAL;
+
+    wait_result = WaitForSingleObject(wakeup->event, ns_windows_timeout_ms(timeout_us));
+    if(wait_result == WAIT_OBJECT_0){
+        *out_result = NS_PLATFORM_WAIT_SIGNALED;
+        return NS_OK;
+    }
+    if(wait_result == WAIT_TIMEOUT){
+        *out_result = NS_PLATFORM_WAIT_TIMEOUT;
+        return NS_OK;
+    }
+
+    return NS_E_INVAL;
+}
+
+int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
+{
+    ns_platform_mutex_t *mutex;
+
+    (void)debug_name;
+
+    if(out_mutex == NULL) return NS_E_INVAL;
+
+    *out_mutex = NULL;
+    mutex = (ns_platform_mutex_t *)ns_platform_alloc(sizeof(*mutex));
+    if(mutex == NULL) return NS_E_NOMEM;
+
+    InitializeSRWLock(&mutex->lock);
+    *out_mutex = mutex;
+    return NS_OK;
+}
+
+int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
+{
+    if(mutex == NULL) return NS_E_INVAL;
+
+    ns_platform_free(mutex);
+    return NS_OK;
+}
+
+int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
+{
+    if(mutex == NULL) return NS_E_INVAL;
+
+    AcquireSRWLockExclusive(&mutex->lock);
+    return NS_OK;
+}
+
+int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
+{
+    if(mutex == NULL) return NS_E_INVAL;
+
+    ReleaseSRWLockExclusive(&mutex->lock);
+    return NS_OK;
+}
+
+int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
+{
+    LARGE_INTEGER counter;
+    LARGE_INTEGER frequency;
+    uint64_t count;
+    uint64_t freq;
+
+    if(out_now_us == NULL) return NS_E_INVAL;
+    if(QueryPerformanceFrequency(&frequency) == 0) return NS_E_INVAL;
+    if(QueryPerformanceCounter(&counter) == 0) return NS_E_INVAL;
+    if(frequency.QuadPart <= 0) return NS_E_INVAL;
+
+    count = (uint64_t)counter.QuadPart;
+    freq = (uint64_t)frequency.QuadPart;
+    *out_now_us = ((count / freq) * 1000000u) + (((count % freq) * 1000000u) / freq);
+    return NS_OK;
+}

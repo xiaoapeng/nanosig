@@ -1,4 +1,5 @@
 .omx/
 build/
+build-linux/
 tmp/
 AGENTS.md
