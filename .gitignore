@@ -1,5 +1,6 @@
 .omx/
 build/
 build-linux/
+build-linux-asan/
 tmp/
 AGENTS.md

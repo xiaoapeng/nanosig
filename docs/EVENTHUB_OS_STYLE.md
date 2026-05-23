@@ -72,6 +72,41 @@ For nanosig, use the same Doxygen shape but update file name, brief text, date,
 and copyright owner. Do not copy mojibake from terminal output; the intended
 comment language is Chinese.
 
+## Encoding Discipline
+
+All repository text files must remain valid UTF-8. Prefer UTF-8 without BOM for
+new and edited source, header, CMake, and Markdown files.
+
+The P2 data-structure import exposed an important failure mode: a file can still
+be byte-valid UTF-8 while its Chinese comments are mojibake. Strict decoding is
+therefore necessary but not sufficient; reviews must also scan for mojibake
+markers such as replacement characters, Latin-1 artifacts, private-use
+characters, and common UTF-8-as-GBK fragments in normal source and documentation
+text. Do not write literal mojibake examples into project docs unless the
+scanner explicitly excludes that example block.
+
+Practical rules:
+
+- Do not use PowerShell `Set-Content` / `Out-File` for bulk rewrites unless the
+  command explicitly writes UTF-8 with the intended BOM policy. Their defaults
+  can vary by shell version and can silently change encoding or line endings.
+- Prefer `apply_patch` for manual edits, especially when Chinese comments are
+  present.
+- If a scripted rewrite is unavoidable, use an explicit strict UTF-8 writer, for
+  example `.NET` `System.Text.UTF8Encoding($false, $true)`, and immediately
+  rerun decoding plus mojibake scans.
+- Git may quote non-ASCII filenames by default. Encoding validation scripts that
+  consume `git ls-files` should use `git -c core.quotePath=false ...` and should
+  ignore paths deleted in the working tree.
+- Encoding verification has two layers:
+  1. strict UTF-8 byte decoding for every existing Git-visible file;
+  2. content scan for common mojibake markers in `include/`, `src/`, `test/`,
+     `docs/`, `platform/`, `cmake/`, `demos/`, `bench/`, and top-level project
+     metadata.
+- Encoding cleanup should be text-only unless the user explicitly asks for logic
+  changes. In particular, fixing comments must not become an opportunity to
+  change data-structure behavior.
+
 ### Public API Comments
 
 Public functions and public macros are documented with `/** ... */` blocks
@@ -230,8 +265,10 @@ The reference favors intrusive C data structures:
 - static assertions for layout invariants, for example timer event member
   offset.
 
-For nanosig, keep the same intrusive style for internal structures, but expose
-opaque public handles where possible.
+For nanosig, keep the same intrusive style for reusable data structures and
+expose the generic list/slist/ringbuf/hashtable/rbtree APIs publicly under
+`include/nanosig/`. Core runtime handles such as loop and connection remain
+opaque where the public API does not require direct embedding.
 
 ## Platform Style
 
@@ -281,9 +318,12 @@ These are deliberate deviations from eventhub_os style:
 - Add Doxygen file headers to new `.h` and `.c` files.
 - Use Chinese comments for public API contracts and important implementation
   invariants.
+- Keep source, headers, tests, docs, and CMake files valid UTF-8 without
+  mojibake; run both strict UTF-8 decoding and mojibake-marker scans after any
+  bulk edit or cross-shell rewrite.
 - Keep public API naming under `ns_*`, `ns_*_t`, and `NS_*`.
 - Use lowercase names for function-wrapper connect/emit public macros.
-- Prefer intrusive internal nodes for lists/rbtree/queues.
+- Prefer intrusive nodes for reusable list/rbtree/queue-style structures.
 - Use explicit cleanup labels for multi-resource functions.
 - Keep platform-specific code below `platform/`.
 - Update this document if the user changes the accepted nanosig style again.

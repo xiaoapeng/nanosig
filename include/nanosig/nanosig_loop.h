@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_status.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,7 +56,7 @@ typedef struct ns_loop_config {
         .max_payload_size = 256u, \
         .slot_snapshot_capacity = 32u, \
         .flags = 0u, \
-        .debug_name = (const char *)0 \
+        .debug_name = NULL \
     })
 
 /**

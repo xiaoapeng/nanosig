@@ -1,10 +1,10 @@
 # nanosig Data Structure Design Draft
 
-Status: PD closeout complete. Implementation is intentionally pending.
+Status: P2 public data structures are implemented and covered by unit tests.
 
 ## Publicly Visible Shapes
 
-Only opaque handles and configuration structs are visible to users:
+Core runtime handles remain opaque or API-owned:
 
 - `ns_loop_t`
 - `ns_signal_t`
@@ -12,17 +12,47 @@ Only opaque handles and configuration structs are visible to users:
 - `ns_timer_t`
 - `ns_loop_config_t`
 
-## Internal Structures
+Generic data structures are public because they are useful outside nanosig's
+runtime and can be embedded by users directly.
 
-The following structures are implementation-owned and will be introduced in
-later phases:
+## Public Data Structures
 
-- intrusive doubly linked list
-- intrusive singly linked list
-- byte ring buffer
-- string-key hashtable
-- rbtree keyed by timer deadline
-- fixed-capacity Vyukov-style MPSC queue
+The following generic structures are public and available to users through
+`include/nanosig/`:
+
+- intrusive doubly linked list: `include/nanosig/nanosig_list.h`
+- intrusive singly linked list: `include/nanosig/nanosig_slist.h`
+- byte ring buffer: `include/nanosig/nanosig_ringbuf.h` / `src/ds/ns_ringbuf.c`
+- string-key hashtable: `include/nanosig/nanosig_hashtable.h` / `src/ds/ns_hashtable.c`
+- rbtree keyed by `uint64_t`: `include/nanosig/nanosig_rbtree.h` / `src/ds/ns_rbtree.c`
+- aggregate include: `include/nanosig/nanosig_ds.h`
+
+These APIs are not hidden behind `src/internal/`; they are part of the public
+header surface and may be used by applications embedding nanosig.
+`nanosig_ds.h` includes `nanosig_status.h`, so status constants such as
+`NS_OK` and `NS_E_INVAL` are available when users include the data-structure
+aggregate directly.
+
+The structure fields are visible so callers can embed nodes and provide static
+or caller-owned storage. Apart from documented initialization fields such as
+ring buffer storage and hashtable buckets, users should mutate these structures
+through the public functions/macros rather than editing links, cursors, hashes,
+or tree internals directly.
+
+The fixed-capacity Vyukov-style MPSC queue remains P3 and is not public yet.
+
+Each P2 structure has a plain-C unit test under `test/unit/`:
+
+- `test_ds_list.c`
+- `test_ds_slist.c`
+- `test_ds_ringbuf.c`
+- `test_ds_hashtable.c`
+- `test_ds_rbtree.c`
+- `test_data_structures_contract_compile.c`
+
+The runtime tests cover normal operations plus representative invalid-argument
+and zero-initialized object boundaries for the implementation-backed
+structures.
 
 ## Loop Shape
 
@@ -30,8 +60,8 @@ Each loop owns:
 
 - fixed-capacity MPSC queue
 - platform wakeup handle
-- owner thread id
 - registration node in the internal loop manager
+- current-thread ownership enforced through the loop manager TLS binding
 - shutdown flag
 - maximum payload size copied into queue slots
 
@@ -40,16 +70,15 @@ Each loop owns:
 The internal loop manager owns the one-loop-per-thread invariant:
 
 - fast current-thread lookup slot backed by platform TLS when available
-- registry from platform thread id to `ns_loop_t *`
-- lock protecting the registry
+- core-owned loop registry for teardown and diagnostics
+- lock protecting the registry when cross-thread management paths are added
 - create-time duplicate check returning `NS_E_EXISTS`
 - current-thread lookup failure returning `NS_E_NO_LOOP`
 
-The registry is still required even when a platform has thread-local user data,
-because Linux/POSIX, macOS, and Win32 TLS APIs do not provide a portable
-foreign-thread "get user pointer by thread handle" operation. Platforms that do
-support task-handle user pointers can implement the registry lookup as a thin
-backend optimization later, but the core contract remains manager-shaped.
+P1b deliberately does not expose platform thread id/equal/hash APIs. The loop
+manager must therefore enforce duplicate create/current lookup through the TLS
+current-loop pointer first; any future foreign-thread lookup needs a new
+core-owned registry design rather than a hidden platform thread-id dependency.
 
 ## Signal Shape
 
@@ -78,12 +107,14 @@ Each connection owns:
 
 ## Timer Shape
 
-The global timer service owns:
+The timer manager / future broker-owned timer source owns:
 
-- dedicated timer thread
 - wakeup handle
 - rbtree ordered by deadline
 - registry lock
+
+The earlier standalone global timer thread design was superseded by the
+`ns_event_broker_t` direction recorded in `docs/共识计划.md`.
 
 Each timer owns:
 

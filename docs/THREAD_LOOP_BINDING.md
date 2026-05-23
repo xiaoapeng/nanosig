@@ -1,6 +1,8 @@
 # Thread Loop Binding
 
-Status: PD closeout complete design constraint.
+Status: PD closeout complete design constraint; P1b loop-only platform
+contract now provides TLS current-thread lookup without public platform
+thread-id helpers.
 
 ## Decision
 
@@ -65,21 +67,23 @@ Do not depend solely on OS thread user pointers for loop lookup.
 
 ## Implementation Shape
 
-Use both pieces:
+Use these pieces:
 
 - platform TLS for the fast current-thread lookup used by default connect APIs
   and `ns_loop_current`;
-- an internal loop manager registry keyed by `ns_platform_thread_id_t` for
-  duplicate-create checks, diagnostics, teardown validation, and any future
-  internal "lookup by thread handle" needs.
+- create-time duplicate checks can be satisfied first through the current
+  thread TLS slot;
+- any future cross-thread diagnostics or "lookup by thread handle" support must
+  be a core-owned registry design added when the feature exists, not a hidden
+  dependency on platform thread-id helpers.
 
-P1a `platform/port.h` must define:
+P1a/P1b `platform/port.h` deliberately defines only the TLS key operations
+needed for the current-thread fast path:
 
-- `ns_platform_thread_id_t`
-- `ns_platform_thread_id_current`
-- `ns_platform_thread_id_equal`
-- `ns_platform_thread_id_hash`
-- current-thread TLS get/set hooks for the loop pointer
+- `ns_platform_tls_key_create`
+- `ns_platform_tls_key_destroy`
+- `ns_platform_tls_get`
+- `ns_platform_tls_set`
 
 The core above `platform/` must not include platform headers or use OS-specific
 thread APIs directly.

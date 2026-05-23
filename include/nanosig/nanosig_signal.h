@@ -59,7 +59,7 @@ typedef struct ns_no_payload {
 /**
  * @brief `ns_signal_emit` 触发无 payload signal 时使用的 payload 指针常量。
  */
-#define NS_NO_PAYLOAD ((const ns_no_payload_t *)0)
+#define NS_NO_PAYLOAD ((const ns_no_payload_t *)NULL)
 
 /**
  * @brief 通用 slot 函数签名。
@@ -80,7 +80,7 @@ typedef void (*ns_slot_fn)(void *user_data, const void *payload);
  * @return payload 入队字节数。
  */
 #define NS_SIGNAL_PAYLOAD_SIZE(payload_type) \
-    ((size_t)_Generic(((payload_type *)0), ns_no_payload_t *: 0u, default: sizeof(payload_type)))
+    ((size_t)_Generic(((payload_type *)NULL), ns_no_payload_t *: 0u, default: sizeof(payload_type)))
 
 /**
  * @brief 计算 payload 指针对应的入队字节数。
@@ -119,7 +119,7 @@ _Static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD p
         .payload_size = NS_SIGNAL_PAYLOAD_SIZE(payload_type), \
         .slot_capacity = 0u, \
         .debug_name = #payload_type, \
-        .impl = (void *)0 \
+        .impl = NULL \
     }
 
 /**
@@ -178,7 +178,7 @@ _Static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD p
  */
 #define ns_signal_connect_typed(signal_name, slot_fn, payload_type, user_data, out_connection) \
     (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
-     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), (ns_loop_t *)0, (user_data), (out_connection)))
+     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), NULL, (user_data), (out_connection)))
 
 /**
  * @brief 连接 signal 与带类型检查的 slot，并显式指定目标 loop。

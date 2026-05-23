@@ -10,6 +10,7 @@
 #define NANOSIG_H
 
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_status.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,26 +21,10 @@ extern "C" {
 #define NANOSIG_VERSION_PATCH 0
 
 /**
- * @brief nanosig 公开状态码。
- *
- * 所有公开函数以 `int` 返回这些状态码，`NS_OK` 表示成功，负数表示失败。
- */
-typedef enum ns_status {
-    NS_OK = 0,
-    NS_E_QUEUE_FULL = -1,
-    NS_E_NOMEM = -2,
-    NS_E_INVAL = -3,
-    NS_E_TOO_MANY_HANDLES = -4,
-    NS_E_SHUTDOWN = -5,
-    NS_E_EXISTS = -6,
-    NS_E_NO_LOOP = -7
-} ns_status_t;
-
-/**
  * @brief 初始化 nanosig 全局状态。
  *
- * 应用在调用任何 loop、signal 或 timer API 前先调用本函数。该调用为全局
- * timer 服务和后续平台资源准备生命周期边界。
+ * 应用在调用任何 loop、signal 或 timer API 前先调用本函数。该调用为平台层、
+ * loop manager 和后续 event broker 准备生命周期边界。
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -48,8 +33,8 @@ int ns_init(void);
 /**
  * @brief 关闭 nanosig 全局状态。
  *
- * 应用在确定不再使用 nanosig 后调用本函数，停止全局 timer 服务并释放
- * 全局资源。调用方应先完成业务侧 loop、signal 和 timer 的清理。
+ * 应用在确定不再使用 nanosig 后调用本函数，释放全局资源。调用方应先完成
+ * 业务侧 loop、signal、timer 和后续 event broker 的清理。
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -67,6 +52,8 @@ int ns_is_initialized(int *out_initialized);
 }
 #endif
 
+#include <nanosig/nanosig_atomic.h>
+#include <nanosig/nanosig_ds.h>
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_timer.h>

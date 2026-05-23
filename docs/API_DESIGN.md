@@ -1,12 +1,16 @@
 # nanosig API Design Draft
 
-Status: PD closeout complete. Implementation is intentionally pending.
+Status: PD API closeout complete. P1 loop platform backends and P2 public
+data structures have landed; loop/signal/timer runtime behavior is still a
+later implementation phase.
 
 ## Lifecycle
 
 Applications call `ns_init()` before any other nanosig API and call
-`ns_shutdown()` during deterministic teardown. This keeps the global timer
-thread explicit and TSAN-friendly.
+`ns_shutdown()` during deterministic teardown. This keeps the platform layer,
+future loop manager, and future `ns_event_broker_t` lifecycle explicit and
+TSAN-friendly. It does not imply a standalone global timer thread; the current
+timer direction is a broker-owned timer source that emits `timer->signal`.
 
 ```c
 int rc = ns_init();
@@ -20,6 +24,37 @@ out_shutdown:
     (void)ns_shutdown();
     return rc;
 ```
+
+## Status Codes
+
+`ns_status_t` and `NS_*` status constants live in
+`include/nanosig/nanosig_status.h`. The umbrella `nanosig.h`, `nanosig_ds.h`,
+and implementation-backed data-structure headers include it so users can
+compare results against `NS_OK`, `NS_E_INVAL`, and the other public codes
+without relying on a private include order.
+
+## Atomic Helpers
+
+The C11 atomic wrapper is public as `include/nanosig/nanosig_atomic.h`. It keeps
+the `ns_memory_order_t` names and `ns_atomic_*` operation wrappers available to
+users that build lock-free or low-level structures next to nanosig.
+
+## Public Data Structures
+
+P2 exposes the generic data structures under `include/nanosig/` so applications
+can embed and use them directly:
+
+- `nanosig_list.h`
+- `nanosig_slist.h`
+- `nanosig_ringbuf.h`
+- `nanosig_hashtable.h`
+- `nanosig_rbtree.h`
+- `nanosig_ds.h`
+
+The implementation-backed structures live in `src/ds/`. Their fields are
+visible for C embedding and static storage, but callers should use the public
+functions/macros instead of mutating links, cursors, or tree internals directly.
+The fixed-capacity MPSC queue remains P3 and is not public yet.
 
 ## Thread-Bound Loops
 

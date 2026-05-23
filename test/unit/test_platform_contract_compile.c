@@ -1,13 +1,13 @@
 /**
  * @file test_platform_contract_compile.c
- * @brief P1a platform/port.h and ns_atomic.h syntax-only contract check.
+ * @brief P1a platform/port.h and nanosig_atomic.h syntax-only contract check.
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
 #include "platform/port.h"
-#include "src/internal/ns_atomic.h"
+#include <nanosig/nanosig_atomic.h>
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -23,9 +23,9 @@ _Static_assert(sizeof(ns_platform_time_us_t) == sizeof(uint64_t), "platform time
 
 static void platform_contract_accept_opaque_handles(void)
 {
-    ns_platform_tls_key_t *tls_key = (ns_platform_tls_key_t *)0;
-    ns_platform_wakeup_t *wakeup = (ns_platform_wakeup_t *)0;
-    ns_platform_mutex_t *mutex = (ns_platform_mutex_t *)0;
+    ns_platform_tls_key_t *tls_key = NULL;
+    ns_platform_wakeup_t *wakeup = NULL;
+    ns_platform_mutex_t *mutex = NULL;
     ns_platform_time_us_t timeout_us = NS_PLATFORM_WAIT_INFINITE_US;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
 

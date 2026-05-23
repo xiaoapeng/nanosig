@@ -56,7 +56,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
         100000u,
         NS_TIMER_ATTR_REPEAT | NS_TIMER_ATTR_RELOAD_FROM_NOW);
     int observed = 0;
-    ns_connection_t *connection = (ns_connection_t *)0;
+    ns_connection_t *connection = NULL;
 
     NS_SLOT_TYPECHECK(matrix_payload_slot, matrix_payload_t);
     NS_SLOT_TYPECHECK(typed_slot, matrix_payload_t);
@@ -87,7 +87,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_connect(
         &matrix_payload_signal,
         matrix_raw_slot,
-        (ns_loop_t *)0,
+        NULL,
         &observed,
         &connection);
     (void)ns_signal_connect(
@@ -114,7 +114,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_connect(
         &matrix_no_payload_signal,
         matrix_raw_slot,
-        (ns_loop_t *)0,
+        NULL,
         &observed,
         &connection);
     (void)ns_signal_connect(

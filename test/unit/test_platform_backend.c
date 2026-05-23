@@ -25,7 +25,7 @@ static int test_alloc(void)
 {
     void *ptr = ns_platform_alloc(16u);
 
-    if(ptr == (void *)0) return 1;
+    if(ptr == NULL) return 1;
 
     memset(ptr, 0, 16u);
     ns_platform_free(ptr);
@@ -34,17 +34,17 @@ static int test_alloc(void)
 
 static int test_tls(void)
 {
-    ns_platform_tls_key_t *key = (ns_platform_tls_key_t *)0;
-    void *value = (void *)0;
+    ns_platform_tls_key_t *key = NULL;
+    void *value = NULL;
     int marker = 42;
 
     if(expect_ok(ns_platform_tls_key_create(&key)) != 0) return 1;
     if(expect_ok(ns_platform_tls_get(key, &value)) != 0) return 1;
-    if(expect_true(value == (void *)0) != 0) return 1;
+    if(expect_true(value == NULL) != 0) return 1;
     if(expect_ok(ns_platform_tls_set(key, &marker)) != 0) return 1;
     if(expect_ok(ns_platform_tls_get(key, &value)) != 0) return 1;
     if(expect_true(value == &marker) != 0) return 1;
-    if(expect_ok(ns_platform_tls_set(key, (void *)0)) != 0) return 1;
+    if(expect_ok(ns_platform_tls_set(key, NULL)) != 0) return 1;
     if(expect_ok(ns_platform_tls_key_destroy(key)) != 0) return 1;
 
     return 0;
@@ -52,7 +52,7 @@ static int test_tls(void)
 
 static int test_mutex(void)
 {
-    ns_platform_mutex_t *mutex = (ns_platform_mutex_t *)0;
+    ns_platform_mutex_t *mutex = NULL;
 
     if(expect_ok(ns_platform_mutex_create(&mutex, "test-mutex")) != 0) return 1;
     if(expect_ok(ns_platform_mutex_lock(mutex)) != 0) return 1;
@@ -64,7 +64,7 @@ static int test_mutex(void)
 
 static int test_wakeup(void)
 {
-    ns_platform_wakeup_t *wakeup = (ns_platform_wakeup_t *)0;
+    ns_platform_wakeup_t *wakeup = NULL;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_SIGNALED;
 
     if(expect_ok(ns_platform_wakeup_create(&wakeup, "test-wakeup")) != 0) return 1;

@@ -19,16 +19,30 @@ option(NANOSIG_BUILD_DEMOS "Build nanosig demos once implementation phases land"
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only PD API checks" ON)
 
 set(NANOSIG_PUBLIC_HEADERS
+    include/nanosig/nanosig_atomic.h
+    include/nanosig/nanosig_ds.h
     include/nanosig/nanosig.h
+    include/nanosig/nanosig_hashtable.h
+    include/nanosig/nanosig_list.h
     include/nanosig/nanosig_loop.h
+    include/nanosig/nanosig_rbtree.h
+    include/nanosig/nanosig_ringbuf.h
     include/nanosig/nanosig_safety.h
     include/nanosig/nanosig_signal.h
+    include/nanosig/nanosig_slist.h
+    include/nanosig/nanosig_status.h
     include/nanosig/nanosig_timer.h
+    include/nanosig/nanosig_util.h
 )
 
 set(NANOSIG_INTERNAL_HEADERS
     platform/port.h
-    src/internal/ns_atomic.h
+)
+
+set(NANOSIG_DS_SOURCES
+    src/ds/ns_hashtable.c
+    src/ds/ns_rbtree.c
+    src/ds/ns_ringbuf.c
 )
 
 if(WIN32)
@@ -46,6 +60,7 @@ endif()
 add_library(nanosig STATIC
     src/nanosig.c
     ${NANOSIG_PLATFORM_SOURCES}
+    ${NANOSIG_DS_SOURCES}
     ${NANOSIG_PUBLIC_HEADERS}
     ${NANOSIG_INTERNAL_HEADERS}
 )
@@ -69,20 +84,30 @@ nanosig_apply_sanitizers(nanosig)
 
 enable_testing()
 
-if(NANOSIG_BUILD_TESTS)
-    add_executable(nanosig_test_platform_backend
-        test/unit/test_platform_backend.c
+function(nanosig_add_unit_test name source)
+    add_executable(${name}
+        ${source}
     )
-    target_link_libraries(nanosig_test_platform_backend PRIVATE nanosig::nanosig)
-    target_include_directories(nanosig_test_platform_backend PRIVATE
+    target_link_libraries(${name} PRIVATE nanosig::nanosig)
+    target_include_directories(${name} PRIVATE
         ${PROJECT_SOURCE_DIR}
     )
-    nanosig_apply_private_warnings(nanosig_test_platform_backend)
+    nanosig_apply_private_warnings(${name})
+    nanosig_apply_sanitizers(${name})
 
     add_test(
-        NAME nanosig_test_platform_backend
-        COMMAND nanosig_test_platform_backend
+        NAME ${name}
+        COMMAND ${name}
     )
+endfunction()
+
+if(NANOSIG_BUILD_TESTS)
+    nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
+    nanosig_add_unit_test(nanosig_test_ds_list test/unit/test_ds_list.c)
+    nanosig_add_unit_test(nanosig_test_ds_slist test/unit/test_ds_slist.c)
+    nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
+    nanosig_add_unit_test(nanosig_test_ds_hashtable test/unit/test_ds_hashtable.c)
+    nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
 endif()
 
 if(NANOSIG_BUILD_API_CHECKS)
@@ -100,11 +125,16 @@ if(NANOSIG_BUILD_API_CHECKS)
         test/unit/test_platform_contract_compile.c
     )
 
+    nanosig_add_api_compile_check(nanosig_api_check_data_structures
+        test/unit/test_data_structures_contract_compile.c
+    )
+
     add_custom_target(api-compile-checks
         DEPENDS
             nanosig_api_check_demos
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
+            nanosig_api_check_data_structures
     )
 endif()
 

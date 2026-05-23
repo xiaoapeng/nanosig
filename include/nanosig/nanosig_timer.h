@@ -1,6 +1,6 @@
 /**
  * @file nanosig_timer.h
- * @brief nanosig 全局 timer 服务 API。
+ * @brief nanosig timer API。
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors
@@ -78,7 +78,7 @@ _Static_assert(offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must be th
         .interval_us = (ns_time_us_t)(interval_value), \
         .expire_us = 0u, \
         .attr = (uint32_t)(attr_value), \
-        .impl = (void *)0 \
+        .impl = NULL \
     }
 
 /**

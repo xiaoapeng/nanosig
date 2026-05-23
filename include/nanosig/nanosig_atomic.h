@@ -1,13 +1,13 @@
 /**
- * @file ns_atomic.h
- * @brief nanosig 内部 C11 atomic 操作封装。
- * @date 2026-05-16
+ * @file nanosig_atomic.h
+ * @brief nanosig C11 atomic 操作封装。
+ * @date 2026-05-23
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#ifndef NANOSIG_INTERNAL_NS_ATOMIC_H
-#define NANOSIG_INTERNAL_NS_ATOMIC_H
+#ifndef NANOSIG_ATOMIC_H
+#define NANOSIG_ATOMIC_H
 
 #include <stdatomic.h>
 
@@ -16,10 +16,10 @@ extern "C" {
 #endif
 
 /**
- * @brief 内部 atomic memory order 名称。
+ * @brief atomic memory order 名称。
  *
- * 该枚举只做 nanosig 内部命名收口，取值映射到 C11 `<stdatomic.h>` 的标准
- * `memory_order_*`。不要在内部代码中直接依赖编译器私有 `__ATOMIC_*` 常量。
+ * 该枚举只做 nanosig 命名收口，取值映射到 C11 `<stdatomic.h>` 的标准
+ * `memory_order_*`。调用方不应直接依赖编译器私有 `__ATOMIC_*` 常量。
  */
 typedef enum ns_memory_order {
     ns_memory_order_relaxed = memory_order_relaxed,
@@ -95,4 +95,4 @@ typedef enum ns_memory_order {
 }
 #endif
 
-#endif /* NANOSIG_INTERNAL_NS_ATOMIC_H */
+#endif /* NANOSIG_ATOMIC_H */

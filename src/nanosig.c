@@ -1,10 +1,10 @@
 /**
  * @file nanosig.c
- * @brief Empty translation-unit anchor for the PD-stage library target.
+ * @brief nanosig core translation-unit anchor.
  *
- * This file gives CMake, compile_commands.json, and clangd a real C source
- * file before implementation phases begin. v1 logic still lands after PD
- * sign-off in P1a and later phases.
+ * P1/P2 implementation currently lives in platform backends and public data
+ * structure sources. Lifecycle, loop, signal, and timer runtime logic lands in
+ * later phases.
  */
 
 #include <nanosig/nanosig.h>
