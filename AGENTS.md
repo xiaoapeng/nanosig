@@ -1,0 +1,73 @@
+<!-- Generated: 2026-05-16 | Updated: 2026-05-16 -->
+
+# nanosig
+
+## Purpose
+nanosig is a new C11 signal/slot library being built with thread-owned event loops, fixed-capacity MPSC cross-thread emit, a global timer service, and Linux/Windows platform backends. The repository is currently in P0/PD: build scaffolding, public API drafts, API-review demos, and implementation plans exist; core `.c` implementation phases are still pending.
+
+## Key Files
+| File | Description |
+|------|-------------|
+| `CMakeLists.txt` | Top-level CMake project, static compile-anchor target, compile-only API checks, testing enablement, and `sanitize-all` placeholder. |
+| `CMakePresets.json` | Linux and Windows configure/build/test presets, all writing to `build/` for clangd and CMake plugin integration. |
+| `README.md` | Current project status, quick configure commands, and API review entry points. |
+| `LICENSE` | MIT license for nanosig. |
+| `docs/共识计划.md` | 中文权威共识计划，记录当前阶段状态、API 决策、阶段计划和验证证据。 |
+| `docs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和被 PD 更新覆盖的早期结论。 |
+| `docs/EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig-specific adaptations. |
+| `docs/THREAD_LOOP_BINDING.md` | Current one-loop-per-thread and default-connect design constraint. |
+| `docs/agents/AGENTS.md` | Central index for moved directory-specific AGENTS instructions. |
+
+## Subdirectories
+| Directory | Purpose |
+|-----------|---------|
+| `bench/` | Future benchmark harness placeholder (see `docs/agents/bench/AGENTS.md`). |
+| `cmake/` | Shared CMake helper modules (see `docs/agents/cmake/AGENTS.md`). |
+| `demos/` | PD-stage API review demos (see `docs/agents/demos/AGENTS.md`). |
+| `docs/` | API and data-structure design drafts plus centralized AGENTS copies (see `docs/AGENTS.md` and `docs/agents/AGENTS.md`). |
+| `include/` | Public nanosig headers (see `docs/agents/include/AGENTS.md`). |
+| `platform/` | Future nanosig platform abstraction backends (see `docs/agents/platform/AGENTS.md`). |
+| `src/` | Future nanosig implementation sources (see `docs/agents/src/AGENTS.md`). |
+| `test/` | Future nanosig tests (see `docs/agents/test/AGENTS.md`). |
+| `tmp/` | Reference source snapshots, especially eventhub_os (see `tmp/AGENTS.md`). |
+
+## For AI Agents
+
+### Working In This Directory
+- Treat `docs/共识计划.md` and `docs/需求访谈.md` as the binding design context. Hidden `.omx/` and `.omc/` artifacts are workflow caches, not the public source of truth.
+- Keep P0/PD boundaries clear: public headers and docs may change during API review; implementation logic starts only after PD closeout. The empty `src/nanosig.c` file is a compile-anchor exception for CMake and clangd, and `api-compile-checks` is syntax-only.
+- Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` P1a reuse.
+- Preserve the latest PD API style: no public `__safety` annotations for now; function-wrapper connect/emit macros are lowercase, while declaration/definition/initializer/type-only macros are uppercase; use C designated initializers in examples.
+- The moved per-directory AGENTS instructions are centralized under `docs/agents/`; update those copies when source-tree guidance changes.
+- Preserve the one-loop-per-thread invariant: `ns_loop_create` binds the current thread, default connect APIs use the current thread loop, and explicit `_to` connect APIs are escape hatches.
+- Follow `docs/EVENTHUB_OS_STYLE.md` when borrowing eventhub_os coding/comment style.
+- Do not generate AGENTS files inside hidden workflow/runtime directories such as `.omx/`, `.omc/`, or `.github/` unless the user explicitly asks for workflow documentation.
+- Keep reference-code documentation shallow; `tmp/eventhub_os/AGENTS.md` is enough unless active work moves into that tree.
+
+### Testing Requirements
+- For scaffold/API-only edits, run `cmake --build --preset windows-release`, `cmake --build --preset windows-release --target api-compile-checks`, `ctest --preset windows-release`, and `cmake --build --preset windows-release --target sanitize-all`.
+- For later implementation phases, add targeted tests first, then run the relevant preset plus `sanitize-all`.
+
+### Common Patterns
+- Public symbols use `ns_*`, public constants use `NS_*`, function-wrapper signal connect/emit macros use lowercase `ns_signal_*`, and declaration/definition/initializer/type-only macros use uppercase `NS_*`.
+- Signal connect macros must provide the payload/no-payload and current-loop/explicit-loop matrix without adding a separate `0` function family; no-payload signals use `ns_no_payload_t` and `NS_NO_PAYLOAD`, and typed variants use compile-time slot signature checks.
+- Zero tolerance for duplicate internal/public-low-level functions that only differ by default-vs-explicit parameters. Use a parameter such as nullable `target_loop` instead; wrapper macros may keep ergonomic names but must call the single underlying function.
+- Configuration examples use C designated initializers.
+- Examples that acquire more than one nanosig resource must show kernel-style `goto` cleanup labels and release every successfully initialized resource on all failure paths.
+- `ns_no_payload_t` is only a compile-time marker for typed no-payload slots; no-payload emit must pass `NS_NO_PAYLOAD` and copy 0 bytes.
+- `ns_signal_t` may be embedded in user structs; initialize members with `NS_SIGNAL_INITIALIZER(payload_type)` or `ns_signal_init(signal, payload_type)`. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT` or `ns_signal_config_t`. There is no `ns_signal_deinit`; connection resources are released by `ns_signal_disconnect`, with `ns_signal_disconnect_all` reserved for teardown escape hatches.
+- `ns_timer_t` uses caller-owned storage, has `ns_signal_t signal` as its first field, only emits no-payload events, uses `uint64_t` microsecond intervals, and uses `NS_TIMER_ATTR_*` bitmaps for repeat/reload behavior.
+- Platform-specific code belongs under `platform/`; code outside `platform/` should not contain OS preprocessor branches.
+
+## Dependencies
+
+### Internal
+- `include/nanosig/` defines the public API surface consumed by demos, tests, and future implementation.
+- `tmp/eventhub_os/` is reference material only, not a source-compatible dependency.
+
+### External
+- C11 compiler and CMake 3.20 or newer.
+- Ninja or Make depending on selected CMake preset.
+- Future Linux sanitizer runs need ASAN/TSAN/UBSAN-capable Clang/GCC; Windows validation targets MSVC/Clang-cl style environments.
+
+<!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

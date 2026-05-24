@@ -1,8 +1,8 @@
 # nanosig API Design Draft
 
-Status: PD API closeout complete. P1 loop platform backends and P2 public
-data structures have landed; loop/signal/timer runtime behavior is still a
-later implementation phase.
+Status: PD API closeout complete. P1 loop platform backends, P2 public
+data structures, and the P3 public fixed-capacity MPSC queue have landed;
+loop/signal/timer runtime behavior is still a later implementation phase.
 
 ## Lifecycle
 
@@ -49,16 +49,18 @@ compiler attributes, and bit-scan helpers. The public surface does not preserve
 
 ## Public Data Structures
 
-P2 exposes the generic data structures under `include/nanosig/` so applications
-can embed and use them directly:
+P2 plus P3 expose the generic low-level structures under `include/nanosig/` so
+applications can embed and use them directly:
 
 - `nanosig_list.h`
 - `nanosig_slist.h`
 - `nanosig_ringbuf.h`
 - `nanosig_hashtable.h`
 - `nanosig_rbtree.h`
+- `nanosig_mpsc.h`
 - `nanosig_ds.h`
 - `nanosig_types.h`
+- `nanosig_status.h`
 
 Public-header declaration rule:
 

@@ -4,10 +4,11 @@ nanosig is a C11 thread-based signal/slot library planned for Linux and
 Windows. It borrows style from `tmp/eventhub_os` but does not keep
 source-compatible `eh_*` APIs.
 
-Current status: P2 public data structures are implemented after the P1
+Current status: P3 public low-level structures are implemented after the P1
 loop-only platform backend. Public API headers and review demos remain stable;
-list, slist, ring buffer, string-key hashtable, and rbtree utilities are exposed
-under `include/nanosig/` and have CTest coverage on Windows and Linux.
+list, slist, ring buffer, string-key hashtable, rbtree, and fixed-capacity MPSC
+utilities are exposed under `include/nanosig/` and have CTest coverage on
+Windows and Linux.
 
 ## Configure
 
@@ -38,6 +39,7 @@ Review usage demos in:
 - `demos/demo_cross_thread.c`
 - `demos/demo_timer_cross_thread.c`
 
-The PD API syntax checks, platform smoke test, and public data-structure tests
-are wired into CTest and the `api-compile-checks` target. Runtime loop/signal/timer
+The PD API syntax checks, platform smoke test, public data-structure tests,
+public MPSC runtime test, and public type/data-structure contract checks are
+wired into CTest and the `api-compile-checks` target. Runtime loop/signal/timer
 behavior is still implemented in later phases.
