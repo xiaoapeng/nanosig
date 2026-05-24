@@ -69,7 +69,7 @@ typedef struct ns_loop_config {
  * @param config loop 配置；可为 `NULL`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
+extern int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
 
 /**
  * @brief 销毁事件循环并解除当前线程绑定。
@@ -80,7 +80,7 @@ int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
  * @param loop 要销毁的 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_loop_destroy(ns_loop_t *loop);
+extern int ns_loop_destroy(ns_loop_t *loop);
 
 /**
  * @brief 运行事件循环。
@@ -90,7 +90,7 @@ int ns_loop_destroy(ns_loop_t *loop);
  * @param loop 要运行的 loop 句柄。
  * @return `NS_OK` 表示正常退出，失败时返回负数状态码。
  */
-int ns_loop_run(ns_loop_t *loop);
+extern int ns_loop_run(ns_loop_t *loop);
 
 /**
  * @brief 请求事件循环退出。
@@ -101,7 +101,7 @@ int ns_loop_run(ns_loop_t *loop);
  * @param loop 目标 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_loop_quit(ns_loop_t *loop);
+extern int ns_loop_quit(ns_loop_t *loop);
 
 /**
  * @brief 获取当前线程绑定的事件循环。
@@ -111,7 +111,7 @@ int ns_loop_quit(ns_loop_t *loop);
  * @param out_loop 输出当前线程绑定的 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_loop_current(ns_loop_t **out_loop);
+extern int ns_loop_current(ns_loop_t **out_loop);
 
 /**
  * @brief 检查调用线程是否为指定 loop 的拥有者线程。
@@ -120,7 +120,7 @@ int ns_loop_current(ns_loop_t **out_loop);
  * @param out_is_owner 输出参数；非零表示调用线程是拥有者。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_loop_is_owner(const ns_loop_t *loop, int *out_is_owner);
+extern int ns_loop_is_owner(const ns_loop_t *loop, int *out_is_owner);
 
 #ifdef __cplusplus
 }

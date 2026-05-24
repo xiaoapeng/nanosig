@@ -45,7 +45,7 @@ typedef struct ns_hashtable {
 /**
  * @brief 计算字符串哈希值。
  */
-uint32_t ns_hash_string(const char *key);
+extern uint32_t ns_hash_string(const char *key);
 
 /**
  * @brief 初始化哈希表。
@@ -55,7 +55,7 @@ uint32_t ns_hash_string(const char *key);
  * @param bucket_count bucket 数量，必须大于 0。
  * @return `NS_OK` 表示成功，失败返回负数状态码。
  */
-int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t bucket_count);
+extern int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t bucket_count);
 
 /**
  * @brief 初始化哈希表节点。
@@ -64,35 +64,35 @@ int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t bucket_
  * @param key 字符串键；调用方负责保证其生命周期。
  * @param value 用户值指针。
  */
-void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, void *value);
+extern void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, void *value);
 
 /**
  * @brief 插入节点。
  *
  * 相同 key 已存在时返回 `NS_E_EXISTS`。
  */
-int ns_hashtable_insert(ns_hashtable_t *table, ns_hashtable_node_t *node);
+extern int ns_hashtable_insert(ns_hashtable_t *table, ns_hashtable_node_t *node);
 
 /**
  * @brief 查找指定 key 的节点。
  *
  * @return 找到时返回节点，未找到返回 `NULL`。
  */
-ns_hashtable_node_t *ns_hashtable_find(const ns_hashtable_t *table, const char *key);
+extern ns_hashtable_node_t *ns_hashtable_find(const ns_hashtable_t *table, const char *key);
 
 /**
  * @brief 移除指定 key 的节点。
  *
  * @return 找到时返回被移除节点，未找到返回 `NULL`。
  */
-ns_hashtable_node_t *ns_hashtable_remove(ns_hashtable_t *table, const char *key);
+extern ns_hashtable_node_t *ns_hashtable_remove(ns_hashtable_t *table, const char *key);
 
 /**
  * @brief 清空哈希表。
  *
  * 本函数只脱链节点，不释放用户对象。
  */
-void ns_hashtable_clear(ns_hashtable_t *table);
+extern void ns_hashtable_clear(ns_hashtable_t *table);
 
 #ifdef __cplusplus
 }

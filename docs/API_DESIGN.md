@@ -39,6 +39,14 @@ The C11 atomic wrapper is public as `include/nanosig/nanosig_atomic.h`. It keeps
 the `ns_memory_order_t` names and `ns_atomic_*` operation wrappers available to
 users that build lock-free or low-level structures next to nanosig.
 
+## Type Helpers
+
+Common eventhub-style compiler and type helper macros are exposed with nanosig
+names in `include/nanosig/nanosig_types.h`. This includes container lookup,
+array sizing, static assertions, alignment helpers, branch hints, selected
+compiler attributes, and bit-scan helpers. The public surface does not preserve
+`eh_*` names.
+
 ## Public Data Structures
 
 P2 exposes the generic data structures under `include/nanosig/` so applications
@@ -50,11 +58,20 @@ can embed and use them directly:
 - `nanosig_hashtable.h`
 - `nanosig_rbtree.h`
 - `nanosig_ds.h`
+- `nanosig_types.h`
+
+Public-header declaration rule:
+
+- helpers that are intended to stay header-only use `static inline`;
+- all other public function declarations in `include/nanosig/*.h` must be
+  written with an explicit `extern`;
+- implementation-backed public data-structure `.c` files live under `src/ds/`.
 
 The implementation-backed structures live in `src/ds/`. Their fields are
 visible for C embedding and static storage, but callers should use the public
 functions/macros instead of mutating links, cursors, or tree internals directly.
-The fixed-capacity MPSC queue remains P3 and is not public yet.
+The fixed-capacity MPSC queue is public and follows the same split:
+`include/nanosig/nanosig_mpsc.h` plus `src/ds/ns_mpsc.c`.
 
 ## Thread-Bound Loops
 

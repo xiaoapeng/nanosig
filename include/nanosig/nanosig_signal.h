@@ -13,6 +13,7 @@
 
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -96,8 +97,8 @@ typedef void (*ns_slot_fn)(void *user_data, const void *payload);
         const ns_no_payload_t *: 0u, \
         default: sizeof(*(payload_ptr))))
 
-_Static_assert(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u, "ns_no_payload_t payload size must be 0");
-_Static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD payload size must be 0");
+NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u, "ns_no_payload_t payload size must be 0");
+NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD payload size must be 0");
 #else
 #define NS_SIGNAL_PAYLOAD_SIZE(payload_type) ((size_t)sizeof(payload_type))
 #define NS_SIGNAL_PAYLOAD_PTR_SIZE(payload_ptr) ((size_t)sizeof(*(payload_ptr)))
@@ -238,7 +239,7 @@ _Static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD p
  * @param debug_name 调试名称；库只保存指针，不接管字符串所有权。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_capacity, const char *debug_name);
+extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_capacity, const char *debug_name);
 
 /**
  * @brief 连接 signal、slot 和目标 loop。
@@ -253,7 +254,7 @@ int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_cap
  * @param out_connection 输出连接句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_signal_connect(
+extern int ns_signal_connect(
     ns_signal_t *signal,
     ns_slot_fn slot_fn,
     ns_loop_t *target_loop,
@@ -269,7 +270,7 @@ int ns_signal_connect(
  * @param connection 要断开的连接句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_signal_disconnect(ns_connection_t *connection);
+extern int ns_signal_disconnect(ns_connection_t *connection);
 
 /**
  * @brief 断开某个 signal 上的所有连接。
@@ -281,7 +282,7 @@ int ns_signal_disconnect(ns_connection_t *connection);
  * @param signal 要断开所有连接的 signal。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_signal_disconnect_all(ns_signal_t *signal);
+extern int ns_signal_disconnect_all(ns_signal_t *signal);
 
 /**
  * @brief 以原始 payload 指针触发 signal。
@@ -295,7 +296,7 @@ int ns_signal_disconnect_all(ns_signal_t *signal);
  * @param payload_size payload 字节数。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_size);
+extern int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_size);
 
 #ifdef __cplusplus
 }

@@ -9,8 +9,9 @@
 #ifndef NANOSIG_H
 #define NANOSIG_H
 
-#include <nanosig/nanosig_safety.h>
 #include <nanosig/nanosig_status.h>
+#include <nanosig/nanosig_types.h>
+#include <nanosig/nanosig_safety.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,7 +29,7 @@ extern "C" {
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_init(void);
+extern int ns_init(void);
 
 /**
  * @brief 关闭 nanosig 全局状态。
@@ -38,7 +39,7 @@ int ns_init(void);
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_shutdown(void);
+extern int ns_shutdown(void);
 
 /**
  * @brief 查询 nanosig 当前是否已经初始化。
@@ -46,7 +47,7 @@ int ns_shutdown(void);
  * @param out_initialized 输出参数；非零表示已初始化，零表示未初始化。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_is_initialized(int *out_initialized);
+extern int ns_is_initialized(int *out_initialized);
 
 #ifdef __cplusplus
 }
@@ -55,6 +56,7 @@ int ns_is_initialized(int *out_initialized);
 #include <nanosig/nanosig_atomic.h>
 #include <nanosig/nanosig_ds.h>
 #include <nanosig/nanosig_loop.h>
+#include <nanosig/nanosig_mpsc.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_timer.h>
 

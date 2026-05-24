@@ -15,6 +15,7 @@
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,9 +62,7 @@ typedef struct ns_timer {
     void *impl;
 } ns_timer_t;
 
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
-_Static_assert(offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must be the first member");
-#endif
+NS_STATIC_ASSERT(ns_offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must be the first member");
 
 /**
  * @brief 生成静态 timer 初始化器。
@@ -92,7 +91,7 @@ _Static_assert(offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must be th
  * @param attr `NS_TIMER_ATTR_*` 位图。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
+extern int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
 
 /**
  * @brief 启动 timer。
@@ -103,7 +102,7 @@ int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
  * @param timer 要启动的 timer 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_timer_start(ns_timer_t *timer);
+extern int ns_timer_start(ns_timer_t *timer);
 
 /**
  * @brief 取消 timer。
@@ -114,7 +113,7 @@ int ns_timer_start(ns_timer_t *timer);
  * @param timer 要取消的 timer 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_timer_cancel(ns_timer_t *timer);
+extern int ns_timer_cancel(ns_timer_t *timer);
 
 /**
  * @brief 重启 timer。
@@ -125,7 +124,7 @@ int ns_timer_cancel(ns_timer_t *timer);
  * @param timer 要重启的 timer 对象。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_timer_restart(ns_timer_t *timer);
+extern int ns_timer_restart(ns_timer_t *timer);
 
 /**
  * @brief 销毁 timer。
@@ -137,7 +136,7 @@ int ns_timer_restart(ns_timer_t *timer);
  * @param timer 要销毁的 timer 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-int ns_timer_destroy(ns_timer_t *timer);
+extern int ns_timer_destroy(ns_timer_t *timer);
 
 #ifdef __cplusplus
 }

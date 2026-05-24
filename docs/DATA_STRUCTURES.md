@@ -1,6 +1,8 @@
 # nanosig Data Structure Design Draft
 
 Status: P2 public data structures are implemented and covered by unit tests.
+P3 internal fixed-capacity MPSC queue is implemented for later loop runtime
+integration.
 
 ## Publicly Visible Shapes
 
@@ -32,6 +34,8 @@ header surface and may be used by applications embedding nanosig.
 `nanosig_ds.h` includes `nanosig_status.h`, so status constants such as
 `NS_OK` and `NS_E_INVAL` are available when users include the data-structure
 aggregate directly.
+`nanosig_types.h` carries shared type/compiler helper macros such as
+`NS_CONTAINER_OF`, `NS_ARRAY_SIZE`, `NS_STATIC_ASSERT`, and alignment helpers.
 
 The structure fields are visible so callers can embed nodes and provide static
 or caller-owned storage. Apart from documented initialization fields such as
@@ -39,7 +43,12 @@ ring buffer storage and hashtable buckets, users should mutate these structures
 through the public functions/macros rather than editing links, cursors, hashes,
 or tree internals directly.
 
-The fixed-capacity Vyukov-style MPSC queue remains P3 and is not public yet.
+The fixed-capacity Vyukov-style MPSC queue is internal and not public. Its
+header lives in `include/nanosig/internal/ns_mpsc.h`, implementation lives in
+`src/internal/ns_mpsc.c`, and memory ordering is documented in
+`docs/MPSC_MEMORY_ORDER.md`. The internal queue capacity must be a power of two;
+future public loop configuration can either reject or round user-provided
+capacities when P4 wires the queue into `ns_loop_t`.
 
 Each P2 structure has a plain-C unit test under `test/unit/`:
 
@@ -50,6 +59,11 @@ Each P2 structure has a plain-C unit test under `test/unit/`:
 - `test_ds_rbtree.c`
 - `test_data_structures_contract_compile.c`
 
+P3 and shared header compile coverage add:
+
+- `test_mpsc.c`
+- `test_types_contract_compile.c`
+
 The runtime tests cover normal operations plus representative invalid-argument
 and zero-initialized object boundaries for the implementation-backed
 structures.
@@ -58,7 +72,7 @@ structures.
 
 Each loop owns:
 
-- fixed-capacity MPSC queue
+- fixed-capacity MPSC queue backed by `src/internal/ns_mpsc.c`
 - platform wakeup handle
 - registration node in the internal loop manager
 - current-thread ownership enforced through the loop manager TLS binding

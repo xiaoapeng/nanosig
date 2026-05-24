@@ -9,7 +9,7 @@
 #ifndef NANOSIG_RBTREE_H
 #define NANOSIG_RBTREE_H
 
-#include <nanosig/nanosig_util.h>
+#include <nanosig/nanosig_types.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -48,57 +48,57 @@ typedef struct ns_rbtree {
 /**
  * @brief 初始化红黑树根。
  */
-void ns_rbtree_init(ns_rbtree_t *tree);
+extern void ns_rbtree_init(ns_rbtree_t *tree);
 
 /**
  * @brief 初始化红黑树节点。
  */
-void ns_rbtree_node_init(ns_rbtree_node_t *node, uint64_t key);
+extern void ns_rbtree_node_init(ns_rbtree_node_t *node, uint64_t key);
 
 /**
  * @brief 判断红黑树是否为空。
  */
-int ns_rbtree_empty(const ns_rbtree_t *tree);
+extern int ns_rbtree_empty(const ns_rbtree_t *tree);
 
 /**
  * @brief 判断节点是否已经链接到某棵红黑树。
  */
-int ns_rbtree_node_is_linked(const ns_rbtree_node_t *node);
+extern int ns_rbtree_node_is_linked(const ns_rbtree_node_t *node);
 
 /**
  * @brief 插入节点。
  */
-void ns_rbtree_insert(ns_rbtree_t *tree, ns_rbtree_node_t *node);
+extern void ns_rbtree_insert(ns_rbtree_t *tree, ns_rbtree_node_t *node);
 
 /**
  * @brief 移除节点。
  */
-void ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node);
+extern void ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node);
 
 /**
  * @brief 返回 key 最小的节点。
  */
-ns_rbtree_node_t *ns_rbtree_first(const ns_rbtree_t *tree);
+extern ns_rbtree_node_t *ns_rbtree_first(const ns_rbtree_t *tree);
 
 /**
  * @brief 返回 key 最大的节点。
  */
-ns_rbtree_node_t *ns_rbtree_last(const ns_rbtree_t *tree);
+extern ns_rbtree_node_t *ns_rbtree_last(const ns_rbtree_t *tree);
 
 /**
  * @brief 返回中序遍历的下一个节点。
  */
-ns_rbtree_node_t *ns_rbtree_next(const ns_rbtree_node_t *node);
+extern ns_rbtree_node_t *ns_rbtree_next(const ns_rbtree_node_t *node);
 
 /**
  * @brief 返回中序遍历的上一个节点。
  */
-ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node);
+extern ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node);
 
 /**
  * @brief 查找指定 key 的最左匹配节点。
  */
-ns_rbtree_node_t *ns_rbtree_find_first(const ns_rbtree_t *tree, uint64_t key);
+extern ns_rbtree_node_t *ns_rbtree_find_first(const ns_rbtree_t *tree, uint64_t key);
 
 /**
  * @brief 从红黑树节点反查外层结构体指针。

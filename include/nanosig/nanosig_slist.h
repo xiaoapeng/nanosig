@@ -9,7 +9,7 @@
 #ifndef NANOSIG_SLIST_H
 #define NANOSIG_SLIST_H
 
-#include <nanosig/nanosig_util.h>
+#include <nanosig/nanosig_types.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -10,11 +10,12 @@
 #define NANOSIG_DS_H
 
 #include <nanosig/nanosig_status.h>
+#include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_hashtable.h>
 #include <nanosig/nanosig_list.h>
+#include <nanosig/nanosig_mpsc.h>
 #include <nanosig/nanosig_rbtree.h>
 #include <nanosig/nanosig_ringbuf.h>
 #include <nanosig/nanosig_slist.h>
-#include <nanosig/nanosig_util.h>
 
 #endif /* NANOSIG_DS_H */

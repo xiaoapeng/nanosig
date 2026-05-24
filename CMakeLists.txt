@@ -25,6 +25,7 @@ set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_hashtable.h
     include/nanosig/nanosig_list.h
     include/nanosig/nanosig_loop.h
+    include/nanosig/nanosig_mpsc.h
     include/nanosig/nanosig_rbtree.h
     include/nanosig/nanosig_ringbuf.h
     include/nanosig/nanosig_safety.h
@@ -32,7 +33,7 @@ set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_slist.h
     include/nanosig/nanosig_status.h
     include/nanosig/nanosig_timer.h
-    include/nanosig/nanosig_util.h
+    include/nanosig/nanosig_types.h
 )
 
 set(NANOSIG_INTERNAL_HEADERS
@@ -41,6 +42,7 @@ set(NANOSIG_INTERNAL_HEADERS
 
 set(NANOSIG_DS_SOURCES
     src/ds/ns_hashtable.c
+    src/ds/ns_mpsc.c
     src/ds/ns_rbtree.c
     src/ds/ns_ringbuf.c
 )
@@ -103,6 +105,8 @@ endfunction()
 
 if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
+    nanosig_add_unit_test(nanosig_test_mpsc test/unit/test_mpsc.c)
+    set_tests_properties(nanosig_test_mpsc PROPERTIES TIMEOUT 420)
     nanosig_add_unit_test(nanosig_test_ds_list test/unit/test_ds_list.c)
     nanosig_add_unit_test(nanosig_test_ds_slist test/unit/test_ds_slist.c)
     nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
@@ -129,12 +133,17 @@ if(NANOSIG_BUILD_API_CHECKS)
         test/unit/test_data_structures_contract_compile.c
     )
 
+    nanosig_add_api_compile_check(nanosig_api_check_types
+        test/unit/test_types_contract_compile.c
+    )
+
     add_custom_target(api-compile-checks
         DEPENDS
             nanosig_api_check_demos
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
             nanosig_api_check_data_structures
+            nanosig_api_check_types
     )
 endif()
 

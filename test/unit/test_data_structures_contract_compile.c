@@ -56,6 +56,22 @@ static void ds_contract_use_ringbuf(void)
     (void)ns_ringbuf_read(&ringbuf, out, sizeof(out));
 }
 
+static void ds_contract_use_mpsc(void)
+{
+    ns_mpsc_t queue;
+    ns_mpsc_slot_t slots[NS_CAPACITY_4];
+    uint32_t storage[NS_CAPACITY_4];
+    uint32_t item = 7u;
+    uint32_t out = 0u;
+    int popped = 0;
+
+    if(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_4, sizeof(storage[0])) != NS_OK) return;
+    (void)ns_mpsc_capacity(&queue);
+    (void)ns_mpsc_free_capacity(&queue);
+    (void)ns_mpsc_try_push(&queue, &item);
+    (void)ns_mpsc_try_pop(&queue, &out, &popped);
+}
+
 static void ds_contract_use_hashtable(void)
 {
     ns_slist_t buckets[4];
@@ -88,6 +104,7 @@ int main(void)
     ds_contract_use_list();
     ds_contract_use_slist();
     ds_contract_use_ringbuf();
+    ds_contract_use_mpsc();
     ds_contract_use_hashtable();
     ds_contract_use_rbtree();
     return 0;
