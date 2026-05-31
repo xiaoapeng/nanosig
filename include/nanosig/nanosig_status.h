@@ -22,7 +22,9 @@ typedef enum ns_status {
     NS_E_TOO_MANY_HANDLES = -4,
     NS_E_SHUTDOWN = -5,
     NS_E_EXISTS = -6,
-    NS_E_NO_LOOP = -7
+    NS_E_NO_LOOP = -7,
+    NS_E_EMPTY = -8,
+    NS_E_CORRUPT = -9
 } ns_status_t;
 
 #endif /* NANOSIG_STATUS_H */

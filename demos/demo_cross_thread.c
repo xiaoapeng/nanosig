@@ -9,8 +9,8 @@ NS_SIGNAL_DEFINE(work_ready, work_payload_t);
 NS_SIGNAL_DEFINE(consumer_wakeup, ns_no_payload_t);
 
 static ns_loop_t *consumer_loop = NULL;
-static ns_connection_t *connection = NULL;
-static ns_connection_t *wakeup_connection = NULL;
+static ns_connection_t connection;
+static ns_connection_t wakeup_connection;
 static unsigned last_sequence = 0u;
 static unsigned wakeup_count = 0u;
 
@@ -48,15 +48,13 @@ static int consumer_thread_main(void)
         goto out_connection;
     }
 
-    rc = ns_loop_run(consumer_loop);
+    rc = ns_loop_run();
 
-    (void)ns_signal_disconnect(wakeup_connection);
-    wakeup_connection = NULL;
+    (void)ns_signal_disconnect(&wakeup_connection);
 out_connection:
-    (void)ns_signal_disconnect(connection);
-    connection = NULL;
+    (void)ns_signal_disconnect(&connection);
 out_loop:
-    (void)ns_loop_destroy(consumer_loop);
+    (void)ns_loop_destroy();
     consumer_loop = NULL;
     return rc;
 }

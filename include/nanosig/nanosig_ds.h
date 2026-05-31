@@ -14,6 +14,7 @@
 #include <nanosig/nanosig_hashtable.h>
 #include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_mpsc.h>
+#include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/nanosig_rbtree.h>
 #include <nanosig/nanosig_ringbuf.h>
 #include <nanosig/nanosig_slist.h>

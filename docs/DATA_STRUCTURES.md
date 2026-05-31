@@ -1,8 +1,9 @@
 # nanosig Data Structure Design Draft
 
 Status: P2 public data structures are implemented and covered by unit tests.
-P3 fixed-capacity MPSC queue is implemented, publicly exposed, and reused by
-later loop runtime integration.
+P3 variable-size MPSC record ring is implemented, publicly exposed, and
+reused by the loop runtime. P4 loop management and P5 signal/slot runtime
+are implemented and tested.
 
 ## Publicly Visible Shapes
 
@@ -28,6 +29,7 @@ The following generic structures are public and available to users through
 - string-key hashtable: `include/nanosig/nanosig_hashtable.h` / `src/ds/ns_hashtable.c`
 - rbtree keyed by `uint64_t`: `include/nanosig/nanosig_rbtree.h` / `src/ds/ns_rbtree.c`
 - fixed-capacity MPSC queue: `include/nanosig/nanosig_mpsc.h` / `src/ds/ns_mpsc.c`
+- variable-size MPSC record ring: `include/nanosig/nanosig_mpsc_record_ring.h` / `src/ds/ns_mpsc_record_ring.c`
 - aggregate include: `include/nanosig/nanosig_ds.h`
 
 These APIs are not hidden behind `src/internal/`; they are part of the public
@@ -63,7 +65,13 @@ Each P2 structure has a plain-C unit test under `test/unit/`:
 P3 and shared header compile coverage add:
 
 - `test_mpsc.c`
+- `test_mpsc_record_ring.c`
 - `test_types_contract_compile.c`
+
+P4/P5 runtime tests add:
+
+- `test_loop.c`
+- `test_signal.c`
 
 The runtime tests cover normal operations plus representative invalid-argument
 and zero-initialized object boundaries for the implementation-backed
@@ -73,7 +81,7 @@ structures.
 
 Each loop owns:
 
-- fixed-capacity MPSC queue backed by `src/ds/ns_mpsc.c`
+- variable-size MPSC record ring backed by `src/ds/ns_mpsc_record_ring.c`
 - platform wakeup handle
 - registration node in the internal loop manager
 - current-thread ownership enforced through the loop manager TLS binding
@@ -103,16 +111,22 @@ Each signal owns:
 - `payload_size == 0` when the public payload type is `ns_no_payload_t`
 - no-payload signals enqueue 0 payload bytes; `ns_no_payload_t` is a type
   marker for slot signatures, not a copied payload object
-- slot list
+- `slot_list` (intrusive doubly-linked list head, directly embedded in `ns_signal_t`)
 - optional slot capacity hint
 - debug name
 
+Connections are caller-owned (`ns_connection_t` defined in the public header).
+Callers pass a pointer to their own `ns_connection_t` storage to
+`ns_signal_connect`; the library does not allocate or free connection objects.
+
 Signals do not have a public deinit step. Signal metadata is initialized
 statically with `NS_SIGNAL_DEFINE` / `NS_SIGNAL_INITIALIZER` or dynamically with
-`ns_signal_init`; connection-owned nodes are released by `ns_signal_disconnect`
-or the teardown escape hatch `ns_signal_disconnect_all`.
+`ns_signal_init_raw`; `ns_signal_disconnect` removes the connection from the
+signal's slot list, and the teardown escape hatch `ns_signal_disconnect_all`
+removes all connections. Neither function frees memory; callers own
+`ns_connection_t` storage.
 
-Each connection owns:
+Each connection (`ns_connection_t`, caller-owned) contains:
 
 - signal pointer
 - target loop pointer
@@ -142,6 +156,7 @@ Each timer owns:
 
 ## Allocation Boundary
 
-Allocation is allowed during `ns_loop_create`, `ns_signal_connect`, and
-`ns_timer_create`. Allocation is not allowed during `ns_signal_emit_raw` or
-the future typed `ns_signal_emit` wrapper.
+Allocation is allowed during `ns_loop_create`, `ns_signal_init_raw`, and
+`ns_timer_create`. `ns_signal_connect` does not allocate; callers own
+`ns_connection_t` storage. Allocation is not allowed during
+`ns_signal_emit_raw` or the future typed `ns_signal_emit` wrapper.

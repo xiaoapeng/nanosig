@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 
+#include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_safety.h>
 #include <nanosig/nanosig_types.h>
@@ -23,7 +24,7 @@ extern "C" {
  * @brief 可静态定义的 signal 对象。
  *
  * `payload_size` 固定每次 emit 复制的字节数；0 表示该 signal 无 payload。
- * `impl` 为实现层私有状态，调用方不得直接读写。
+ * `slot_list` 是 signal 拥有的连接链表头，调用方不得直接修改。
  */
 typedef struct ns_signal {
     /** 每次 emit 复制的 payload 字节数；无 payload signal 为 0。 */
@@ -32,14 +33,38 @@ typedef struct ns_signal {
     size_t slot_capacity;
     /** 调试名称；库只保存指针，不接管字符串所有权。 */
     const char *debug_name;
-    /** 实现层私有指针，调用方不得直接访问。 */
-    void *impl;
+    /** slot 连接链表头，调用方不得直接修改。 */
+    ns_list_node_t slot_list;
 } ns_signal_t;
 
 /**
- * @brief signal 与 slot 之间连接关系的不透明句柄。
+ * @brief 通用 slot 函数签名。
+ *
+ * @param user_data 连接时传入的调用方数据，nanosig 不接管其所有权。
+ * @param payload 指向 signal 固定大小 payload 的只读副本；无 payload signal
+ *        调用时为 `NULL`。
  */
-typedef struct ns_connection ns_connection_t;
+typedef void (*ns_slot_fn)(void *user_data, const void *payload);
+
+/**
+ * @brief signal 与 slot 之间的连接关系。
+ *
+ * 调用方拥有该结构体的存储（栈变量、堆分配或嵌入用户结构体均可），
+ * 并将其指针传给 `ns_signal_connect`。在连接存活期间，调用方必须保证
+ * 该结构体的生命周期长于任何 emit 操作。
+ */
+typedef struct ns_connection {
+    /** 连接所属的 signal（内部使用，调用方不应修改）。 */
+    ns_signal_t *signal;
+    /** slot 回调函数（内部使用，调用方不应修改）。 */
+    ns_slot_fn slot_fn;
+    /** 传给 slot 的调用方数据（内部使用，调用方不应修改）。 */
+    void *user_data;
+    /** 目标 loop（内部使用，调用方不应修改）。 */
+    ns_loop_t *target_loop;
+    /** signal 的 slot 链表节点（内部使用，调用方不应修改）。 */
+    ns_list_node_t signal_node;
+} ns_connection_t;
 
 /**
  * @brief 无 payload signal 使用的公开标记类型。
@@ -61,15 +86,6 @@ typedef struct ns_no_payload {
  * @brief `ns_signal_emit` 触发无 payload signal 时使用的 payload 指针常量。
  */
 #define NS_NO_PAYLOAD ((const ns_no_payload_t *)NULL)
-
-/**
- * @brief 通用 slot 函数签名。
- *
- * @param user_data 连接时传入的调用方数据，nanosig 不接管其所有权。
- * @param payload 指向 signal 固定大小 payload 的只读副本；无 payload signal
- *        调用时为 `NULL`。
- */
-typedef void (*ns_slot_fn)(void *user_data, const void *payload);
 
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 /**
@@ -120,7 +136,7 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
         .payload_size = NS_SIGNAL_PAYLOAD_SIZE(payload_type), \
         .slot_capacity = 0u, \
         .debug_name = #payload_type, \
-        .impl = NULL \
+        .slot_list = { NULL, NULL } \
     }
 
 /**
@@ -174,12 +190,12 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
  * @param slot_fn slot 函数。
  * @param payload_type signal 的 payload 类型。
  * @param user_data 传给 slot 的调用方数据，nanosig 不接管其所有权。
- * @param out_connection 输出连接句柄。
+ * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-#define ns_signal_connect_typed(signal_name, slot_fn, payload_type, user_data, out_connection) \
+#define ns_signal_connect_typed(signal_name, slot_fn, payload_type, user_data, connection) \
     (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
-     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), NULL, (user_data), (out_connection)))
+     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), NULL, (user_data), (connection)))
 
 /**
  * @brief 连接 signal 与带类型检查的 slot，并显式指定目标 loop。
@@ -190,12 +206,12 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
  *        `ns_no_payload_t`。
  * @param target_loop slot 回调所属的目标 loop。
  * @param user_data 传给 slot 的调用方数据，nanosig 不接管其所有权。
- * @param out_connection 输出连接句柄。
+ * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-#define ns_signal_connect_typed_to(signal_name, slot_fn, payload_type, target_loop, user_data, out_connection) \
+#define ns_signal_connect_typed_to(signal_name, slot_fn, payload_type, target_loop, user_data, connection) \
     (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
-     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), (target_loop), (user_data), (out_connection)))
+     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), (target_loop), (user_data), (connection)))
 
 /**
  * @brief 触发 signal。
@@ -247,11 +263,14 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  * `target_loop` 为 `NULL` 时使用当前线程绑定的 loop；当前线程没有 loop 时返回
  * `NS_E_NO_LOOP`。非 `NULL` 时使用调用方显式提供的目标 loop。
  *
+ * 调用方拥有 `connection` 的存储，连接存活期间必须保证其生命周期长于任何
+ * emit 操作。断开连接后可安全释放 `connection`。
+ *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。
  * @param target_loop 目标 loop；为 `NULL` 时使用当前线程 loop。
  * @param user_data 传给 slot 的调用方数据。
- * @param out_connection 输出连接句柄。
+ * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 extern int ns_signal_connect(
@@ -259,7 +278,7 @@ extern int ns_signal_connect(
     ns_slot_fn slot_fn,
     ns_loop_t *target_loop,
     void *user_data,
-    ns_connection_t **out_connection);
+    ns_connection_t *connection);
 
 /**
  * @brief 断开连接。

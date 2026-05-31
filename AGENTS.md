@@ -3,7 +3,7 @@
 # nanosig
 
 ## Purpose
-nanosig is a new C11 signal/slot library being built with thread-owned event loops, fixed-capacity MPSC cross-thread emit, a global timer service, and Linux/Windows platform backends. The repository is currently in P0/PD: build scaffolding, public API drafts, API-review demos, and implementation plans exist; core `.c` implementation phases are still pending.
+nanosig is a new C11 signal/slot library being built with thread-owned event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, and Linux/Windows platform backends. The repository has completed P0-P5: scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, and signal/slot runtime are implemented and tested.
 
 ## Key Files
 | File | Description |
@@ -55,7 +55,7 @@ nanosig is a new C11 signal/slot library being built with thread-owned event loo
 - Configuration examples use C designated initializers.
 - Examples that acquire more than one nanosig resource must show kernel-style `goto` cleanup labels and release every successfully initialized resource on all failure paths.
 - `ns_no_payload_t` is only a compile-time marker for typed no-payload slots; no-payload emit must pass `NS_NO_PAYLOAD` and copy 0 bytes.
-- `ns_signal_t` may be embedded in user structs; initialize members with `NS_SIGNAL_INITIALIZER(payload_type)` or `ns_signal_init(signal, payload_type)`. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT` or `ns_signal_config_t`. There is no `ns_signal_deinit`; connection resources are released by `ns_signal_disconnect`, with `ns_signal_disconnect_all` reserved for teardown escape hatches.
+- `ns_signal_t` may be embedded in user structs; initialize members with `NS_SIGNAL_INITIALIZER(payload_type)` or `ns_signal_init(signal, payload_type)`. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT` or `ns_signal_config_t`. There is no `ns_signal_deinit`; `ns_signal_disconnect` removes the connection from the signal's slot list, with `ns_signal_disconnect_all` reserved for teardown escape hatches. Neither function frees memory; callers own `ns_connection_t` storage.
 - `ns_timer_t` uses caller-owned storage, has `ns_signal_t signal` as its first field, only emits no-payload events, uses `uint64_t` microsecond intervals, and uses `NS_TIMER_ATTR_*` bitmaps for repeat/reload behavior.
 - Platform-specific code belongs under `platform/`; code outside `platform/` should not contain OS preprocessor branches.
 

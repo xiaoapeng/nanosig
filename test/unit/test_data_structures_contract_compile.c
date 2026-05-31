@@ -63,13 +63,34 @@ static void ds_contract_use_mpsc(void)
     uint32_t storage[NS_CAPACITY_4];
     uint32_t item = 7u;
     uint32_t out = 0u;
-    int popped = 0;
 
     if(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_4, sizeof(storage[0])) != NS_OK) return;
     (void)ns_mpsc_capacity(&queue);
     (void)ns_mpsc_free_capacity(&queue);
     (void)ns_mpsc_try_push(&queue, &item);
-    (void)ns_mpsc_try_pop(&queue, &out, &popped);
+    (void)ns_mpsc_try_pop(&queue, &out);
+}
+
+static void ds_contract_use_mpsc_record_ring(void)
+{
+    ns_mpsc_record_ring_t ring;
+    size_t record_size = 0u;
+    uint8_t storage[NS_CAPACITY_128];
+    uint8_t out[8];
+    ns_mpsc_record_part_t parts[2];
+
+    parts[0].data = "ab";
+    parts[0].size = 2u;
+    parts[1].data = "cd";
+    parts[1].size = 2u;
+
+    if(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) != NS_OK) return;
+    (void)ns_mpsc_record_ring_capacity(&ring);
+    (void)ns_mpsc_record_ring_free_capacity(&ring);
+    (void)ns_mpsc_record_ring_max_record_size(&ring);
+    (void)ns_mpsc_record_ring_try_push(&ring, parts[0].data, parts[0].size);
+    (void)ns_mpsc_record_ring_try_pushv(&ring, parts, NS_ARRAY_SIZE(parts));
+    (void)ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size);
 }
 
 static void ds_contract_use_hashtable(void)
@@ -105,6 +126,7 @@ int main(void)
     ds_contract_use_slist();
     ds_contract_use_ringbuf();
     ds_contract_use_mpsc();
+    ds_contract_use_mpsc_record_ring();
     ds_contract_use_hashtable();
     ds_contract_use_rbtree();
     return 0;

@@ -134,15 +134,12 @@ int ns_mpsc_try_push(ns_mpsc_queue_t *queue, const void *item)
     return NS_OK;
 }
 
-int ns_mpsc_try_pop(ns_mpsc_queue_t *queue, void *out_item, int *out_popped)
+int ns_mpsc_try_pop(ns_mpsc_queue_t *queue, void *out_item)
 {
     size_t pos;
     size_t index;
     ns_mpsc_slot_t *slot;
     size_t seq;
-
-    if(out_popped == NULL) return NS_E_INVAL;
-    *out_popped = 0;
 
     if(!ns_mpsc_is_valid(queue) || (out_item == NULL)) return NS_E_INVAL;
 
@@ -151,11 +148,10 @@ int ns_mpsc_try_pop(ns_mpsc_queue_t *queue, void *out_item, int *out_popped)
     slot = &queue->slots[index];
     seq = ns_atomic_load_explicit(&slot->sequence, ns_memory_order_acquire);
 
-    if(seq != (pos + 1u)) return NS_OK;
+    if(seq != (pos + 1u)) return NS_E_EMPTY;
 
     memcpy(out_item, ns_mpsc_item_storage(queue, index), queue->item_size);
     ns_atomic_store_explicit(&queue->dequeue_pos, pos + 1u, ns_memory_order_relaxed);
     ns_atomic_store_explicit(&slot->sequence, pos + queue->mark + 1u, ns_memory_order_release);
-    *out_popped = 1;
     return NS_OK;
 }

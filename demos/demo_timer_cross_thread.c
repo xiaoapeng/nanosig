@@ -26,7 +26,7 @@ int main(void)
 
     unsigned seen = 0u;
     ns_timer_t timer;
-    ns_connection_t *connection = NULL;
+    ns_connection_t connection;
 
     rc = ns_timer_create(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
     if(rc != NS_OK) {
@@ -43,15 +43,15 @@ int main(void)
         goto out_connection;
     }
 
-    rc = ns_loop_run(target_loop);
+    rc = ns_loop_run();
 
 out_connection:
     (void)ns_timer_cancel(&timer);
-    (void)ns_signal_disconnect(connection);
+    (void)ns_signal_disconnect(&connection);
 out_timer:
     (void)ns_timer_destroy(&timer);
 out_loop:
-    (void)ns_loop_destroy(target_loop);
+    (void)ns_loop_destroy();
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

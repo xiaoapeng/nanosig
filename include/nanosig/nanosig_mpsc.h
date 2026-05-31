@@ -99,12 +99,14 @@ extern int ns_mpsc_try_push(ns_mpsc_t *queue, const void *item);
  *
  * 对同一个队列，严格只允许一个消费者线程调用该函数。
  *
- * @param queue 已初始化的队列。
+ * @param queue    已初始化的队列。
  * @param out_item 当存在可读元素时，用于接收一个元素的输出缓冲区。
- * @param out_popped 输出标记；弹出成功时写为 `1`，队列为空时写为 `0`。
- * @return 成功或队列为空都返回 `NS_OK`；参数无效时返回 `NS_E_INVAL`。
+ *
+ * @retval NS_OK      成功弹出一个元素。
+ * @retval NS_E_EMPTY 队列为空。
+ * @retval NS_E_INVAL 参数无效。
  */
-extern int ns_mpsc_try_pop(ns_mpsc_t *queue, void *out_item, int *out_popped);
+extern int ns_mpsc_try_pop(ns_mpsc_t *queue, void *out_item);
 
 #ifdef __cplusplus
 }

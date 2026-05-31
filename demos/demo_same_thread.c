@@ -39,14 +39,14 @@ int main(void)
     }
 
     int last_value = 0;
-    ns_connection_t *connection = NULL;
+    ns_connection_t connection;
     rc = ns_signal_connect_typed(sample_ready, on_sample, sample_payload_t, &last_value, &connection);
     if(rc != NS_OK) {
         goto out_loop;
     }
 
     int shutdown_seen = 0;
-    ns_connection_t *shutdown_connection = NULL;
+    ns_connection_t shutdown_connection;
     rc = ns_signal_connect_typed(shutdown_requested, on_shutdown, ns_no_payload_t, &shutdown_seen, &shutdown_connection);
     if(rc != NS_OK) {
         goto out_connection;
@@ -67,11 +67,11 @@ int main(void)
     }
 
 out_shutdown_connection:
-    (void)ns_signal_disconnect(shutdown_connection);
+    (void)ns_signal_disconnect(&shutdown_connection);
 out_connection:
-    (void)ns_signal_disconnect(connection);
+    (void)ns_signal_disconnect(&connection);
 out_loop:
-    (void)ns_loop_destroy(loop);
+    (void)ns_loop_destroy();
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

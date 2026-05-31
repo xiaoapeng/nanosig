@@ -1,8 +1,9 @@
 # nanosig API Design Draft
 
 Status: PD API closeout complete. P1 loop platform backends, P2 public
-data structures, and the P3 public fixed-capacity MPSC queue have landed;
-loop/signal/timer runtime behavior is still a later implementation phase.
+data structures, P3 variable-size MPSC record ring, P4 loop management,
+and P5 signal/slot runtime have landed; timer runtime is still a later
+implementation phase.
 
 ## Lifecycle
 
@@ -58,6 +59,7 @@ applications can embed and use them directly:
 - `nanosig_hashtable.h`
 - `nanosig_rbtree.h`
 - `nanosig_mpsc.h`
+- `nanosig_mpsc_record_ring.h`
 - `nanosig_ds.h`
 - `nanosig_types.h`
 - `nanosig_status.h`
@@ -72,8 +74,9 @@ Public-header declaration rule:
 The implementation-backed structures live in `src/ds/`. Their fields are
 visible for C embedding and static storage, but callers should use the public
 functions/macros instead of mutating links, cursors, or tree internals directly.
-The fixed-capacity MPSC queue is public and follows the same split:
-`include/nanosig/nanosig_mpsc.h` plus `src/ds/ns_mpsc.c`.
+The fixed-capacity MPSC queue (`nanosig_mpsc.h` / `ns_mpsc.c`) and the
+variable-size MPSC record ring (`nanosig_mpsc_record_ring.h` /
+`ns_mpsc_record_ring.c`) are both public and follow the same split.
 
 ## Thread-Bound Loops
 
@@ -81,7 +84,7 @@ Each thread that runs callbacks owns at most one `ns_loop_t`.
 
 ```c
 ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
-cfg.queue_capacity = 1024u;
+cfg.queue_capacity = NS_CAPACITY_1024;
 cfg.max_payload_size = 256u;
 cfg.debug_name = "worker-B";
 
@@ -93,7 +96,7 @@ if(rc != NS_OK) {
 
 /* run callbacks on this thread */
 
-(void)ns_loop_destroy(loop);
+(void)ns_loop_destroy();
 ```
 
 `ns_loop_create` is the per-thread initialization point. A second create in the
@@ -135,6 +138,7 @@ NS_SIGNAL_DEFINE(app_sample_ready, app_sample_payload_t);
 
 static void on_sample(void *user_data, const app_sample_payload_t *payload);
 
+ns_connection_t connection;
 ns_signal_connect_typed(
     app_sample_ready,
     on_sample,
@@ -148,7 +152,7 @@ app_sample_payload_t payload = {
 };
 ns_signal_emit(app_sample_ready, &payload);
 
-(void)ns_signal_disconnect(connection);
+(void)ns_signal_disconnect(&connection);
 ```
 
 No-payload signals use the explicit marker type:
@@ -158,16 +162,17 @@ NS_SIGNAL_DEFINE(app_shutdown_requested, ns_no_payload_t);
 
 static void on_shutdown(void *user_data, const ns_no_payload_t *payload);
 
+ns_connection_t shutdown_conn;
 ns_signal_connect_typed(
     app_shutdown_requested,
     on_shutdown,
     ns_no_payload_t,
     user_data,
-    &connection);
+    &shutdown_conn);
 
 ns_signal_emit(app_shutdown_requested, NS_NO_PAYLOAD);
 
-(void)ns_signal_disconnect(connection);
+(void)ns_signal_disconnect(&shutdown_conn);
 ```
 
 The public connect surface keeps loop targeting explicit without adding a
@@ -243,9 +248,11 @@ int app_model_init(app_model_t *model)
 
 `ns_signal_disconnect_all(signal)` is a teardown/escape-hatch helper for
 objects that must drop every connection at once. Healthy code should normally
-keep the `ns_connection_t *` handles and call `ns_signal_disconnect` explicitly,
-because that makes ownership clear. Bulk disconnect still does not cancel
-already queued slot calls, so `user_data` lifetime rules remain unchanged.
+keep the `ns_connection_t` handles and call `ns_signal_disconnect` explicitly,
+because that makes ownership clear. Neither `ns_signal_disconnect` nor
+`ns_signal_disconnect_all` frees memory; callers own `ns_connection_t` storage.
+Bulk disconnect still does not cancel already queued slot calls, so
+`user_data` lifetime rules remain unchanged.
 
 This is a deliberate PD review point. The implementation plan originally
 considered a variadic field-list macro. The struct-payload draft is more
@@ -262,7 +269,7 @@ does not allocate a timer object; the caller provides storage:
 static void on_tick(void *user_data, const ns_no_payload_t *payload);
 
 ns_timer_t timer;
-ns_connection_t *connection = NULL;
+ns_connection_t connection;
 
 rc = ns_timer_create(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
 if(rc != NS_OK) {
@@ -285,11 +292,11 @@ if(rc != NS_OK) {
     goto out_connection;
 }
 
-rc = ns_loop_run(target_loop);
+rc = ns_loop_run();
 
 out_connection:
     (void)ns_timer_cancel(&timer);
-    (void)ns_signal_disconnect(connection);
+    (void)ns_signal_disconnect(&connection);
 out_timer:
     (void)ns_timer_destroy(&timer);
 ```
@@ -308,7 +315,7 @@ otherwise it falls back to `now + interval_us`. This mirrors the useful
 
 - One thread owns at most one `ns_loop_t`.
 - `ns_loop_create` binds the new loop to the current thread.
-- `ns_loop_destroy` must be called by the owning thread and unbinds that thread.
+- `ns_loop_destroy` must be called by the owning thread and unbinds that thread. It takes no parameter and reads the loop from TLS.
 - `ns_signal_emit_raw` is callable from any thread.
 - `ns_signal_emit(signal, NS_NO_PAYLOAD)` is callable from any thread for
   `ns_no_payload_t` signals.
@@ -321,8 +328,9 @@ otherwise it falls back to `now + interval_us`. This mirrors the useful
 - `ns_signal_disconnect` is called by the target loop owner thread.
 - `ns_signal_disconnect_all` exists for teardown/escape-hatch use, not as the
   normal lifecycle path for healthy programs.
-- `ns_signal_t` has no deinit API. Its own state is metadata; slot resources are
-  released when connections are disconnected.
+- `ns_signal_t` has no deinit API. Its own state is metadata; `ns_signal_disconnect`
+  removes the connection from the signal's slot list but does not free memory.
+  Callers own `ns_connection_t` storage.
 - Disconnect does not cancel already queued slot invocations.
 - `user_data` must outlive any in-flight emit that can still reach the slot.
 - A destroyed loop rejects new queued work with `NS_E_SHUTDOWN`.

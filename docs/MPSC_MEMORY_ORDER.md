@@ -93,9 +93,9 @@ correctness still come from per-slot sequence numbers.
 behind the producer position, meaning all slots that could be claimed are still
 owned by the consumer side or by already published work.
 
-`ns_mpsc_try_pop` reports an empty queue through `out_popped = 0`. Empty is not
-an error because the future loop will use this path while draining after a
-wakeup.
+`ns_mpsc_try_pop` reports an empty queue by returning `NS_E_EMPTY`. Empty is a
+distinct return code, not a success variant, so callers can branch on the return
+value alone without an extra output parameter.
 
 ## Platform Boundary
 

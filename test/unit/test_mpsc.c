@@ -150,7 +150,6 @@ static int test_invalid_args(void)
     ns_mpsc_slot_t slots[storage_item_count];
     uint8_t storage[sizeof(test_item_t) * storage_item_count];
     test_item_t item = { 0 };
-    int popped = 1;
 
     if(expect_true(ns_mpsc_init(NULL, slots, storage, NS_CAPACITY_2, sizeof(test_item_t)) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_mpsc_init(&queue, NULL, storage, NS_CAPACITY_2, sizeof(test_item_t)) == NS_E_INVAL) != 0) return 1;
@@ -164,10 +163,8 @@ static int test_invalid_args(void)
     if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)NS_CAPACITY_2) != 0) return 1;
     if(expect_true(ns_mpsc_try_push(NULL, &item) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_mpsc_try_push(&queue, NULL) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_mpsc_try_pop(NULL, &item, &popped) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_mpsc_try_pop(&queue, NULL, &popped) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_mpsc_try_pop(&queue, &item, NULL) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(popped == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_try_pop(NULL, &item) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_try_pop(&queue, NULL) == NS_E_INVAL) != 0) return 1;
 
     return 0;
 }
@@ -180,7 +177,6 @@ static int test_single_thread_paths(void)
     uint8_t storage[sizeof(test_item_t) * queue_capacity];
     test_item_t in;
     test_item_t out;
-    int popped = 1;
     uint32_t i;
 
     if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
@@ -188,8 +184,7 @@ static int test_single_thread_paths(void)
     if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
 
     memset(&out, 0, sizeof(out));
-    if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-    if(expect_true(popped == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_E_EMPTY) != 0) return 1;
 
     for(i = 0u; i < queue_capacity; ++i){
         test_fill_item(&in, 7u, i);
@@ -203,16 +198,12 @@ static int test_single_thread_paths(void)
 
     for(i = 0u; i < queue_capacity; ++i){
         memset(&out, 0, sizeof(out));
-        popped = 0;
-        if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-        if(expect_true(popped == 1) != 0) return 1;
+        if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 7u, i) == 0) != 0) return 1;
         if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)i + 1u)) != 0) return 1;
     }
 
-    popped = 1;
-    if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-    if(expect_true(popped == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_E_EMPTY) != 0) return 1;
 
     for(i = 0u; i < 12u; ++i){
         test_fill_item(&in, 11u, i);
@@ -220,9 +211,7 @@ static int test_single_thread_paths(void)
         if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)queue_capacity - 1u)) != 0) return 1;
 
         memset(&out, 0, sizeof(out));
-        popped = 0;
-        if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-        if(expect_true(popped == 1) != 0) return 1;
+        if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 11u, i) == 0) != 0) return 1;
         if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
     }
@@ -239,7 +228,6 @@ static int test_counter_wraparound(void)
     size_t base = SIZE_MAX - 1u;
     test_item_t in;
     test_item_t out;
-    int popped = 0;
     uint32_t i;
 
     if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
@@ -261,15 +249,11 @@ static int test_counter_wraparound(void)
 
     for(i = 0u; i < queue_capacity; ++i){
         memset(&out, 0, sizeof(out));
-        popped = 0;
-        if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-        if(expect_true(popped == 1) != 0) return 1;
+        if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 17u, i) == 0) != 0) return 1;
     }
 
-    popped = 1;
-    if(expect_true(ns_mpsc_try_pop(&queue, &out, &popped) == NS_OK) != 0) return 1;
-    if(expect_true(popped == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_E_EMPTY) != 0) return 1;
 
     return 0;
 }
@@ -387,13 +371,14 @@ static int test_multi_producer(void)
 
     while(popped_count < total_count){
         test_item_t out;
-        int popped = 0;
+        int rc;
 
-        if(ns_mpsc_try_pop(&queue, &out, &popped) != NS_OK) return 1;
-        if(popped == 0){
+        rc = ns_mpsc_try_pop(&queue, &out);
+        if(rc == NS_E_EMPTY){
             test_yield();
             continue;
         }
+        if(rc != NS_OK) return 1;
 
         if(out.producer_id >= producer_count) return 1;
         if(out.sequence >= per_producer_count) return 1;
@@ -473,20 +458,22 @@ static int test_stress_multi_producer_long_run(void)
 
     for(;;){
         test_item_t out;
-        int popped = 0;
+        int pop_rc;
         int all_done = 1;
 
         ++loop_count;
-        if(ns_mpsc_try_pop(&queue, &out, &popped) != NS_OK) return 1;
+        pop_rc = ns_mpsc_try_pop(&queue, &out);
 
-        if(popped != 0){
+        if(pop_rc == NS_OK){
             if(out.producer_id >= producer_count) return 1;
             if(test_item_matches(&out, out.producer_id, next_sequence[out.producer_id]) != 0) return 1;
             ++next_sequence[out.producer_id];
             ++total_popped;
             idle_spins = 0u;
-        }else{
+        }else if(pop_rc == NS_E_EMPTY){
             ++idle_spins;
+        }else{
+            return 1;
         }
 
         if((stop_requested == 0) && ((loop_count & 0xfffu) == 0u)){
@@ -508,9 +495,8 @@ static int test_stress_multi_producer_long_run(void)
             }
         }
 
-        if((all_done != 0) && (popped == 0)){
-            if(ns_mpsc_try_pop(&queue, &out, &popped) != NS_OK) return 1;
-            if(popped == 0) break;
+        if((all_done != 0) && (pop_rc == NS_E_EMPTY)){
+            if(ns_mpsc_try_pop(&queue, &out) == NS_E_EMPTY) break;
             if(out.producer_id >= producer_count) return 1;
             if(test_item_matches(&out, out.producer_id, next_sequence[out.producer_id]) != 0) return 1;
             ++next_sequence[out.producer_id];
@@ -519,7 +505,7 @@ static int test_stress_multi_producer_long_run(void)
             continue;
         }
 
-        if(popped == 0) test_yield();
+        if(pop_rc == NS_E_EMPTY) test_yield();
 
         if(expect_true(ns_mpsc_free_capacity(&queue) <= ns_mpsc_capacity(&queue)) != 0) return 1;
     }
