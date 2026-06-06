@@ -14,6 +14,7 @@
 #include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
 
 #ifdef __cplusplus
@@ -21,10 +22,21 @@ extern "C" {
 #endif
 
 /**
+ * @brief 平台互斥锁句柄（前向声明）。
+ *
+ * 由 `ns_signal_init_raw` 创建并嵌入 `ns_signal_t`，用于保护 `slot_list`。
+ */
+typedef struct ns_platform_mutex ns_platform_mutex_t;
+
+/**
  * @brief 可静态定义的 signal 对象。
  *
  * `payload_size` 固定每次 emit 复制的字节数；0 表示该 signal 无 payload。
  * `slot_list` 是 signal 拥有的连接链表头，调用方不得直接修改。
+ * `mutex` 保护 `slot_list` 的并发访问；仅由 `ns_signal_init_raw` 创建。
+ * 通过 `NS_SIGNAL_INITIALIZER` 静态初始化的 signal 不含 mutex，
+ * 不支持并发 connect/disconnect/emit；如需线程安全，必须调用
+ * `ns_signal_init_raw` 或 `ns_signal_init` 初始化。
  */
 typedef struct ns_signal {
     /** 每次 emit 复制的 payload 字节数；无 payload signal 为 0。 */
@@ -35,6 +47,8 @@ typedef struct ns_signal {
     const char *debug_name;
     /** slot 连接链表头，调用方不得直接修改。 */
     ns_list_node_t slot_list;
+    /** slot_list 保护锁；`NULL` 表示非线程安全。 */
+    ns_platform_mutex_t *mutex;
 } ns_signal_t;
 
 /**
@@ -136,7 +150,8 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
         .payload_size = NS_SIGNAL_PAYLOAD_SIZE(payload_type), \
         .slot_capacity = 0u, \
         .debug_name = #payload_type, \
-        .slot_list = { NULL, NULL } \
+        .slot_list = { NULL, NULL }, \
+        .mutex = NULL \
     }
 
 /**
@@ -266,6 +281,9 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  * 调用方拥有 `connection` 的存储，连接存活期间必须保证其生命周期长于任何
  * emit 操作。断开连接后可安全释放 `connection`。
  *
+ * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
+ *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。
  * @param target_loop 目标 loop；为 `NULL` 时使用当前线程 loop。
@@ -286,6 +304,9 @@ extern int ns_signal_connect(
  * 断开连接不会取消已经入队的 slot 调用；调用方仍需保证 `user_data`
  * 的在途生命周期。
  *
+ * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
+ *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ *
  * @param connection 要断开的连接句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -297,6 +318,9 @@ extern int ns_signal_disconnect(ns_connection_t *connection);
  * 这是 teardown / 兜底接口。健康程序通常应保存每个连接句柄并显式调用
  * `ns_signal_disconnect`，使生命周期关系清晰。批量断开不会取消已经入队的
  * slot 调用；调用方仍需保证所有相关 `user_data` 长于任何 in-flight emit。
+ *
+ * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
+ *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
  *
  * @param signal 要断开所有连接的 signal。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -310,12 +334,35 @@ extern int ns_signal_disconnect_all(ns_signal_t *signal);
  * signal 使用 `payload = NULL` 且 `payload_size = 0`。emit 路径不允许
  * 分配内存。
  *
+ * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
+ *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ *
  * @param signal 要触发的 signal。
  * @param payload 指向只读 payload 数据；无 payload 时为 `NULL`。
  * @param payload_size payload 字节数。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 extern int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_size);
+
+/**
+ * @brief 释放 signal 的内部资源（如 mutex）。
+ *
+ * 仅释放由 `ns_signal_init_raw` 分配的资源；`NS_SIGNAL_INITIALIZER` 初始化
+ * 的 signal 无需调用。调用前应确保所有连接已断开。
+ *
+ * @param signal 要清理的 signal 对象。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+extern int ns_signal_deinit_raw(ns_signal_t *signal);
+
+/**
+ * @brief 释放 signal 的内部资源（宏入口）。
+ *
+ * @param signal 要清理的 signal 对象。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+#define ns_signal_deinit(signal) \
+    ns_signal_deinit_raw(&(signal))
 
 #ifdef __cplusplus
 }

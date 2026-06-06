@@ -60,6 +60,9 @@ typedef struct ns_loop_config {
  * `config` 为 `NULL` 时使用默认配置。成功后，当前线程成为该 loop 的拥有者。
  * 如果当前线程已经绑定 loop，本函数返回 `NS_E_EXISTS`。
  *
+ * @pre 本函数不得与 `ns_loop_destroy()` 或自身并发调用。调用方应保证在单一线程
+ *      中顺序创建和销毁 loop。
+ *
  * @param out_loop 输出创建得到的 loop 句柄；可为 `NULL`，此时不向外传值。
  * @param config loop 配置；可为 `NULL`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -69,9 +72,13 @@ extern int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
 /**
  * @brief 销毁当前线程绑定的事件循环并解除绑定。
  *
- * 调用方应确保该 loop 不再运行，并且没有新的 signal emit 继续以它为目标。
  * 本函数必须由该 loop 的拥有者线程调用，从 TLS 中取当前线程绑定的 loop。
  * 如果当前线程未绑定 loop，返回 `NS_E_NO_LOOP`。
+ *
+ * @pre 调用前必须确保该 loop 不再运行（`ns_loop_run()` 已返回）。
+ * @pre 调用前必须断开所有以该 loop 为目标的 signal connection，并确保没有
+ *      in-flight 的 `ns_signal_emit_raw()` 仍持有指向该 loop 的指针。
+ * @pre 本函数不得与 `ns_loop_create()` 或自身并发调用。
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */

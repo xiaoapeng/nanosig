@@ -35,6 +35,18 @@ typedef struct ns_slot_call {
 
 /* ns_connection is now defined in nanosig_signal.h */
 
+static int ns_signal_lock(ns_signal_t *signal)
+{
+    if(signal->mutex == NULL) return NS_OK;
+    return ns_platform_mutex_lock(signal->mutex);
+}
+
+static int ns_signal_unlock(ns_signal_t *signal)
+{
+    if(signal->mutex == NULL) return NS_OK;
+    return ns_platform_mutex_unlock(signal->mutex);
+}
+
 static atomic_int g_ns_initialized = 0;
 static ns_platform_tls_key_t *g_ns_loop_tls_key = NULL;
 static ns_platform_mutex_t *g_ns_loop_registry_mutex = NULL;
@@ -285,21 +297,23 @@ out_restore_tls:
 
 static void ns_loop_dispatch_pending(ns_loop_t *loop)
 {
-    uint8_t buf[256];
-    size_t record_size = 0;
-    int pop_rc;
+    void *record = NULL;
+    size_t record_size = 0u;
+    int rc;
 
     for(;;){
-        pop_rc = ns_mpsc_record_ring_try_pop(&loop->queue, buf, sizeof(buf), &record_size);
-        if(pop_rc != NS_OK) break;
+        rc = ns_mpsc_record_ring_try_acquire(&loop->queue, &record, &record_size);
+        if(rc != NS_OK) break;
 
         if(record_size >= sizeof(ns_slot_call_t)){
-            ns_slot_call_t *call = (ns_slot_call_t *)buf;
+            ns_slot_call_t *call = (ns_slot_call_t *)record;
             const void *payload = (call->payload_size > 0u)
-                ? (buf + sizeof(ns_slot_call_t))
+                ? ((const uint8_t *)record + sizeof(ns_slot_call_t))
                 : NULL;
             call->fn(call->user_data, payload);
         }
+
+        (void)ns_mpsc_record_ring_release(&loop->queue, record);
     }
 }
 
@@ -319,8 +333,6 @@ int ns_loop_run(void)
     if(!ns_atomic_compare_exchange_strong(&loop->running, &expected_running, 1)) return NS_E_EXISTS;
 
     for(;;){
-        if(ns_atomic_load_explicit(&loop->quit_requested, ns_memory_order_acquire) != 0) break;
-
         ns_loop_dispatch_pending(loop);
 
         if(ns_atomic_load_explicit(&loop->quit_requested, ns_memory_order_acquire) != 0) break;
@@ -331,7 +343,6 @@ int ns_loop_run(void)
         (void)wait_result;
     }
 
-    ns_loop_dispatch_pending(loop);
     ns_atomic_store_explicit(&loop->quit_requested, 0, ns_memory_order_release);
     rc = NS_OK;
 
@@ -388,13 +399,31 @@ int ns_loop_is_owner(const ns_loop_t *loop, int *out_is_owner)
 
 int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_capacity, const char *debug_name)
 {
+    int rc;
+
     if(signal == NULL) return NS_E_INVAL;
 
     signal->payload_size = payload_size;
     signal->slot_capacity = slot_capacity;
     signal->debug_name = debug_name;
     ns_list_init(&signal->slot_list);
+
+    rc = ns_platform_mutex_create(&signal->mutex, debug_name ? debug_name : "ns-signal");
+    if(rc != NS_OK) return rc;
+
     return NS_OK;
+}
+
+int ns_signal_deinit_raw(ns_signal_t *signal)
+{
+    int rc;
+
+    if(signal == NULL) return NS_E_INVAL;
+    if(signal->mutex == NULL) return NS_OK;
+
+    rc = ns_platform_mutex_destroy(signal->mutex);
+    signal->mutex = NULL;
+    return rc;
 }
 
 int ns_signal_connect(
@@ -420,31 +449,47 @@ int ns_signal_connect(
     connection->target_loop = loop;
     ns_list_init(&connection->signal_node);
 
+    rc = ns_signal_lock(signal);
+    if(rc != NS_OK) return rc;
+
     ns_list_push_back(&signal->slot_list, &connection->signal_node);
 
-    return NS_OK;
+    rc = ns_signal_unlock(signal);
+    return rc;
 }
 
 int ns_signal_disconnect(ns_connection_t *connection)
 {
+    int rc;
+
     if(connection == NULL) return NS_E_INVAL;
 
+    rc = ns_signal_lock(connection->signal);
+    if(rc != NS_OK) return rc;
+
     ns_list_remove_init(&connection->signal_node);
-    return NS_OK;
+
+    rc = ns_signal_unlock(connection->signal);
+    return rc;
 }
 
 int ns_signal_disconnect_all(ns_signal_t *signal)
 {
     ns_list_node_t *node;
+    int rc;
 
     if(signal == NULL) return NS_E_INVAL;
+
+    rc = ns_signal_lock(signal);
+    if(rc != NS_OK) return rc;
 
     while(!ns_list_empty(&signal->slot_list)){
         node = ns_list_pop_front(&signal->slot_list);
         ns_list_init(node);
     }
 
-    return NS_OK;
+    rc = ns_signal_unlock(signal);
+    return rc;
 }
 
 int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_size)
@@ -458,10 +503,13 @@ int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_
     if(signal->payload_size != payload_size) return NS_E_INVAL;
     if((payload_size > 0u) && (payload == NULL)) return NS_E_INVAL;
 
+    rc = ns_signal_lock(signal);
+    if(rc != NS_OK) return rc;
+
     parts[1].data = payload;
     parts[1].size = payload_size;
 
-    for(node = signal->slot_list.next; node != &signal->slot_list; node = node->next){
+    ns_list_for_each(node, &signal->slot_list){
         ns_connection_t *conn = NS_CONTAINER_OF(node, ns_connection_t, signal_node);
 
         call_header.fn = conn->slot_fn;
@@ -472,10 +520,14 @@ int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_
         parts[0].size = sizeof(call_header);
 
         rc = ns_mpsc_record_ring_try_pushv(&conn->target_loop->queue, parts, 2);
-        if(rc != NS_OK) return rc;
+        if(rc != NS_OK){
+            (void)ns_signal_unlock(signal);
+            return rc;
+        }
 
         (void)ns_platform_wakeup_signal(conn->target_loop->wakeup);
     }
 
-    return NS_OK;
+    rc = ns_signal_unlock(signal);
+    return rc;
 }

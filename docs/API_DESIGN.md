@@ -246,6 +246,10 @@ int app_model_init(app_model_t *model)
 }
 ```
 
+`ns_signal_deinit(signal)` releases the internal mutex created by
+`ns_signal_init_raw`. Signals initialized only via `NS_SIGNAL_INITIALIZER`
+do not need deinit.
+
 `ns_signal_disconnect_all(signal)` is a teardown/escape-hatch helper for
 objects that must drop every connection at once. Healthy code should normally
 keep the `ns_connection_t` handles and call `ns_signal_disconnect` explicitly,
@@ -319,18 +323,23 @@ otherwise it falls back to `now + interval_us`. This mirrors the useful
 - `ns_signal_emit_raw` is callable from any thread.
 - `ns_signal_emit(signal, NS_NO_PAYLOAD)` is callable from any thread for
   `ns_no_payload_t` signals.
+- `ns_signal_connect` is callable from any thread when the signal was
+  initialized via `ns_signal_init_raw` (which creates an internal mutex).
+- `ns_signal_disconnect` is callable from any thread under the same condition.
+- `ns_signal_disconnect_all` is callable from any thread under the same
+  condition. It exists for teardown/escape-hatch use, not as the normal
+  lifecycle path for healthy programs.
 - Default `ns_signal_connect_typed` uses the current thread's loop.
 - Explicit `ns_signal_connect_typed_to` is a macro-level escape hatch for
   supplied target loops and still calls `ns_signal_connect`.
 - Low-level `ns_signal_connect` uses `target_loop == NULL` for current-thread
   loop and non-`NULL` for an explicit target loop; default-vs-explicit behavior
   must not be split into duplicate internal functions.
-- `ns_signal_disconnect` is called by the target loop owner thread.
-- `ns_signal_disconnect_all` exists for teardown/escape-hatch use, not as the
-  normal lifecycle path for healthy programs.
-- `ns_signal_t` has no deinit API. Its own state is metadata; `ns_signal_disconnect`
-  removes the connection from the signal's slot list but does not free memory.
-  Callers own `ns_connection_t` storage.
+- `ns_signal_deinit` releases internal resources (mutex) allocated by
+  `ns_signal_init_raw`. Signals initialized only via `NS_SIGNAL_INITIALIZER`
+  do not need deinit. `ns_signal_disconnect` removes the connection from the
+  signal's slot list but does not free memory. Callers own `ns_connection_t`
+  storage.
 - Disconnect does not cancel already queued slot invocations.
 - `user_data` must outlive any in-flight emit that can still reach the slot.
 - A destroyed loop rejects new queued work with `NS_E_SHUTDOWN`.

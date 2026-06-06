@@ -115,6 +115,7 @@ static int test_no_payload_same_thread(void)
     EXPECT_EQ(g_no_payload_called, 1);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -168,6 +169,7 @@ static int test_payload_same_thread(void)
     EXPECT_EQ(g_payload_value, 42);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -285,6 +287,7 @@ static int test_cross_thread_emit(void)
     EXPECT_OK(ns_atomic_load_explicit(&ctx.thread_rc, ns_memory_order_acquire) == NS_OK);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -330,6 +333,7 @@ static int test_disconnect_stops_future(void)
 
     EXPECT_EQ(g_disconnect_called, 0);
 
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -379,6 +383,7 @@ static int test_disconnect_all(void)
 
     EXPECT_EQ(g_multi_called, 0);
 
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -428,6 +433,7 @@ static int test_emit_before_run(void)
     EXPECT_EQ(g_queue_first_called, 1);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -483,7 +489,126 @@ static int test_multiple_connections(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn_a) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn_b) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: concurrent connect + emit (thread-safe slot_list)            */
+/* ------------------------------------------------------------------ */
+
+typedef struct concurrent_ctx {
+    atomic_int ready;
+    atomic_int done;
+    atomic_int slot_called;
+    ns_loop_t *loop;
+    ns_signal_t *signal;
+#if defined(_WIN32)
+    HANDLE thread;
+#else
+    pthread_t thread;
+#endif
+} concurrent_ctx_t;
+
+static void slot_concurrent(void *user_data, const void *payload)
+{
+    concurrent_ctx_t *ctx = (concurrent_ctx_t *)user_data;
+    (void)payload;
+    ns_atomic_fetch_add_explicit(&ctx->slot_called, 1, ns_memory_order_relaxed);
+}
+
+static void concurrent_worker(concurrent_ctx_t *ctx)
+{
+    int rc;
+
+    rc = ns_loop_create(&ctx->loop, NULL);
+    if(rc != NS_OK){
+        ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
+        return;
+    }
+
+    ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
+
+    rc = ns_loop_run();
+
+    ns_loop_destroy();
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI concurrent_main(LPVOID arg)
+{
+    concurrent_worker((concurrent_ctx_t *)arg);
+    return 0u;
+}
+#else
+static void *concurrent_main(void *arg)
+{
+    concurrent_worker((concurrent_ctx_t *)arg);
+    return NULL;
+}
+#endif
+
+static int test_concurrent_connect_emit(void)
+{
+    concurrent_ctx_t ctx;
+    ns_signal_t sig;
+    ns_connection_t conns[8];
+    int i;
+    int rc;
+
+    ns_atomic_init(&ctx.ready, 0);
+    ns_atomic_init(&ctx.done, 0);
+    ns_atomic_init(&ctx.slot_called, 0);
+    ctx.loop = NULL;
+    ctx.signal = &sig;
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    rc = ns_signal_init_raw(&sig, 0u, 0u, "concurrent-test");
+    EXPECT_OK(rc == NS_OK);
+
+    /* Start worker thread that runs a loop */
+#if defined(_WIN32)
+    ctx.thread = CreateThread(NULL, 0u, concurrent_main, &ctx, 0u, NULL);
+    EXPECT_OK(ctx.thread != NULL);
+#else
+    EXPECT_OK(pthread_create(&ctx.thread, NULL, concurrent_main, &ctx) == 0);
+#endif
+
+    /* Wait for worker to be ready */
+    while(ns_atomic_load_explicit(&ctx.ready, ns_memory_order_acquire) == 0){
+        test_yield();
+    }
+
+    /* Concurrent connect + emit: main thread connects/disconnects while emitting */
+    for(i = 0; i < 8; i++){
+        rc = ns_signal_connect(&sig, slot_concurrent, ctx.loop, &ctx, &conns[i]);
+        EXPECT_OK(rc == NS_OK);
+
+        rc = ns_signal_emit_raw(&sig, NULL, 0u);
+        EXPECT_OK(rc == NS_OK);
+
+        rc = ns_signal_disconnect(&conns[i]);
+        EXPECT_OK(rc == NS_OK);
+    }
+
+    /* Quit worker loop after concurrent operations */
+    EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
+
+#if defined(_WIN32)
+    WaitForSingleObject(ctx.thread, INFINITE);
+    CloseHandle(ctx.thread);
+#else
+    pthread_join(ctx.thread, NULL);
+#endif
+
+    /* At least some slots should have been called */
+    EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) > 0);
+
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -502,6 +627,7 @@ int main(void)
     if(test_disconnect_all() != 0) return 1;
     if(test_emit_before_run() != 0) return 1;
     if(test_multiple_connections() != 0) return 1;
+    if(test_concurrent_connect_emit() != 0) return 1;
 
     return 0;
 }
