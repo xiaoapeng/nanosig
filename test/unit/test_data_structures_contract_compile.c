@@ -48,12 +48,15 @@ static void ds_contract_use_ringbuf(void)
 {
     uint8_t storage[8];
     uint8_t out[8];
+    int32_t len;
     ns_ringbuf_t ringbuf;
 
-    if(ns_ringbuf_init(&ringbuf, storage, sizeof(storage)) != NS_OK) return;
-    (void)ns_ringbuf_write(&ringbuf, storage, sizeof(storage));
-    (void)ns_ringbuf_peek(&ringbuf, 0u, out, sizeof(out));
-    (void)ns_ringbuf_read(&ringbuf, out, sizeof(out));
+    if(ns_ringbuf_init(&ringbuf, storage, (int32_t)sizeof(storage)) != NS_OK) return;
+    (void)ns_ringbuf_write(&ringbuf, storage, (int32_t)sizeof(storage));
+    len = (int32_t)sizeof(out);
+    (void)ns_ringbuf_peek(&ringbuf, 0, out, &len);
+    (void)ns_ringbuf_peek_copy(&ringbuf, 0, out, (int32_t)sizeof(out));
+    (void)ns_ringbuf_read(&ringbuf, out, (int32_t)sizeof(out));
 }
 
 static void ds_contract_use_mpsc(void)
@@ -106,14 +109,20 @@ static void ds_contract_use_hashtable(void)
     (void)ns_hashtable_remove(&table, "key");
 }
 
+static int ds_contract_rbtree_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
+{
+    (void)a; (void)b;
+    return 0;
+}
+
 static void ds_contract_use_rbtree(void)
 {
     ns_rbtree_t tree;
     ds_contract_item_t item;
     ds_contract_item_t *owner;
 
-    ns_rbtree_init(&tree);
-    ns_rbtree_node_init(&item.tree_node, 7u);
+    ns_rbtree_init(&tree, ds_contract_rbtree_cmp);
+    ns_rbtree_node_init(&item.tree_node);
     ns_rbtree_insert(&tree, &item.tree_node);
     owner = ns_rbtree_entry(ns_rbtree_first(&tree), ds_contract_item_t, tree_node);
     (void)owner;

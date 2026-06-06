@@ -207,6 +207,154 @@ static inline void ns_list_splice_back_init(ns_list_node_t *head, ns_list_node_t
 #define ns_list_entry(ptr, type, member) \
     NS_CONTAINER_OF((ptr), type, member)
 
+/**
+ * @brief 正向遍历双向链表。
+ *
+ * @param pos  `ns_list_node_t *` 迭代变量。
+ * @param head 链表头。
+ */
+#define ns_list_for_each(pos, head) \
+    for((pos) = (head)->next; (pos) != (head); (pos) = (pos)->next)
+
+/**
+ * @brief 正向遍历双向链表，允许遍历期间移除当前节点。
+ *
+ * 预取下一个节点，安全应对 `ns_list_remove` / `ns_list_remove_init`。
+ *
+ * @param pos   `ns_list_node_t *` 迭代变量。
+ * @param n     `ns_list_node_t *` 临时变量，用于保存下一个节点。
+ * @param head  链表头。
+ */
+#define ns_list_for_each_safe(pos, n, head) \
+    for((pos) = (head)->next, (n) = (pos)->next; \
+        (pos) != (head); \
+        (pos) = (n), (n) = (pos)->next)
+
+/**
+ * @brief 反向遍历双向链表。
+ *
+ * @param pos  `ns_list_node_t *` 迭代变量。
+ * @param head 链表头。
+ */
+#define ns_list_for_each_prev(pos, head) \
+    for((pos) = (head)->prev; (pos) != (head); (pos) = (pos)->prev)
+
+/**
+ * @brief 反向遍历双向链表，允许遍历期间移除当前节点。
+ *
+ * @param pos   `ns_list_node_t *` 迭代变量。
+ * @param n     `ns_list_node_t *` 临时变量，用于保存上一个节点。
+ * @param head  链表头。
+ */
+#define ns_list_for_each_prev_safe(pos, n, head) \
+    for((pos) = (head)->prev, (n) = (pos)->prev; \
+        (pos) != (head); \
+        (pos) = (n), (n) = (pos)->prev)
+
+/**
+ * @brief 正向遍历双向链表中的外层结构体。
+ *
+ * @param pos    外层结构体指针迭代变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_entry(pos, head, member) \
+    for((pos) = ns_list_entry((head)->next, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = ns_list_entry((pos)->member.next, typeof(*(pos)), member))
+
+/**
+ * @brief 反向遍历双向链表中的外层结构体。
+ *
+ * @param pos    外层结构体指针迭代变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_prev_entry(pos, head, member) \
+    for((pos) = ns_list_entry((head)->prev, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member))
+
+/**
+ * @brief 正向遍历双向链表中的外层结构体，允许遍历期间移除当前节点。
+ *
+ * @param pos    外层结构体指针迭代变量。
+ * @param n      外层结构体指针临时变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_entry_safe(pos, n, head, member) \
+    for((pos) = ns_list_entry((head)->next, typeof(*(pos)), member), \
+        (n) = ns_list_entry((pos)->member.next, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = (n), (n) = ns_list_entry((n)->member.next, typeof(*(n)), member))
+
+/**
+ * @brief 反向遍历双向链表中的外层结构体，允许遍历期间移除当前节点。
+ *
+ * @param pos    外层结构体指针迭代变量。
+ * @param n      外层结构体指针临时变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_prev_entry_safe(pos, n, head, member) \
+    for((pos) = ns_list_entry((head)->prev, typeof(*(pos)), member), \
+        (n) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = (n), (n) = ns_list_entry((n)->member.prev, typeof(*(n)), member))
+
+/**
+ * @brief 从当前位置继续正向遍历。
+ *
+ * @param pos    当前位置的外层结构体指针。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_entry_continue(pos, head, member) \
+    for((pos) = ns_list_entry((pos)->member.next, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = ns_list_entry((pos)->member.next, typeof(*(pos)), member))
+
+/**
+ * @brief 从当前位置继续反向遍历。
+ *
+ * @param pos    当前位置的外层结构体指针。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_prev_entry_continue(pos, head, member) \
+    for((pos) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member))
+
+/**
+ * @brief 从当前位置继续正向遍历，允许移除当前节点。
+ *
+ * @param pos    当前位置的外层结构体指针。
+ * @param n      外层结构体指针临时变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_entry_continue_safe(pos, n, head, member) \
+    for((pos) = ns_list_entry((pos)->member.next, typeof(*(pos)), member), \
+        (n) = ns_list_entry((pos)->member.next, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = (n), (n) = ns_list_entry((pos)->member.next, typeof(*(pos)), member))
+
+/**
+ * @brief 从当前位置继续反向遍历，允许移除当前节点。
+ *
+ * @param pos    当前位置的外层结构体指针。
+ * @param n      外层结构体指针临时变量。
+ * @param head   链表头。
+ * @param member 链表节点在外层结构体中的成员名。
+ */
+#define ns_list_for_each_prev_entry_continue_safe(pos, n, head, member) \
+    for((pos) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member), \
+        (n) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member); \
+        &(pos)->member != (head); \
+        (pos) = (n), (n) = ns_list_entry((pos)->member.prev, typeof(*(pos)), member))
+
 #ifdef __cplusplus
 }
 #endif

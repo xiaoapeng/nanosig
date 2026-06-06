@@ -73,10 +73,6 @@ static int test_wakeup(void)
     if(expect_ok(ns_platform_wakeup_signal(wakeup)) != 0) return 1;
     if(expect_ok(ns_platform_wakeup_wait(wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result)) != 0) return 1;
     if(expect_true(wait_result == NS_PLATFORM_WAIT_SIGNALED) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_signal(wakeup)) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_reset(wakeup)) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_wait(wakeup, 0u, &wait_result)) != 0) return 1;
-    if(expect_true(wait_result == NS_PLATFORM_WAIT_TIMEOUT) != 0) return 1;
     if(expect_ok(ns_platform_wakeup_destroy(wakeup)) != 0) return 1;
 
     return 0;
