@@ -175,13 +175,6 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
     }
 }
 
-int ns_platform_wakeup_reset(ns_platform_wakeup_t *wakeup)
-{
-    if(wakeup == NULL) return NS_E_INVAL;
-
-    return ns_linux_wakeup_drain(wakeup);
-}
-
 int ns_platform_wakeup_wait(
     ns_platform_wakeup_t *wakeup,
     ns_platform_time_us_t timeout_us,

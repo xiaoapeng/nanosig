@@ -152,14 +152,6 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
     return NS_OK;
 }
 
-int ns_platform_wakeup_reset(ns_platform_wakeup_t *wakeup)
-{
-    if(wakeup == NULL) return NS_E_INVAL;
-    if(ResetEvent(wakeup->event) == 0) return NS_E_INVAL;
-
-    return NS_OK;
-}
-
 int ns_platform_wakeup_wait(
     ns_platform_wakeup_t *wakeup,
     ns_platform_time_us_t timeout_us,

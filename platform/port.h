@@ -153,14 +153,6 @@ int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup);
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup);
 
 /**
- * @brief 重置 wakeup 的已触发状态。
- *
- * @param wakeup wakeup 句柄。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-int ns_platform_wakeup_reset(ns_platform_wakeup_t *wakeup);
-
-/**
  * @brief 等待单个 wakeup。
  *
  * @param wakeup wakeup 句柄。
