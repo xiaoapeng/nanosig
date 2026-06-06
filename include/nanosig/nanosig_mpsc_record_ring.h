@@ -159,31 +159,46 @@ extern int ns_mpsc_record_ring_try_pushv(
     size_t part_count);
 
 /**
- * @brief 尝试弹出一条记录（仅消费者线程调用）。
+ * @brief 尝试借出一条连续记录（仅消费者线程调用）。
  *
- * 非阻塞；从环头部读取最早提交的一条记录。如果头部记录尚未被生产者
- * 完全提交（valid 标记未置位），视为队列空并返回 `NS_E_EMPTY`。
+ * 非阻塞；从环头部借出最早提交的一条真实记录。返回的记录指针直接指向
+ * 环内部存储，调用方必须在读取完成后调用 `ns_mpsc_record_ring_release`。
+ * 未 release 前不可再次 acquire。真实记录整体连续；内部 wrap marker 会被
+ * 消费者自动跳过，不会暴露给调用方。
  *
- * 线程安全：仅限单个消费者线程调用，不可被多个线程并发 pop。
+ * 线程安全：仅限单个消费者线程调用，不可被多个线程并发 acquire/release。
  *
- * @param[in,out] ring            已初始化的环。
- * @param[out]    out_record      接收记录数据的缓冲区。
- * @param[in]     out_capacity    缓冲区字节大小。
- * @param[out]    out_record_size 写入实际记录大小（可为 NULL）。当缓冲区
- *                                不足（返回 NS_E_NOMEM）时，写入所需大小
- *                                作为 hint，供调用方扩容后重试。
+ * @param[in,out] ring       已初始化的环。
+ * @param[out]    out_record 写入记录数据指针。
+ * @param[out]    out_size   写入记录数据字节数。
  *
- * @retval NS_OK       成功弹出一条记录。
- * @retval NS_E_EMPTY  队列为空或头部记录尚未提交。
- * @retval NS_E_INVAL  参数非法或检测到元数据损坏（stride 越界）。
- * @retval NS_E_NOMEM  缓冲区不足；*out_record_size 写入所需大小。
- * @retval NS_E_CORRUPT 内部一致性检查失败（used > capacity），记录未弹出。
+ * @retval NS_OK        成功借出一条记录。
+ * @retval NS_E_EMPTY   队列为空或头部记录尚未提交。
+ * @retval NS_E_INVAL   参数非法或检测到元数据损坏（stride 越界）。
+ * @retval NS_E_CORRUPT 内部一致性检查失败（used > capacity），记录未借出。
  */
-extern int ns_mpsc_record_ring_try_pop(
+extern int ns_mpsc_record_ring_try_acquire(
     ns_mpsc_record_ring_t *ring,
-    void *out_record,
-    size_t out_capacity,
-    size_t *out_record_size);
+    void **out_record,
+    size_t *out_size);
+
+/**
+ * @brief 释放最近 acquire 的记录。
+ *
+ * 释放成功后，环空间重新对生产者可用。@p record 必须是当前头部真实记录
+ * 的数据指针，也就是最近一次成功 `ns_mpsc_record_ring_try_acquire` 返回的
+ * 指针。
+ *
+ * @param[in,out] ring   已初始化的环。
+ * @param[in]     record 由 try_acquire 返回的记录数据指针。
+ *
+ * @retval NS_OK        释放成功。
+ * @retval NS_E_INVAL   参数非法、record 不是当前头部记录或元数据非法。
+ * @retval NS_E_CORRUPT 内部一致性检查失败（used > capacity），记录未释放。
+ */
+extern int ns_mpsc_record_ring_release(
+    ns_mpsc_record_ring_t *ring,
+    void *record);
 
 #ifdef __cplusplus
 }

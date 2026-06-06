@@ -79,7 +79,7 @@ static void ds_contract_use_mpsc_record_ring(void)
     ns_mpsc_record_ring_t ring;
     size_t record_size = 0u;
     uint8_t storage[NS_CAPACITY_128];
-    uint8_t out[8];
+    void *record = NULL;
     ns_mpsc_record_part_t parts[2];
 
     parts[0].data = "ab";
@@ -93,7 +93,9 @@ static void ds_contract_use_mpsc_record_ring(void)
     (void)ns_mpsc_record_ring_max_record_size(&ring);
     (void)ns_mpsc_record_ring_try_push(&ring, parts[0].data, parts[0].size);
     (void)ns_mpsc_record_ring_try_pushv(&ring, parts, NS_ARRAY_SIZE(parts));
-    (void)ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size);
+    if(ns_mpsc_record_ring_try_acquire(&ring, &record, &record_size) == NS_OK){
+        (void)ns_mpsc_record_ring_release(&ring, record);
+    }
 }
 
 static void ds_contract_use_hashtable(void)

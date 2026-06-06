@@ -1,17 +1,18 @@
 /**
  * @file test_mpsc_record_ring_stress.c
- * @brief 8-producer / 1-consumer stress test (20 minutes).
+ * @brief 8-producer / 1-consumer stress test (20 minutes by default).
  *
  * NOT part of the normal test suite. Run manually:
  *   clang -I include -I . -O2 -o build/stress.exe \
  *       test/unit/test_mpsc_record_ring_stress.c src/ds/ns_mpsc_record_ring.c
- *   ./build/stress.exe
+ *   NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=5 ./build/stress.exe
  */
 
 #include <nanosig/nanosig_mpsc_record_ring.h>
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -32,8 +33,44 @@
 
 #define PRODUCER_COUNT     8
 #define RING_CAPACITY      NS_CAPACITY_4096
-#define STRESS_DURATION_S  1200   /* 20 minutes */
+#define DEFAULT_STRESS_DURATION_S  1200   /* 20 minutes */
 #define REPORT_INTERVAL_S  10
+
+static int stress_duration_seconds(void)
+{
+#if defined(_WIN32)
+    char *env = NULL;
+    size_t env_size = 0u;
+    errno_t env_rc;
+#else
+    const char *env = getenv("NS_MPSC_RECORD_RING_STRESS_DURATION_SEC");
+#endif
+    char *end = NULL;
+    long value;
+
+#if defined(_WIN32)
+    env_rc = _dupenv_s(&env, &env_size, "NS_MPSC_RECORD_RING_STRESS_DURATION_SEC");
+    (void)env_size;
+    if(env_rc != 0 || env == NULL || env[0] == '\0'){
+        free(env);
+        return DEFAULT_STRESS_DURATION_S;
+    }
+#else
+    if(env == NULL || env[0] == '\0') return DEFAULT_STRESS_DURATION_S;
+#endif
+
+    value = strtol(env, &end, 10);
+    if(end == env || *end != '\0' || value <= 0 || value > 86400L){
+#if defined(_WIN32)
+        free(env);
+#endif
+        return DEFAULT_STRESS_DURATION_S;
+    }
+#if defined(_WIN32)
+    free(env);
+#endif
+    return (int)value;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Payload                                                            */
@@ -121,6 +158,7 @@ static void *stress_producer_fn(void *arg)
         parts[1].size = psz;
 
         do{
+            if(ctx->stop) goto done;
             rc = ns_mpsc_record_ring_try_pushv(ctx->ring, parts, 2u);
             if(rc == NS_E_QUEUE_FULL) thread_yield();
             if(rc != NS_OK && rc != NS_E_QUEUE_FULL){
@@ -137,6 +175,7 @@ static void *stress_producer_fn(void *arg)
         ++seq;
     }
 
+done:
     ns_atomic_store_explicit(&ctx->done, 1, ns_memory_order_release);
 #if defined(_WIN32)
     return 0u;
@@ -157,14 +196,17 @@ static void *stress_consumer_fn(void *arg)
     memset(expected_seq, 0, sizeof(expected_seq));
 
     while(!ctx->stop){
-        uint8_t out[8 + PAYLOAD_MAX];
+        void *record = NULL;
         size_t record_size = 0u;
+        size_t payload_size;
+        size_t i;
         uint32_t pid, seq;
         int rc;
 
-        rc = ns_mpsc_record_ring_try_pop(ctx->ring, out, sizeof(out), &record_size);
+        rc = ns_mpsc_record_ring_try_acquire(ctx->ring, &record, &record_size);
         if(rc == NS_E_EMPTY){
             thread_yield();
+            if(ctx->stop) break;
             continue;
         }
         if(rc != NS_OK){
@@ -178,6 +220,7 @@ static void *stress_consumer_fn(void *arg)
 
         if(record_size < 8u){
             ctx->failed = 1;
+            (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
 #else
@@ -185,22 +228,53 @@ static void *stress_consumer_fn(void *arg)
 #endif
         }
 
-        memcpy(&pid, out, 4);
-        memcpy(&seq, out + 4, 4);
+        memcpy(&pid, record, 4);
+        memcpy(&seq, (uint8_t *)record + 4, 4);
 
         if(pid >= PRODUCER_COUNT){
             ctx->failed = 1;
+            (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
 #else
             return NULL;
 #endif
+        }
+
+        payload_size = stress_payload_size(pid, seq);
+        if(record_size != (8u + payload_size)){
+            fprintf(stderr, "SIZE VIOLATION: pid=%u seq=%u expected_size=%u got=%u\n",
+                    pid, seq, (unsigned int)(8u + payload_size), (unsigned int)record_size);
+            ctx->failed = 1;
+            (void)ns_mpsc_record_ring_release(ctx->ring, record);
+#if defined(_WIN32)
+            return 0u;
+#else
+            return NULL;
+#endif
+        }
+
+        for(i = 0u; i < payload_size; ++i){
+            uint32_t v = (pid * 131u) ^ (seq * 977u) ^ (uint32_t)(i * 29u);
+            uint8_t expected = (uint8_t)(v ^ (v >> 8u) ^ (v >> 17u));
+            if(((uint8_t *)record)[8u + i] != expected){
+                fprintf(stderr, "PAYLOAD VIOLATION: pid=%u seq=%u offset=%u\n",
+                        pid, seq, (unsigned int)i);
+                ctx->failed = 1;
+                (void)ns_mpsc_record_ring_release(ctx->ring, record);
+#if defined(_WIN32)
+                return 0u;
+#else
+                return NULL;
+#endif
+            }
         }
 
         if(seq != expected_seq[pid]){
             fprintf(stderr, "ORDER VIOLATION: pid=%u expected_seq=%u got=%u\n",
                     pid, expected_seq[pid], seq);
             ctx->failed = 1;
+            (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
 #else
@@ -210,6 +284,14 @@ static void *stress_consumer_fn(void *arg)
 
         expected_seq[pid] = seq + 1u;
         ++ctx->popped;
+        if(ns_mpsc_record_ring_release(ctx->ring, record) != NS_OK){
+            ctx->failed = 1;
+#if defined(_WIN32)
+            return 0u;
+#else
+            return NULL;
+#endif
+        }
     }
 
 #if defined(_WIN32)
@@ -268,6 +350,7 @@ int main(void)
     time_t start, now, last_report;
     uint64_t last_pushed, last_popped;
     uint32_t i;
+    int stress_duration_s = stress_duration_seconds();
     int rc = 0;
 
     if(ns_mpsc_record_ring_init(&ring, storage, RING_CAPACITY) != NS_OK){
@@ -289,7 +372,7 @@ int main(void)
     }
 
     fprintf(stderr, "Stress test: %d producers, 1 consumer, %d seconds, ring=%d\n",
-            PRODUCER_COUNT, STRESS_DURATION_S, (int)RING_CAPACITY);
+            PRODUCER_COUNT, stress_duration_s, (int)RING_CAPACITY);
 
     /* Start consumer first */
     if(start_consumer(&consumer) != 0){
@@ -322,7 +405,7 @@ int main(void)
         uint64_t total_popped;
 
         now = time(NULL);
-        if((uintmax_t)(now - start) >= (uintmax_t)STRESS_DURATION_S) break;
+        if((uintmax_t)(now - start) >= (uintmax_t)stress_duration_s) break;
 
         if((uintmax_t)(now - last_report) >= (uintmax_t)REPORT_INTERVAL_S){
             for(i = 0u; i < PRODUCER_COUNT; ++i){

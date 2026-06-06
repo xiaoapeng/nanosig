@@ -158,6 +158,32 @@ static int test_popped_record_matches(const uint8_t *record, size_t record_size)
     return test_popped_record_matches_ex(record, record_size, header.payload_size);
 }
 
+static int test_ring_acquire_copy_release(
+    ns_mpsc_record_ring_t *ring,
+    void *out_record,
+    size_t out_capacity,
+    size_t *out_record_size)
+{
+    void *record = NULL;
+    size_t record_size = 0u;
+    int rc;
+
+    if(out_record_size != NULL) *out_record_size = 0u;
+    if((out_record == NULL) || (out_record_size == NULL)) return NS_E_INVAL;
+
+    rc = ns_mpsc_record_ring_try_acquire(ring, &record, &record_size);
+    if(rc != NS_OK) return rc;
+    if(record_size > out_capacity){
+        *out_record_size = record_size;
+        (void)ns_mpsc_record_ring_release(ring, record);
+        return NS_E_NOMEM;
+    }
+
+    if(record_size != 0u) memcpy(out_record, record, record_size);
+    if(out_record_size != NULL) *out_record_size = record_size;
+    return ns_mpsc_record_ring_release(ring, record);
+}
+
 /* ------------------------------------------------------------------ */
 /*  1. Invalid accessors                                               */
 /* ------------------------------------------------------------------ */
@@ -188,6 +214,7 @@ static int test_invalid_args(void)
     ns_mpsc_record_part_t part;
     uint8_t record[8] = { 0 };
     uint8_t out[8];
+    void *acquired = NULL;
     size_t record_size = 1u;
 
     part.data = record;
@@ -219,10 +246,12 @@ static int test_invalid_args(void)
     part.size = 0u;
     if(expect_true(ns_mpsc_record_ring_try_pushv(&ring, &part, 1u) == NS_OK) != 0) return 1;
 
-    /* try_pop */
-    if(expect_true(ns_mpsc_record_ring_try_pop(NULL, out, sizeof(out), &record_size) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, NULL, sizeof(out), &record_size) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), NULL) == NS_E_INVAL) != 0) return 1;
+    /* try_acquire/release */
+    if(expect_true(ns_mpsc_record_ring_try_acquire(NULL, &acquired, &record_size) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, NULL, &record_size) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, &acquired, NULL) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(NULL, out) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, NULL) == NS_E_INVAL) != 0) return 1;
 
     return 0;
 }
@@ -252,30 +281,29 @@ static int test_single_thread_paths(void)
     if(expect_true(ns_mpsc_record_ring_max_record_size(&ring) > 0u) != 0) return 1;
 
     /* pop empty → NS_E_EMPTY */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
     if(expect_true(record_size == 0u) != 0) return 1;
 
     /* single push/pop */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "A", 1u) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 1u) != 0) return 1;
     if(expect_true(memcmp(out, "A", 1u) == 0) != 0) return 1;
 
     /* pushv multi-part */
     if(expect_true(ns_mpsc_record_ring_try_pushv(&ring, parts, 2u) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 5u) != 0) return 1;
     if(expect_true(memcmp(out, "hello", 5u) == 0) != 0) return 1;
 
-    /* pop NOMEM then retry */
+    /* acquire returns the full contiguous record */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "abcdef", 6u) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, 3u, &record_size) == NS_E_NOMEM) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 6u) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(memcmp(out, "abcdef", 6u) == 0) != 0) return 1;
 
     /* pop empty again */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
 
     return 0;
 }
@@ -302,7 +330,7 @@ static int test_full_queue(void)
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "y", 1u) == NS_E_QUEUE_FULL) != 0) return 1;
 
     for(i = 0u; i < 8u; ++i){
-        if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+        if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
         if(expect_true(record_size == 1u) != 0) return 1;
         if(expect_true(out[0] == (uint8_t)'x') != 0) return 1;
     }
@@ -341,14 +369,14 @@ static int test_padding_and_data_wrap(void)
 
     /* push max_payload, pop it → advances write_pos by one full slot */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, g_test_payload, max_payload) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == max_payload) != 0) return 1;
     if(expect_true(memcmp(out, g_test_payload, max_payload) == 0) != 0) return 1;
 
     /* push a record that triggers alignment padding, pop and verify */
     padding_payload_size = max_payload - NS_MPSC_RECORD_RING_ALIGNMENT;
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, g_test_payload, padding_payload_size) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == padding_payload_size) != 0) return 1;
     if(expect_true(memcmp(out, g_test_payload, padding_payload_size) == 0) != 0) return 1;
 
@@ -374,7 +402,7 @@ static int test_reserved_slot_does_not_replay_stale_record(void)
 
     /* push/pop one record to advance positions past 0 */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "A", 1u) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 1u) != 0) return 1;
     if(expect_true(out[0] == (uint8_t)'A') != 0) return 1;
 
@@ -390,63 +418,60 @@ static int test_reserved_slot_does_not_replay_stale_record(void)
 
     record_size = 99u;
     out[0] = 0u;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
     if(expect_true(record_size == 0u) != 0) return 1;
 
     return 0;
 }
 
 /* ------------------------------------------------------------------ */
-/*  7. Wrap-around: record data spans buffer boundary                  */
+/*  7. Wrap-around: fake tail record skips to a contiguous head record */
 /* ------------------------------------------------------------------ */
 
 static int test_wrap_record(void)
 {
     size_t storage[NS_CAPACITY_128 / sizeof(size_t)];
     ns_mpsc_record_ring_t ring;
+    void *record = NULL;
     uint8_t out[64];
     size_t record_size = 0u;
     size_t max_payload;
+    size_t second_payload_size;
+    size_t first_stride;
+    size_t second_stride;
     size_t i;
 
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
     max_payload = ns_mpsc_record_ring_max_record_size(&ring);
+    second_payload_size = 40u;
+    first_stride = ns_align_up(sizeof(size_t) + max_payload, NS_MPSC_RECORD_RING_ALIGNMENT);
+    second_stride = ns_align_up(sizeof(size_t) + second_payload_size, NS_MPSC_RECORD_RING_ALIGNMENT);
 
-    /*
-     * Advance write_pos to 80 via push/pop, then push a record whose
-     * payload wraps around the buffer boundary:
-     *
-     *   total_size = align_up(8 + 24) = 32
-     *   write_pos 80 + 32 = 112 ≤ capacity(128)  → fits at tail
-     *
-     * For a real wrap we push max_payload first (48-byte total) to consume
-     * half the buffer, then an 8-byte record, pop both, and push a 24-byte
-     * payload whose 32-byte record spans the boundary.
-     */
-    /* push+pop max_payload → write_pos = 48+8 = 56 (aligned) */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, g_test_payload, max_payload) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(record_size == max_payload) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_push(&ring, g_test_payload, second_payload_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(record_size == second_payload_size) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == ring.capacity) != 0) return 1;
+    if(expect_true(((first_stride + second_stride) & (ring.capacity - 1u)) == (ring.capacity - (sizeof(size_t) * 2u))) != 0) return 1;
 
-    /* push+pop 8-byte → write_pos = 80 */
-    if(expect_true(ns_mpsc_record_ring_try_push(&ring, "ABCDEFGH", 8u) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
-
-    /* push 24-byte payload; total_size=32, record at 80..111 */
     {
         uint8_t wrap_payload[24];
         for(i = 0u; i < sizeof(wrap_payload); ++i) wrap_payload[i] = (uint8_t)(0xA0u + i);
         if(expect_true(ns_mpsc_record_ring_try_push(&ring, wrap_payload, sizeof(wrap_payload)) == NS_OK) != 0) return 1;
     }
 
-    /* pop and verify wrapped data integrity */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, &record, &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 24u) != 0) return 1;
+    if(expect_true(record == (void *)(storage + 1u)) != 0) return 1;
     for(i = 0u; i < 24u; ++i){
-        if(expect_true(out[i] == (uint8_t)(0xA0u + i)) != 0) return 1;
+        if(expect_true(((uint8_t *)record)[i] == (uint8_t)(0xA0u + i)) != 0) return 1;
     }
+    if(expect_true(ns_mpsc_record_ring_release(&ring, record) == NS_OK) != 0) return 1;
 
     /* ring should be empty */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_E_EMPTY) != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == ring.capacity) != 0) return 1;
 
     return 0;
@@ -470,40 +495,117 @@ static int test_zero_size_record(void)
     zero_part.size = 0u;
     if(expect_true(ns_mpsc_record_ring_try_pushv(&ring, &zero_part, 1u) == NS_OK) != 0) return 1;
 
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 0u) != 0) return 1;
 
     return 0;
 }
 
 /* ------------------------------------------------------------------ */
-/*  9. Pop NOMEM retry preserves record                                */
+/*  9. Acquire/release lifetime                                        */
 /* ------------------------------------------------------------------ */
 
-static int test_pop_nomem_retry(void)
+static int test_acquire_release_lifetime(void)
 {
     size_t storage[NS_CAPACITY_128 / sizeof(size_t)];
     ns_mpsc_record_ring_t ring;
-    uint8_t out[64];
+    void *record = NULL;
     size_t record_size = 0u;
+    size_t free_after_push;
 
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "abcdef", 6u) == NS_OK) != 0) return 1;
+    free_after_push = ns_mpsc_record_ring_free_capacity(&ring);
 
-    /* first attempt: buffer too small */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, 3u, &record_size) == NS_E_NOMEM) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, &record, &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 6u) != 0) return 1;
+    if(expect_true(memcmp(record, "abcdef", 6u) == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == free_after_push) != 0) return 1;
 
-    /* retry: record is still there and intact */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
-    if(expect_true(record_size == 6u) != 0) return 1;
-    if(expect_true(memcmp(out, "abcdef", 6u) == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, (uint8_t *)record + 1u) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, record) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == ring.capacity) != 0) return 1;
 
     return 0;
 }
 
 /* ------------------------------------------------------------------ */
-/*  10. Push/pop position tracking and free_capacity                   */
+/*  10. Oversize record rejection                                      */
+/* ------------------------------------------------------------------ */
+
+static int test_oversize_record_rejected(void)
+{
+    size_t storage[NS_CAPACITY_128 / sizeof(size_t)];
+    ns_mpsc_record_ring_t ring;
+    uint8_t payload[128];
+    uint8_t out[128];
+    ns_mpsc_record_part_t parts[2];
+    size_t max_payload;
+    size_t free_before;
+    size_t record_size = 0u;
+
+    if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
+    max_payload = ns_mpsc_record_ring_max_record_size(&ring);
+    if(expect_true((max_payload + 1u) <= sizeof(payload)) != 0) return 1;
+
+    memset(payload, 0xA5, sizeof(payload));
+    free_before = ns_mpsc_record_ring_free_capacity(&ring);
+
+    if(expect_true(ns_mpsc_record_ring_try_push(&ring, payload, max_payload + 1u) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == free_before) != 0) return 1;
+
+    parts[0].data = payload;
+    parts[0].size = max_payload / 2u;
+    parts[1].data = payload + parts[0].size;
+    parts[1].size = (max_payload + 1u) - parts[0].size;
+
+    if(expect_true(ns_mpsc_record_ring_try_pushv(&ring, parts, 2u) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == free_before) != 0) return 1;
+
+    if(expect_true(ns_mpsc_record_ring_try_push(&ring, payload, max_payload) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(record_size == max_payload) != 0) return 1;
+    if(expect_true(memcmp(out, payload, max_payload) == 0) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == ring.capacity) != 0) return 1;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  11. Release rejects stale or wrong pointers                        */
+/* ------------------------------------------------------------------ */
+
+static int test_release_rejects_stale_or_wrong_record(void)
+{
+    size_t storage[NS_CAPACITY_128 / sizeof(size_t)];
+    ns_mpsc_record_ring_t ring;
+    void *record = NULL;
+    void *next_record = NULL;
+    size_t record_size = 0u;
+    uint8_t outside = 0u;
+
+    if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
+
+    if(expect_true(ns_mpsc_record_ring_try_push(&ring, "abc", 3u) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, &record, &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(record_size == 3u) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, &outside) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, (uint8_t *)record + 1u) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, record) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, record) == NS_E_INVAL) != 0) return 1;
+
+    if(expect_true(ns_mpsc_record_ring_try_push(&ring, "defg", 4u) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_try_acquire(&ring, &next_record, &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(record_size == 4u) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, record) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_release(&ring, next_record) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == ring.capacity) != 0) return 1;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  12. Push/pop position tracking and free_capacity                   */
 /* ------------------------------------------------------------------ */
 
 static int test_push_pop_positions(void)
@@ -534,13 +636,13 @@ static int test_push_pop_positions(void)
     if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == cap - stride_a - stride_b) != 0) return 1;
 
     /* pop "A" */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 1u) != 0) return 1;
     if(expect_true(out[0] == 'A') != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == cap - stride_b) != 0) return 1;
 
     /* pop "BC" */
-    if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+    if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
     if(expect_true(record_size == 2u) != 0) return 1;
     if(expect_true(memcmp(out, "BC", 2u) == 0) != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == cap) != 0) return 1;
@@ -558,7 +660,7 @@ static int test_push_pop_positions(void)
         if(expect_true(ns_mpsc_record_ring_try_push(&ring, "y", 1u) == NS_E_QUEUE_FULL) != 0) return 1;
 
         for(i = 0u; i < count; ++i){
-            if(expect_true(ns_mpsc_record_ring_try_pop(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
+            if(expect_true(test_ring_acquire_copy_release(&ring, out, sizeof(out), &record_size) == NS_OK) != 0) return 1;
             if(expect_true(record_size == 1u) != 0) return 1;
         }
         if(expect_true(ns_mpsc_record_ring_free_capacity(&ring) == cap) != 0) return 1;
@@ -568,7 +670,7 @@ static int test_push_pop_positions(void)
 }
 
 /* ------------------------------------------------------------------ */
-/*  11. Multi-producer concurrency (shared infrastructure)             */
+/*  13. Multi-producer concurrency (shared infrastructure)             */
 /* ------------------------------------------------------------------ */
 
 enum {
@@ -730,7 +832,7 @@ static int run_mp_test(
         size_t record_size = 0u;
         int rc;
 
-        rc = ns_mpsc_record_ring_try_pop(ring, out, sizeof(out), &record_size);
+        rc = test_ring_acquire_copy_release(ring, out, sizeof(out), &record_size);
         if(rc == NS_E_EMPTY){
             test_yield();
             continue;
@@ -811,10 +913,10 @@ static int test_mp_1p_baseline(void)
 
 static int test_mp_2p_tiny_queue(void)
 {
-    size_t storage[NS_CAPACITY_128 / sizeof(size_t)];
+    size_t storage[NS_CAPACITY_256 / sizeof(size_t)];
     ns_mpsc_record_ring_t ring;
 
-    if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_256) == NS_OK) != 0) return 1;
     return run_mp_test(&ring, 2, 256, MP_PAYLOAD_VARIABLE, 0u);
 }
 
@@ -894,7 +996,9 @@ int main(void)
     if(test_reserved_slot_does_not_replay_stale_record() != 0) return 1;
     if(test_wrap_record() != 0) return 1;
     if(test_zero_size_record() != 0) return 1;
-    if(test_pop_nomem_retry() != 0) return 1;
+    if(test_acquire_release_lifetime() != 0) return 1;
+    if(test_oversize_record_rejected() != 0) return 1;
+    if(test_release_rejects_stale_or_wrong_record() != 0) return 1;
     if(test_push_pop_positions() != 0) return 1;
 
     /* Multi-producer variants */
