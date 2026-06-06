@@ -147,6 +147,8 @@ static size_t ns_mpsc_record_ring_used(size_t write_pos, size_t read_pos)
     return write_pos - read_pos;
 }
 
+/* 前置条件：plan_push 已通过 fake record 保证真实记录在环中连续存储，
+   因此这里只需单段连续 memcpy，无需处理绕回。 */
 static void ns_mpsc_record_ring_write_parts(
     ns_mpsc_record_ring_t *ring,
     size_t record_pos,
@@ -282,16 +284,16 @@ size_t ns_mpsc_record_ring_capacity(const ns_mpsc_record_ring_t *ring)
  */
 size_t ns_mpsc_record_ring_free_capacity(const ns_mpsc_record_ring_t *ring)
 {
-    size_t write_pos;
+    size_t reserve_pos;
     size_t read_pos;
     size_t used;
 
     if(!ns_mpsc_record_ring_is_valid(ring)) return 0u;
 
-    write_pos = ns_atomic_load_explicit(&ring->reserve_pos, ns_memory_order_relaxed);
+    reserve_pos = ns_atomic_load_explicit(&ring->reserve_pos, ns_memory_order_relaxed);
     read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
 
-    used = ns_mpsc_record_ring_used(write_pos, read_pos);
+    used = ns_mpsc_record_ring_used(reserve_pos, read_pos);
     if(used > ring->capacity) return 0u;
     return ring->capacity - used;
 }
