@@ -482,9 +482,10 @@ ns_rbtree_node_t *ns_rbtree_next_match(
 
     next = ns_rbtree_next(node);
     while(next != NULL){
-        if(tree->cmp(key, next) == 0) return next;
+        int c = tree->cmp(key, next);
+        if(c == 0) return next;
         /* 如果 next > key，中序后续只会更大，无需继续 */
-        if(tree->cmp(key, next) < 0) break;
+        if(c < 0) break;
         next = ns_rbtree_next(next);
     }
 
