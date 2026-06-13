@@ -23,12 +23,14 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 
 ### Working In `platform/`
 - Add platform abstractions here, not under `src/`.
-- Keep P1b backend scope loop-only: TLS, single wakeup, mutex, monotonic clock, and allocation.
-- Do not add thread creation, condvar, wait-many, fd/socket readiness, or broker/waitset APIs until the later P5b broker phase.
+- P1b loop-only scope: TLS, single wakeup, mutex, monotonic clock, and allocation.
+- P5b waitset scope: waitset create/destroy/add/remove/wait, waitable union. Waitset decoupled from wakeup.
+- Do not add thread creation, condvar, fd/socket readiness, or broker APIs until the later phases.
 - Do not create empty RTOS/MCU backend directories for v1; document future ports instead.
 
 ### Testing Requirements
 - Platform edits require `ctest --preset windows-release --output-on-failure` locally and Linux preset smoke tests where available.
+- Waitset tests use platform primitives (event/eventfd) directly, not wakeup. Tests: lifecycle, add/remove semantics, timeout, single signal, multi waitable.
 
 ### Common Patterns
 - Public core code should consume `platform/port.h` without OS-specific preprocessor branches.
@@ -39,8 +41,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 - Future dependency of `src/` implementation files.
 
 ### External
-- Linux backend uses pthread TLS/mutex, eventfd or an equivalent single wakeup, clock APIs, and platform allocation.
-- Windows backend uses TLS, auto-reset events, single-handle wait, SRWLOCK, QPC, and platform allocation.
-- `WaitForMultipleObjects`, fd/socket readiness, and broker waitsets are deferred to P5b.
+- Linux backend uses pthread TLS/mutex, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
+- Windows backend uses TLS, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

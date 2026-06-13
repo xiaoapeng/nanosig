@@ -153,7 +153,9 @@ int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup);
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup);
 
 /**
- * @brief 等待单个 wakeup。
+ * @brief 等待单个 wakeup（毫秒精度）。
+ *
+ * 超时精度为毫秒（Linux poll / Windows WaitForSingleObject 原生粒度）。
  *
  * @param wakeup wakeup 句柄。
  * @param timeout_us 超时时间，单位为微秒；`NS_PLATFORM_WAIT_INFINITE_US`
@@ -208,6 +210,143 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex);
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us);
+
+/* ------------------------------------------------------------------ */
+/*  waitset（P5b broker / waitset 契约追加）                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief 可等待事件位。
+ */
+#define NS_WAITABLE_EVENT_IN   (1u << 0) /**< 可读 / signaled */
+#define NS_WAITABLE_EVENT_OUT  (1u << 1) /**< 可写 */
+#define NS_WAITABLE_EVENT_ERR  (1u << 2) /**< 错误 */
+
+/**
+ * @brief 可等待句柄。
+ *
+ * 完整的"等待描述符"：平台原语、用户标签、关注事件和触发模式。
+ *
+ * **生命周期要求**：调用方必须保证 waitable 在 `ns_platform_waitset_remove`
+ * 之前一直有效。Linux 后端通过 epoll `data.ptr` 直接引用本结构（零拷贝），
+ * Windows 后端内部保存副本。
+ *
+ * - Linux：`fd` 字段，eventfd / socket / pipe fd。
+ * - Windows：`handle` 字段，HANDLE。
+ * - RTOS（v2）：`event_bit` 字段，event group 中的 bit 位置。
+ */
+typedef struct ns_platform_waitable {
+    union {
+        int     fd;         /**< Linux: 文件描述符 */
+        void   *handle;     /**< Windows: HANDLE */
+        int     event_bit;  /**< RTOS: event bit index（v2） */
+    };
+    void    *user_data;     /**< 关联的用户标签，completion 中原样返回 */
+    uint32_t events;        /**< 关注的事件位（NS_WAITABLE_EVENT_*） */
+    int      edge_triggered;/**< 1 = 边沿触发（Linux EPOLLET），0 = 电平触发 */
+} ns_platform_waitable_t;
+
+/**
+ * @brief 初始化 waitable 为零值。
+ *
+ * @return 零初始化的 waitable。
+ */
+static inline ns_platform_waitable_t ns_waitable_init(void)
+{
+    ns_platform_waitable_t w;
+#ifdef _WIN32
+    w.handle = NULL;  /* Windows: NULL 表示无效 */
+#else
+    w.fd = -1;        /* Linux: -1 表示无效 */
+#endif
+    w.user_data = NULL;
+    w.events = 0u;
+    w.edge_triggered = 0;
+    return w;
+}
+
+/**
+ * @brief waitset 完成事件。
+ *
+ * 由 `ns_platform_waitset_wait` 填写。`waitable` 指向注册时的 waitable
+ * （含 `user_data`），`triggered_events` 是实际触发的事件位。
+ */
+typedef struct ns_platform_waitset_completion {
+    const ns_platform_waitable_t *waitable;         /**< 指向注册时的 waitable */
+    uint32_t                      triggered_events; /**< 实际触发的事件位 */
+} ns_platform_waitset_completion_t;
+
+/**
+ * @brief 平台 waitset 句柄。
+ *
+ * waitset 是一次等待多个事件源的容器。
+ * - Linux：epoll，`data.ptr` 直接指向 caller 的 waitable（零拷贝）。
+ * - Windows：WaitForMultipleObjects + 内部数组映射。
+ * - RTOS（v2）：event group。
+ */
+typedef struct ns_platform_waitset ns_platform_waitset_t;
+
+/**
+ * @brief 创建 waitset。
+ *
+ * @param out_waitset 输出 waitset 句柄。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset);
+
+/**
+ * @brief 销毁 waitset。
+ *
+ * @param waitset waitset 句柄。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset);
+
+/**
+ * @brief 向 waitset 注册一个 waitable。
+ *
+ * waitset 内部存储 caller waitable 的指针（零拷贝）。调用方必须保证
+ * waitable 在 `ns_platform_waitset_remove` 之前一直有效。
+ *
+ * @param waitset waitset 句柄。
+ * @param waitable 要注册的 waitable（含 events、edge_triggered、user_data）。
+ * @return `NS_OK` 成功，`NS_E_EXISTS` 重复注册，`NS_E_TOO_MANY_HANDLES` 容量满。
+ */
+int ns_platform_waitset_add(
+    ns_platform_waitset_t *waitset,
+    const ns_platform_waitable_t *waitable);
+
+/**
+ * @brief 从 waitset 移除一个 waitable。
+ *
+ * @param waitset waitset 句柄。
+ * @param waitable 要移除的 waitable。
+ * @return `NS_OK` 成功，`NS_E_INVAL` 未注册。
+ */
+int ns_platform_waitset_remove(
+    ns_platform_waitset_t *waitset,
+    const ns_platform_waitable_t *waitable);
+
+/**
+ * @brief 等待事件（微秒精度）。
+ *
+ * 阻塞直到至少一个 waitable 触发或超时。timeout 单位为微秒，
+ * 通过 timerfd（Linux）或 WaitableTimer（Windows）实现微秒级精度。
+ * 用于 broker 的 timer deadline 等待场景。
+ *
+ * @param waitset waitset 句柄。
+ * @param timeout_us 超时时间；0 = 非阻塞，`NS_PLATFORM_WAIT_INFINITE_US` = 无限等待。
+ * @param completions 输出数组，由调用方提供。
+ * @param max_completions 数组容量，最大 64。
+ * @param out_count 实际触发数。
+ * @return `NS_OK` 成功，失败时返回负数状态码。
+ */
+int ns_platform_waitset_wait(
+    ns_platform_waitset_t *waitset,
+    ns_platform_time_us_t timeout_us,
+    ns_platform_waitset_completion_t *completions,
+    size_t max_completions,
+    size_t *out_count);
 
 #ifdef __cplusplus
 }

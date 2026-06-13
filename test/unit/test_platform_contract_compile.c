@@ -81,9 +81,33 @@ static void platform_contract_check_atomic_macros(void)
     ns_memory_order_seq_cst_barrier();
 }
 
+static void platform_contract_check_waitset_types(void)
+{
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t c;
+    ns_platform_waitset_t *ws = NULL;
+
+    w = ns_waitable_init();
+    w.fd = 0;
+    w.handle = NULL;
+    w.event_bit = 0;
+    w.user_data = NULL;
+    w.events = NS_WAITABLE_EVENT_IN;
+    w.edge_triggered = 0;
+
+    c.waitable = &w;
+    c.triggered_events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR;
+
+    (void)ws;
+    (void)NS_WAITABLE_EVENT_IN;
+    (void)NS_WAITABLE_EVENT_OUT;
+    (void)NS_WAITABLE_EVENT_ERR;
+}
+
 int main(void)
 {
     platform_contract_accept_opaque_handles();
     platform_contract_check_atomic_macros();
+    platform_contract_check_waitset_types();
     return 0;
 }

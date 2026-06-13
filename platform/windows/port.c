@@ -85,7 +85,6 @@ int ns_platform_tls_key_destroy(ns_platform_tls_key_t *key)
     if(key == NULL) return NS_E_INVAL;
 
     if(TlsFree(key->index) == 0){
-        ns_platform_free(key);
         return NS_E_INVAL;
     }
 
@@ -231,4 +230,178 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
     freq = (uint64_t)frequency.QuadPart;
     *out_now_us = ((count / freq) * 1000000u) + (((count % freq) * 1000000u) / freq);
     return NS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/*  waitset                                                            */
+/* ------------------------------------------------------------------ */
+
+#define NS_PLATFORM_WAITSET_MAX_HANDLES 64u
+/* 预留 1 个 slot 给内部 timer handle */
+#define NS_PLATFORM_WAITSET_USER_HANDLES (NS_PLATFORM_WAITSET_MAX_HANDLES - 1u)
+
+/* Windows：WFMO 返回 index，需要内部存 waitable 指针做映射 */
+struct ns_platform_waitset {
+    HANDLE                  handles[NS_PLATFORM_WAITSET_MAX_HANDLES];
+    const ns_platform_waitable_t *waitables[NS_PLATFORM_WAITSET_USER_HANDLES]; /* index → caller */
+    DWORD                   count;
+    HANDLE                  timer;
+};
+
+int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
+{
+    ns_platform_waitset_t *ws;
+
+    if(out_waitset == NULL) return NS_E_INVAL;
+
+    *out_waitset = NULL;
+    ws = (ns_platform_waitset_t *)ns_platform_alloc(sizeof(*ws));
+    if(ws == NULL) return NS_E_NOMEM;
+
+    ws->timer = CreateWaitableTimerW(NULL, TRUE, NULL);
+    if(ws->timer == NULL){
+        ns_platform_free(ws);
+        return NS_E_NOMEM;
+    }
+
+    ws->count = 0u;
+    *out_waitset = ws;
+    return NS_OK;
+}
+
+int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
+{
+    if(waitset == NULL) return NS_E_INVAL;
+
+    CloseHandle(waitset->timer);
+    ns_platform_free(waitset);
+    return NS_OK;
+}
+
+static int ns_waitset_find(const ns_platform_waitset_t *waitset, HANDLE handle)
+{
+    DWORD i;
+    for(i = 0u; i < waitset->count; i++){
+        if(waitset->handles[i] == handle) return (int)i;
+    }
+    return -1;
+}
+
+int ns_platform_waitset_add(
+    ns_platform_waitset_t *waitset,
+    const ns_platform_waitable_t *waitable)
+{
+    if((waitset == NULL) || (waitable == NULL) || (waitable->handle == NULL)) return NS_E_INVAL;
+    if(ns_waitset_find(waitset, (HANDLE)waitable->handle) >= 0) return NS_E_EXISTS;
+    if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;
+
+    waitset->handles[waitset->count] = (HANDLE)waitable->handle;
+    waitset->waitables[waitset->count] = waitable;
+    waitset->count++;
+    return NS_OK;
+}
+
+int ns_platform_waitset_remove(
+    ns_platform_waitset_t *waitset,
+    const ns_platform_waitable_t *waitable)
+{
+    int idx;
+    DWORD last;
+
+    if((waitset == NULL) || (waitable == NULL) || (waitable->handle == NULL)) return NS_E_INVAL;
+
+    idx = ns_waitset_find(waitset, (HANDLE)waitable->handle);
+    if(idx < 0) return NS_E_INVAL;
+
+    last = waitset->count - 1u;
+    if((DWORD)idx < last){
+        waitset->handles[idx] = waitset->handles[last];
+        waitset->waitables[idx] = waitset->waitables[last];
+    }
+    waitset->count--;
+    return NS_OK;
+}
+
+/**
+ * @brief 等待事件（微秒精度）。
+ *
+ * timeout 使用预创建的 WaitableTimer 实现微秒精度。
+ * - timeout > 0：SetWaitableTimer，timer handle 加入 WFMO 数组。
+ * - timeout == 0：WFMO(INFINITE 不用，timeout=0) 非阻塞。
+ * - timeout == INFINITE：WFMO(INFINITE) 无限等待。
+ */
+int ns_platform_waitset_wait(
+    ns_platform_waitset_t *waitset,
+    ns_platform_time_us_t timeout_us,
+    ns_platform_waitset_completion_t *completions,
+    size_t max_completions,
+    size_t *out_count)
+{
+    HANDLE handles[NS_PLATFORM_WAITSET_MAX_HANDLES];
+    DWORD handle_count;
+    DWORD timeout_ms;
+    DWORD result;
+    DWORD i;
+    int timer_armed = 0;
+
+    if((waitset == NULL) || (completions == NULL) || (out_count == NULL)) return NS_E_INVAL;
+
+    *out_count = 0u;
+    if(waitset->count == 0u && timeout_us == 0u) return NS_OK;
+
+    /* 从 waitables 构建临时 handles 数组 */
+    for(i = 0u; i < waitset->count; i++){
+        handles[i] = (HANDLE)waitset->waitables[i]->handle;
+    }
+
+    /* arm timer 或设置 timeout */
+    if(timeout_us != 0u && timeout_us != NS_PLATFORM_WAIT_INFINITE_US){
+        LARGE_INTEGER due;
+        due.QuadPart = -(LONGLONG)(timeout_us * 10u);
+        if(!SetWaitableTimer(waitset->timer, &due, 0, NULL, NULL, FALSE)){
+            return NS_E_INVAL;
+        }
+        handles[waitset->count] = waitset->timer;
+        handle_count = waitset->count + 1u;
+        timer_armed = 1;
+        timeout_ms = INFINITE;
+    }else if(timeout_us == 0u){
+        handle_count = waitset->count;
+        timeout_ms = 0;
+    }else{
+        handle_count = waitset->count;
+        timeout_ms = INFINITE;
+    }
+
+    result = WaitForMultipleObjects(handle_count, handles, FALSE, timeout_ms);
+
+    if(result == WAIT_TIMEOUT) return NS_OK;
+
+    if(result >= WAIT_OBJECT_0 && result < WAIT_OBJECT_0 + handle_count){
+        i = result - WAIT_OBJECT_0;
+
+        /* timer fired → timeout，不报告 completion */
+        if(timer_armed && i == waitset->count) return NS_OK;
+
+        /* 首个 signaled 用户 handle */
+        if(*out_count < max_completions){
+            completions[*out_count].waitable = waitset->waitables[i];
+            completions[*out_count].triggered_events = NS_WAITABLE_EVENT_IN;
+            (*out_count)++;
+        }
+
+        /* 扫描其余用户 handle，捕获同时 signaled 的 */
+        for(i = 0u; i < waitset->count && *out_count < max_completions; i++){
+            if(i == result - WAIT_OBJECT_0) continue;
+            if(WaitForSingleObject(handles[i], 0u) == WAIT_OBJECT_0){
+                completions[*out_count].waitable = waitset->waitables[i];
+                completions[*out_count].triggered_events = NS_WAITABLE_EVENT_IN;
+                (*out_count)++;
+            }
+        }
+
+        return NS_OK;
+    }
+
+    return NS_E_INVAL;
 }
