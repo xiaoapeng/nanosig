@@ -61,11 +61,13 @@ extern int ns_is_initialized(int *out_initialized);
 #endif
 
 #include <nanosig/nanosig_atomic.h>
+#include <nanosig/nanosig_broker.h>
 #include <nanosig/nanosig_ds.h>
 #include <nanosig/nanosig_loop.h>
 #include <nanosig/nanosig_mpsc.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_timer.h>
+#include <nanosig/nanosig_waitable.h>
 
 #endif /* NANOSIG_H */

@@ -26,6 +26,12 @@ struct ns_platform_mutex {
     SRWLOCK lock;
 };
 
+struct ns_platform_thread {
+    HANDLE thread;
+    ns_platform_thread_fn entry;
+    void *arg;
+};
+
 static DWORD ns_windows_timeout_ms(ns_platform_time_us_t timeout_us)
 {
     uint64_t timeout_ms;
@@ -173,6 +179,17 @@ int ns_platform_wakeup_wait(
     return NS_E_INVAL;
 }
 
+ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup)
+{
+    ns_platform_waitable_t waitable = ns_waitable_init();
+
+    if(wakeup != NULL){
+        waitable.handle = wakeup->event;
+    }
+
+    return waitable;
+}
+
 int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
 {
     ns_platform_mutex_t *mutex;
@@ -232,6 +249,55 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
     return NS_OK;
 }
 
+static DWORD WINAPI ns_windows_thread_main(LPVOID arg)
+{
+    ns_platform_thread_t *thread = (ns_platform_thread_t *)arg;
+
+    thread->entry(thread->arg);
+    return 0u;
+}
+
+int ns_platform_thread_create(
+    ns_platform_thread_t **out_thread,
+    ns_platform_thread_fn entry,
+    void *arg,
+    const char *debug_name)
+{
+    ns_platform_thread_t *thread;
+
+    (void)debug_name;
+
+    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
+
+    *out_thread = NULL;
+    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
+    if(thread == NULL) return NS_E_NOMEM;
+
+    thread->entry = entry;
+    thread->arg = arg;
+    thread->thread = CreateThread(NULL, 0u, ns_windows_thread_main, thread, 0u, NULL);
+    if(thread->thread == NULL){
+        ns_platform_free(thread);
+        return NS_E_NOMEM;
+    }
+
+    *out_thread = thread;
+    return NS_OK;
+}
+
+int ns_platform_thread_join(ns_platform_thread_t *thread)
+{
+    int rc = NS_OK;
+
+    if(thread == NULL) return NS_E_INVAL;
+
+    if(WaitForSingleObject(thread->thread, INFINITE) != WAIT_OBJECT_0) rc = NS_E_INVAL;
+    if(CloseHandle(thread->thread) == 0) rc = NS_E_INVAL;
+
+    ns_platform_free(thread);
+    return rc;
+}
+
 /* ------------------------------------------------------------------ */
 /*  waitset                                                            */
 /* ------------------------------------------------------------------ */
@@ -287,11 +353,21 @@ static int ns_waitset_find(const ns_platform_waitset_t *waitset, HANDLE handle)
     return -1;
 }
 
+static int ns_waitable_handle_is_invalid(const ns_platform_waitable_t *waitable)
+{
+    if(waitable == NULL) return 1;
+
+    return (waitable->handle == NULL)
+        || (waitable->handle == INVALID_HANDLE_VALUE);
+}
+
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
     const ns_platform_waitable_t *waitable)
 {
-    if((waitset == NULL) || (waitable == NULL) || (waitable->handle == NULL)) return NS_E_INVAL;
+    if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
+        return NS_E_INVAL;
+    }
     if(ns_waitset_find(waitset, (HANDLE)waitable->handle) >= 0) return NS_E_EXISTS;
     if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;
 
@@ -308,7 +384,9 @@ int ns_platform_waitset_remove(
     int idx;
     DWORD last;
 
-    if((waitset == NULL) || (waitable == NULL) || (waitable->handle == NULL)) return NS_E_INVAL;
+    if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
+        return NS_E_INVAL;
+    }
 
     idx = ns_waitset_find(waitset, (HANDLE)waitable->handle);
     if(idx < 0) return NS_E_INVAL;

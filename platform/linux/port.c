@@ -33,6 +33,12 @@ struct ns_platform_mutex {
     pthread_mutex_t mutex;
 };
 
+struct ns_platform_thread {
+    pthread_t thread;
+    ns_platform_thread_fn entry;
+    void *arg;
+};
+
 static int ns_linux_wakeup_drain(ns_platform_wakeup_t *wakeup)
 {
     uint64_t value;
@@ -209,6 +215,17 @@ int ns_platform_wakeup_wait(
     }
 }
 
+ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup)
+{
+    ns_platform_waitable_t waitable = ns_waitable_init();
+
+    if(wakeup != NULL){
+        waitable.fd = wakeup->fd;
+    }
+
+    return waitable;
+}
+
 int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
 {
     ns_platform_mutex_t *mutex;
@@ -268,6 +285,54 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
 
     *out_now_us = ((uint64_t)ts.tv_sec * 1000000u) + ((uint64_t)ts.tv_nsec / 1000u);
     return NS_OK;
+}
+
+static void *ns_linux_thread_main(void *arg)
+{
+    ns_platform_thread_t *thread = (ns_platform_thread_t *)arg;
+
+    thread->entry(thread->arg);
+    return NULL;
+}
+
+int ns_platform_thread_create(
+    ns_platform_thread_t **out_thread,
+    ns_platform_thread_fn entry,
+    void *arg,
+    const char *debug_name)
+{
+    ns_platform_thread_t *thread;
+    int rc;
+
+    (void)debug_name;
+
+    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
+
+    *out_thread = NULL;
+    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
+    if(thread == NULL) return NS_E_NOMEM;
+
+    thread->entry = entry;
+    thread->arg = arg;
+    rc = pthread_create(&thread->thread, NULL, ns_linux_thread_main, thread);
+    if(rc != 0){
+        ns_platform_free(thread);
+        return (rc == EAGAIN) ? NS_E_NOMEM : NS_E_INVAL;
+    }
+
+    *out_thread = thread;
+    return NS_OK;
+}
+
+int ns_platform_thread_join(ns_platform_thread_t *thread)
+{
+    int rc;
+
+    if(thread == NULL) return NS_E_INVAL;
+
+    rc = pthread_join(thread->thread, NULL);
+    ns_platform_free(thread);
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 /* ------------------------------------------------------------------ */

@@ -20,6 +20,7 @@ option(NANOSIG_BUILD_API_CHECKS "Register compile-only PD API checks" ON)
 
 set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_atomic.h
+    include/nanosig/nanosig_broker.h
     include/nanosig/nanosig_ds.h
     include/nanosig/nanosig.h
     include/nanosig/nanosig_hashtable.h
@@ -35,10 +36,12 @@ set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_status.h
     include/nanosig/nanosig_timer.h
     include/nanosig/nanosig_types.h
+    include/nanosig/nanosig_waitable.h
 )
 
 set(NANOSIG_INTERNAL_HEADERS
     platform/port.h
+    src/ns_broker.h
     src/ns_timer_mgr.h
 )
 
@@ -64,6 +67,7 @@ endif()
 
 add_library(nanosig STATIC
     src/nanosig.c
+    src/ns_broker.c
     src/ns_timer.c
     ${NANOSIG_PLATFORM_SOURCES}
     ${NANOSIG_DS_SOURCES}
@@ -108,6 +112,7 @@ function(nanosig_add_unit_test name source)
 endfunction()
 
 if(NANOSIG_BUILD_TESTS)
+    nanosig_add_unit_test(nanosig_test_broker test/unit/test_broker.c)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
     nanosig_add_unit_test(nanosig_test_signal test/unit/test_signal.c)
@@ -137,6 +142,10 @@ if(NANOSIG_BUILD_API_CHECKS)
         test/unit/test_platform_contract_compile.c
     )
 
+    nanosig_add_api_compile_check(nanosig_api_check_broker_contract
+        test/unit/test_broker_contract_compile.c
+    )
+
     nanosig_add_api_compile_check(nanosig_api_check_data_structures
         test/unit/test_data_structures_contract_compile.c
     )
@@ -150,6 +159,7 @@ if(NANOSIG_BUILD_API_CHECKS)
             nanosig_api_check_demos
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
+            nanosig_api_check_broker_contract
             nanosig_api_check_data_structures
             nanosig_api_check_types
     )

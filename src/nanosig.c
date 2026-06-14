@@ -11,7 +11,7 @@
 
 #include <platform/port.h>
 
-#include "src/ns_timer_mgr.h"
+#include "src/ns_broker.h"
 
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;
@@ -156,7 +156,7 @@ int ns_init(void)
     rc = ns_platform_mutex_create(&g_ns_loop_registry_mutex, "nanosig-loop-registry");
     if(rc != NS_OK) goto out_tls;
 
-    rc = ns_timer_mgr_global_init(NULL, NULL);
+    rc = ns_broker_global_init();
     if(rc != NS_OK) goto out_registry_mutex;
 
     ns_list_init(&g_ns_loop_registry_head);
@@ -194,7 +194,7 @@ int ns_shutdown(void)
 
     ns_atomic_store_explicit(&g_ns_initialized, 0, ns_memory_order_release);
 
-    ns_timer_mgr_global_shutdown();
+    ns_broker_global_shutdown();
 
     rc = ns_platform_mutex_destroy(g_ns_loop_registry_mutex);
     g_ns_loop_registry_mutex = NULL;

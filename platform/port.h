@@ -12,7 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <nanosig/nanosig.h>
+#include <nanosig/nanosig_status.h>
+#include <nanosig/nanosig_waitable.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,6 +46,16 @@ typedef struct ns_platform_wakeup ns_platform_wakeup_t;
  * @brief 平台互斥锁句柄。
  */
 typedef struct ns_platform_mutex ns_platform_mutex_t;
+
+/**
+ * @brief 平台线程句柄。
+ */
+typedef struct ns_platform_thread ns_platform_thread_t;
+
+/**
+ * @brief 平台线程入口。
+ */
+typedef void (*ns_platform_thread_fn)(void *arg);
 
 /**
  * @brief 平台等待结果。
@@ -169,6 +180,17 @@ int ns_platform_wakeup_wait(
     ns_platform_wait_result_t *out_result);
 
 /**
+ * @brief 将 wakeup 转换为 waitset 可注册的 waitable。
+ *
+ * 返回值只填充平台原语字段；调用方负责设置 `events` 和 `user_data`。
+ * `wakeup == NULL` 时返回无效 waitable。
+ *
+ * @param wakeup wakeup 句柄。
+ * @return 可注册到 waitset 的 waitable。
+ */
+ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup);
+
+/**
  * @brief 创建互斥锁。
  *
  * @param out_mutex 输出互斥锁句柄。
@@ -211,59 +233,32 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex);
  */
 int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us);
 
+/**
+ * @brief 创建平台线程。
+ *
+ * @param out_thread 输出线程句柄。
+ * @param entry 线程入口。
+ * @param arg 传给入口的参数。
+ * @param debug_name 调试名称；平台层不接管字符串所有权。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_thread_create(
+    ns_platform_thread_t **out_thread,
+    ns_platform_thread_fn entry,
+    void *arg,
+    const char *debug_name);
+
+/**
+ * @brief join 平台线程并释放线程句柄。
+ *
+ * @param thread 线程句柄。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_thread_join(ns_platform_thread_t *thread);
+
 /* ------------------------------------------------------------------ */
 /*  waitset（P5b broker / waitset 契约追加）                            */
 /* ------------------------------------------------------------------ */
-
-/**
- * @brief 可等待事件位。
- */
-#define NS_WAITABLE_EVENT_IN   (1u << 0) /**< 可读 / signaled */
-#define NS_WAITABLE_EVENT_OUT  (1u << 1) /**< 可写 */
-#define NS_WAITABLE_EVENT_ERR  (1u << 2) /**< 错误 */
-
-/**
- * @brief 可等待句柄。
- *
- * 完整的"等待描述符"：平台原语、用户标签、关注事件和触发模式。
- *
- * **生命周期要求**：调用方必须保证 waitable 在 `ns_platform_waitset_remove`
- * 之前一直有效。Linux 后端通过 epoll `data.ptr` 直接引用本结构（零拷贝），
- * Windows 后端内部保存副本。
- *
- * - Linux：`fd` 字段，eventfd / socket / pipe fd。
- * - Windows：`handle` 字段，HANDLE。
- * - RTOS（v2）：`event_bit` 字段，event group 中的 bit 位置。
- */
-typedef struct ns_platform_waitable {
-    union {
-        int     fd;         /**< Linux: 文件描述符 */
-        void   *handle;     /**< Windows: HANDLE */
-        int     event_bit;  /**< RTOS: event bit index（v2） */
-    };
-    void    *user_data;     /**< 关联的用户标签，completion 中原样返回 */
-    uint32_t events;        /**< 关注的事件位（NS_WAITABLE_EVENT_*） */
-    int      edge_triggered;/**< 1 = 边沿触发（Linux EPOLLET），0 = 电平触发 */
-} ns_platform_waitable_t;
-
-/**
- * @brief 初始化 waitable 为零值。
- *
- * @return 零初始化的 waitable。
- */
-static inline ns_platform_waitable_t ns_waitable_init(void)
-{
-    ns_platform_waitable_t w;
-#ifdef _WIN32
-    w.handle = NULL;  /* Windows: NULL 表示无效 */
-#else
-    w.fd = -1;        /* Linux: -1 表示无效 */
-#endif
-    w.user_data = NULL;
-    w.events = 0u;
-    w.edge_triggered = 0;
-    return w;
-}
 
 /**
  * @brief waitset 完成事件。

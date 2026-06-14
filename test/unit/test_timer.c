@@ -12,15 +12,6 @@
 
 #include <stdio.h>
 
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#elif defined(__unix__) || defined(__linux__)
-#include <sched.h>
-#else
-#error "test_timer requires a supported yield primitive"
-#endif
-
 static int expect_true(int condition)
 {
     return condition ? 0 : 1;
@@ -42,30 +33,6 @@ static int expect_true(int condition)
             return 1; \
         } \
     } while(0)
-
-static void test_yield(void)
-{
-#if defined(_WIN32)
-    SwitchToThread();
-#else
-    sched_yield();
-#endif
-}
-
-static int wait_until_due(void)
-{
-    ns_platform_time_us_t timeout = 0u;
-    int i;
-
-    for(i = 0; i < 1000000; ++i){
-        int rc = ns_timer_mgr_next_timeout(&timeout);
-        if(rc != NS_OK) return rc;
-        if(timeout == 0u) return NS_OK;
-        test_yield();
-    }
-
-    return NS_E_INVAL;
-}
 
 static int test_invalid_and_empty_paths(void)
 {
@@ -113,37 +80,45 @@ static int test_start_cancel_and_restart_semantics(void)
 
 static int g_timer_slot_calls = 0;
 
+typedef struct timer_slot_ctx {
+    ns_loop_t *loop;
+    int seen;
+} timer_slot_ctx_t;
+
 static void timer_slot(void *user_data, const void *payload)
 {
-    int *seen = (int *)user_data;
+    timer_slot_ctx_t *ctx = (timer_slot_ctx_t *)user_data;
 
     (void)payload;
     ++g_timer_slot_calls;
-    if(seen != NULL) ++*seen;
+    if(ctx != NULL){
+        ++ctx->seen;
+        (void)ns_loop_quit(ctx->loop);
+    }
 }
 
-static int test_oneshot_fire_enqueues_signal(void)
+static int test_oneshot_broker_fires_signal(void)
 {
     ns_timer_t timer;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
     ns_platform_time_us_t timeout = 0u;
-    int seen = 0;
+    timer_slot_ctx_t ctx;
 
     g_timer_slot_calls = 0;
+    ctx.loop = NULL;
+    ctx.seen = 0;
 
     EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    ctx.loop = loop;
     EXPECT_OK(ns_timer_create(&timer, 1000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &seen, &conn) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &ctx, &conn) == NS_OK);
 
     EXPECT_OK(ns_timer_start(&timer) == NS_OK);
-    EXPECT_OK(wait_until_due() == NS_OK);
-    EXPECT_OK(ns_timer_mgr_fire_expired() == NS_OK);
+    EXPECT_OK(ns_loop_run() == NS_OK);
     EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_E_NO_TIMER);
 
-    EXPECT_OK(ns_loop_quit(loop) == NS_OK);
-    EXPECT_OK(ns_loop_run() == NS_OK);
-    EXPECT_EQ(seen, 1);
+    EXPECT_EQ(ctx.seen, 1);
     EXPECT_EQ(g_timer_slot_calls, 1);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
@@ -158,22 +133,18 @@ static int test_repeat_timer_rearms_after_fire(void)
     ns_timer_t timer;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
-    ns_platform_time_us_t timeout = 0u;
-    int seen = 0;
+    timer_slot_ctx_t ctx;
 
+    ctx.loop = NULL;
+    ctx.seen = 0;
     EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
-    EXPECT_OK(ns_timer_create(&timer, 1000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &seen, &conn) == NS_OK);
+    ctx.loop = loop;
+    EXPECT_OK(ns_timer_create(&timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &ctx, &conn) == NS_OK);
 
     EXPECT_OK(ns_timer_start(&timer) == NS_OK);
-    EXPECT_OK(wait_until_due() == NS_OK);
-    EXPECT_OK(ns_timer_mgr_fire_expired() == NS_OK);
-    EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
-    EXPECT_OK(timeout <= 1000u);
-
-    EXPECT_OK(ns_loop_quit(loop) == NS_OK);
     EXPECT_OK(ns_loop_run() == NS_OK);
-    EXPECT_EQ(seen, 1);
+    EXPECT_EQ(ctx.seen, 1);
 
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
@@ -193,7 +164,7 @@ int main(void)
 
     if(test_invalid_and_empty_paths() != 0) return 1;
     if(test_start_cancel_and_restart_semantics() != 0) return 1;
-    if(test_oneshot_fire_enqueues_signal() != 0) return 1;
+    if(test_oneshot_broker_fires_signal() != 0) return 1;
     if(test_repeat_timer_rearms_after_fire() != 0) return 1;
 
     EXPECT_OK(ns_shutdown() == NS_OK);

@@ -8,6 +8,7 @@
 
 #include "platform/port.h"
 
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -102,6 +103,34 @@ static int test_clock(void)
     return 0;
 }
 
+typedef struct test_thread_ctx {
+    int value;
+} test_thread_ctx_t;
+
+static void test_thread_entry(void *arg)
+{
+    test_thread_ctx_t *ctx = (test_thread_ctx_t *)arg;
+
+    ctx->value = 42;
+}
+
+static int test_thread(void)
+{
+    ns_platform_thread_t *thread = NULL;
+    test_thread_ctx_t ctx;
+
+    ctx.value = 0;
+
+    if(ns_platform_thread_create(NULL, test_thread_entry, &ctx, "bad-thread") != NS_E_INVAL) return 1;
+    if(ns_platform_thread_create(&thread, NULL, &ctx, "bad-thread") != NS_E_INVAL) return 1;
+    if(expect_ok(ns_platform_thread_create(&thread, test_thread_entry, &ctx, "test-thread")) != 0) return 1;
+    if(expect_ok(ns_platform_thread_join(thread)) != 0) return 1;
+    if(expect_true(ctx.value == 42) != 0) return 1;
+    if(ns_platform_thread_join(NULL) != NS_E_INVAL) return 1;
+
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /*  P5b waitset tests                                                  */
 /* ------------------------------------------------------------------ */
@@ -144,6 +173,35 @@ static int test_waitset_lifecycle(void)
     if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
     if(expect_true(ws != NULL) != 0) return 1;
     if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+
+    return 0;
+}
+
+static int test_wakeup_waitable(void)
+{
+    ns_platform_wakeup_t *wakeup = NULL;
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t cc[4];
+    size_t cnt = 0u;
+
+    if(expect_ok(ns_platform_wakeup_create(&wakeup, "test-wakeup-waitable")) != 0) return 1;
+    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+
+    w = ns_platform_wakeup_get_waitable(wakeup);
+    w.events = NS_WAITABLE_EVENT_IN;
+    w.user_data = (void *)0x1234;
+
+    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    if(expect_ok(ns_platform_wakeup_signal(wakeup)) != 0) return 1;
+    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4u, &cnt)) != 0) return 1;
+    if(expect_true(cnt == 1u) != 0) return 1;
+    if(expect_true(cc[0].waitable == &w) != 0) return 1;
+    if(expect_true(cc[0].waitable->user_data == (void *)0x1234) != 0) return 1;
+
+    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    if(expect_ok(ns_platform_wakeup_destroy(wakeup)) != 0) return 1;
 
     return 0;
 }
@@ -888,41 +946,43 @@ static int test_waitset_level_triggered(void)
 
 int main(void)
 {
-    if(expect_ok(ns_platform_init()) != 0) return 1;
-    if(test_alloc() != 0) return 1;
-    if(test_tls() != 0) return 1;
-    if(test_mutex() != 0) return 1;
-    if(test_wakeup() != 0) return 1;
-    if(test_clock() != 0) return 1;
-    if(test_waitset_lifecycle() != 0) return 1;
-    if(test_waitset_null_params() != 0) return 1;
-    if(test_waitset_add_remove() != 0) return 1;
-    if(test_waitset_add_signaled() != 0) return 1;
-    if(test_waitset_wait_timeout() != 0) return 1;
-    if(test_waitset_wait_signal() != 0) return 1;
-    if(test_waitset_multi() != 0) return 1;
-    if(test_waitset_multi_signal() != 0) return 1;
-    if(test_waitset_max_completions_zero() != 0) return 1;
-    if(test_waitset_destroy_with_entries() != 0) return 1;
-    if(test_waitset_double_signal() != 0) return 1;
-    if(test_waitset_signal_after_wait() != 0) return 1;
-    if(test_waitset_timeout_actual() != 0) return 1;
-    if(test_waitset_signal_before_timeout() != 0) return 1;
-    if(test_waitset_pointer_identity() != 0) return 1;
-    if(test_waitset_multi_pointer_identity() != 0) return 1;
-    if(test_waitset_capacity() != 0) return 1;
-    if(test_waitset_max_completions_truncate() != 0) return 1;
+    if(expect_ok(ns_platform_init()) != 0){ fprintf(stderr, "ns_platform_init failed\n"); return 1; }
+    if(test_alloc() != 0){ fprintf(stderr, "test_alloc failed\n"); return 1; }
+    if(test_tls() != 0){ fprintf(stderr, "test_tls failed\n"); return 1; }
+    if(test_mutex() != 0){ fprintf(stderr, "test_mutex failed\n"); return 1; }
+    if(test_wakeup() != 0){ fprintf(stderr, "test_wakeup failed\n"); return 1; }
+    if(test_clock() != 0){ fprintf(stderr, "test_clock failed\n"); return 1; }
+    if(test_thread() != 0){ fprintf(stderr, "test_thread failed\n"); return 1; }
+    if(test_waitset_lifecycle() != 0){ fprintf(stderr, "test_waitset_lifecycle failed\n"); return 1; }
+    if(test_wakeup_waitable() != 0){ fprintf(stderr, "test_wakeup_waitable failed\n"); return 1; }
+    if(test_waitset_null_params() != 0){ fprintf(stderr, "test_waitset_null_params failed\n"); return 1; }
+    if(test_waitset_add_remove() != 0){ fprintf(stderr, "test_waitset_add_remove failed\n"); return 1; }
+    if(test_waitset_add_signaled() != 0){ fprintf(stderr, "test_waitset_add_signaled failed\n"); return 1; }
+    if(test_waitset_wait_timeout() != 0){ fprintf(stderr, "test_waitset_wait_timeout failed\n"); return 1; }
+    if(test_waitset_wait_signal() != 0){ fprintf(stderr, "test_waitset_wait_signal failed\n"); return 1; }
+    if(test_waitset_multi() != 0){ fprintf(stderr, "test_waitset_multi failed\n"); return 1; }
+    if(test_waitset_multi_signal() != 0){ fprintf(stderr, "test_waitset_multi_signal failed\n"); return 1; }
+    if(test_waitset_max_completions_zero() != 0){ fprintf(stderr, "test_waitset_max_completions_zero failed\n"); return 1; }
+    if(test_waitset_destroy_with_entries() != 0){ fprintf(stderr, "test_waitset_destroy_with_entries failed\n"); return 1; }
+    if(test_waitset_double_signal() != 0){ fprintf(stderr, "test_waitset_double_signal failed\n"); return 1; }
+    if(test_waitset_signal_after_wait() != 0){ fprintf(stderr, "test_waitset_signal_after_wait failed\n"); return 1; }
+    if(test_waitset_timeout_actual() != 0){ fprintf(stderr, "test_waitset_timeout_actual failed\n"); return 1; }
+    if(test_waitset_signal_before_timeout() != 0){ fprintf(stderr, "test_waitset_signal_before_timeout failed\n"); return 1; }
+    if(test_waitset_pointer_identity() != 0){ fprintf(stderr, "test_waitset_pointer_identity failed\n"); return 1; }
+    if(test_waitset_multi_pointer_identity() != 0){ fprintf(stderr, "test_waitset_multi_pointer_identity failed\n"); return 1; }
+    if(test_waitset_capacity() != 0){ fprintf(stderr, "test_waitset_capacity failed\n"); return 1; }
+    if(test_waitset_max_completions_truncate() != 0){ fprintf(stderr, "test_waitset_max_completions_truncate failed\n"); return 1; }
 #ifdef __linux__
-    if(test_waitset_events_zero() != 0) return 1;
+    if(test_waitset_events_zero() != 0){ fprintf(stderr, "test_waitset_events_zero failed\n"); return 1; }
 #endif
-    if(test_waitset_two_waitsets() != 0) return 1;
-    if(test_waitset_lifecycle_readd() != 0) return 1;
-    if(test_waitset_destroy_then_ops() != 0) return 1;
+    if(test_waitset_two_waitsets() != 0){ fprintf(stderr, "test_waitset_two_waitsets failed\n"); return 1; }
+    if(test_waitset_lifecycle_readd() != 0){ fprintf(stderr, "test_waitset_lifecycle_readd failed\n"); return 1; }
+    if(test_waitset_destroy_then_ops() != 0){ fprintf(stderr, "test_waitset_destroy_then_ops failed\n"); return 1; }
 #ifdef __linux__
-    if(test_waitset_edge_triggered() != 0) return 1;
-    if(test_waitset_level_triggered() != 0) return 1;
+    if(test_waitset_edge_triggered() != 0){ fprintf(stderr, "test_waitset_edge_triggered failed\n"); return 1; }
+    if(test_waitset_level_triggered() != 0){ fprintf(stderr, "test_waitset_level_triggered failed\n"); return 1; }
 #endif
-    if(expect_ok(ns_platform_shutdown()) != 0) return 1;
+    if(expect_ok(ns_platform_shutdown()) != 0){ fprintf(stderr, "ns_platform_shutdown failed\n"); return 1; }
 
     return 0;
 }
