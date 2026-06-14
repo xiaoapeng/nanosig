@@ -93,7 +93,7 @@ static void slot_no_payload(void *user_data, const void *payload)
 
 static int test_no_payload_same_thread(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
     int rc;
@@ -143,7 +143,7 @@ static void slot_with_payload(void *user_data, const void *payload)
 
 static int test_payload_same_thread(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(test_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
     test_payload_t payload;
@@ -234,7 +234,7 @@ static void *cross_thread_main(void *arg)
 static int test_cross_thread_emit(void)
 {
     cross_thread_ctx_t ctx;
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn;
     int rc;
 
@@ -308,7 +308,7 @@ static void slot_disconnect(void *user_data, const void *payload)
 
 static int test_disconnect_stops_future(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
     int rc;
@@ -355,7 +355,7 @@ static void slot_multi(void *user_data, const void *payload)
 
 static int test_disconnect_all(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn1;
     ns_connection_t conn2;
     ns_connection_t conn3;
@@ -405,7 +405,7 @@ static void slot_queue_first(void *user_data, const void *payload)
 
 static int test_emit_before_run(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
     int rc;
@@ -463,7 +463,7 @@ static void slot_b(void *user_data, const void *payload)
 
 static int test_multiple_connections(void)
 {
-    ns_signal_t sig = NS_SIGNAL_INITIALIZER(ns_no_payload_t);
+    ns_signal_t sig;
     ns_connection_t conn_a;
     ns_connection_t conn_b;
     ns_loop_t *loop = NULL;
@@ -490,6 +490,30 @@ static int test_multiple_connections(void)
     EXPECT_OK(ns_signal_disconnect(&conn_a) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn_b) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
+    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: explicit init is required                                    */
+/* ------------------------------------------------------------------ */
+
+static int test_uninitialized_signal_rejected(void)
+{
+    ns_signal_t sig = {0};
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    EXPECT_OK(ns_signal_connect(&sig, slot_no_payload, NULL, NULL, &conn) == NS_E_INVAL);
+    EXPECT_OK(ns_signal_emit_raw(&sig, NULL, 0u) == NS_E_INVAL);
+    EXPECT_OK(ns_signal_disconnect_all(&sig) == NS_E_INVAL);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
+
     EXPECT_OK(ns_loop_destroy() == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
@@ -627,6 +651,7 @@ int main(void)
     if(test_disconnect_all() != 0) return 1;
     if(test_emit_before_run() != 0) return 1;
     if(test_multiple_connections() != 0) return 1;
+    if(test_uninitialized_signal_rejected() != 0) return 1;
     if(test_concurrent_connect_emit() != 0) return 1;
 
     return 0;

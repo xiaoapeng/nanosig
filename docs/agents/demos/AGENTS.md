@@ -4,7 +4,7 @@
 # demos
 
 ## Purpose
-Guidance for source directory `demos/`, which contains PD-stage API review demos. They are examples for reviewing call shape and are intentionally not linked as runnable targets until implementation phases land; they are still compiled with syntax-only CTest checks.
+Guidance for source directory `demos/`, which contains API review demos. They are examples for reviewing call shape and are intentionally kept as syntax-only checks until P7 promotes runnable demos.
 
 ## Key Files
 | File | Description |
@@ -33,8 +33,8 @@ Guidance for source directory `demos/`, which contains PD-stage API review demos
 
 ### Common Patterns
 - Define payload structs explicitly.
-- Define signals with `NS_SIGNAL_DEFINE(name, payload_type)`.
-- Define no-payload signals with `NS_SIGNAL_DEFINE(name, ns_no_payload_t)`.
+- Define signals as `ns_signal_t name;`, initialize them with `ns_signal_init(&name, payload_type)`, and deinitialize each successful init with `ns_signal_deinit(name)`.
+- Define no-payload signals the same way, using `ns_signal_init(&name, ns_no_payload_t)`.
 - Use `ns_signal_connect_typed(...)` / `ns_signal_emit(...)` for both payload and no-payload signals; no-payload emit passes `NS_NO_PAYLOAD`.
 - Use `_to` connect macros only when the example is intentionally showing an explicit `ns_loop_t *` target.
 - Do not instantiate or copy `ns_no_payload_t`; it is a type marker only and maps to a 0-byte payload.

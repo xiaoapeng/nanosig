@@ -39,6 +39,7 @@ set(NANOSIG_PUBLIC_HEADERS
 
 set(NANOSIG_INTERNAL_HEADERS
     platform/port.h
+    src/ns_timer_mgr.h
 )
 
 set(NANOSIG_DS_SOURCES
@@ -63,6 +64,7 @@ endif()
 
 add_library(nanosig STATIC
     src/nanosig.c
+    src/ns_timer.c
     ${NANOSIG_PLATFORM_SOURCES}
     ${NANOSIG_DS_SOURCES}
     ${NANOSIG_PUBLIC_HEADERS}
@@ -109,6 +111,7 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
     nanosig_add_unit_test(nanosig_test_signal test/unit/test_signal.c)
+    nanosig_add_unit_test(nanosig_test_timer test/unit/test_timer.c)
     nanosig_add_unit_test(nanosig_test_mpsc test/unit/test_mpsc.c)
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring test/unit/test_mpsc_record_ring.c)
     set_tests_properties(nanosig_test_mpsc PROPERTIES TIMEOUT 420)

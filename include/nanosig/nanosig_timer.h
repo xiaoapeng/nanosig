@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 #include <nanosig/nanosig_loop.h>
+#include <nanosig/nanosig_rbtree.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_safety.h>
 #include <nanosig/nanosig_types.h>
@@ -58,27 +59,11 @@ typedef struct ns_timer {
     ns_time_us_t expire_us;
     /** `NS_TIMER_ATTR_*` 位图。 */
     uint32_t attr;
-    /** 实现层私有指针，调用方不得直接访问。 */
-    void *impl;
+    /** 实现层 rbtree 节点，调用方不得直接访问。 */
+    ns_rbtree_node_t rb_node;
 } ns_timer_t;
 
 NS_STATIC_ASSERT(ns_offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must be the first member");
-
-/**
- * @brief 生成静态 timer 初始化器。
- *
- * @param interval_value 触发间隔，单位为微秒。
- * @param attr_value `NS_TIMER_ATTR_*` 位图。
- * @return 可用于 `ns_timer_t` 对象初始化的聚合初始化器。
- */
-#define NS_TIMER_INITIALIZER(interval_value, attr_value) \
-    { \
-        .signal = NS_SIGNAL_INITIALIZER(ns_no_payload_t), \
-        .interval_us = (ns_time_us_t)(interval_value), \
-        .expire_us = 0u, \
-        .attr = (uint32_t)(attr_value), \
-        .impl = NULL \
-    }
 
 /**
  * @brief 创建 timer。

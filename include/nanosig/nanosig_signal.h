@@ -29,13 +29,12 @@ extern "C" {
 typedef struct ns_platform_mutex ns_platform_mutex_t;
 
 /**
- * @brief 可静态定义的 signal 对象。
+ * @brief 可静态存储的 signal 对象。
  *
  * `payload_size` 固定每次 emit 复制的字节数；0 表示该 signal 无 payload。
  * `slot_list` 是 signal 拥有的连接链表头，调用方不得直接修改。
- * `mutex` 保护 `slot_list` 的并发访问；仅由 `ns_signal_init_raw` 创建。
- * 通过 `NS_SIGNAL_INITIALIZER` 静态初始化的 signal 不含 mutex，
- * 不支持并发 connect/disconnect/emit；如需线程安全，必须调用
+ * `mutex` 保护 `slot_list` 的并发访问；由 `ns_signal_init_raw` 创建。
+ * 对象可使用静态存储期或嵌入其他结构体，但使用前必须调用
  * `ns_signal_init_raw` 或 `ns_signal_init` 初始化。
  */
 typedef struct ns_signal {
@@ -47,7 +46,7 @@ typedef struct ns_signal {
     const char *debug_name;
     /** slot 连接链表头，调用方不得直接修改。 */
     ns_list_node_t slot_list;
-    /** slot_list 保护锁；`NULL` 表示非线程安全。 */
+    /** slot_list 保护锁；`NULL` 表示未初始化或已释放，不是可用状态。 */
     ns_platform_mutex_t *mutex;
 } ns_signal_t;
 
@@ -84,7 +83,7 @@ typedef struct ns_connection {
  * @brief 无 payload signal 使用的公开标记类型。
  *
  * `ns_no_payload_t` 只作为 payload 类型标记使用。把它传给
- * `NS_SIGNAL_DEFINE` / `NS_SIGNAL_INITIALIZER` / `ns_signal_init` 时，宏会把
+ * `ns_signal_init` 时，宏会把
  * `payload_size` 设为 0，而不是 `sizeof(ns_no_payload_t)`。
  *
  * C11 没有可移植的零大小完整结构体；该类型保持完整，只是为了让
@@ -135,42 +134,12 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
 #endif
 
 /**
- * @brief 生成静态 signal 初始化器。
- *
- * @param payload_type signal 的 payload 类型；无 payload signal 使用
- *        `ns_no_payload_t`。
- * @return 可用于 `ns_signal_t` 对象初始化的聚合初始化器。
- *
- * 该宏也用于结构体成员初始化，例如：
- * `struct app { ns_signal_t changed; };`
- * `struct app app = { .changed = NS_SIGNAL_INITIALIZER(app_payload_t) };`
- */
-#define NS_SIGNAL_INITIALIZER(payload_type) \
-    { \
-        .payload_size = NS_SIGNAL_PAYLOAD_SIZE(payload_type), \
-        .slot_capacity = 0u, \
-        .debug_name = #payload_type, \
-        .slot_list = { NULL, NULL }, \
-        .mutex = NULL \
-    }
-
-/**
  * @brief 在头文件中声明一个外部 signal 对象。
  *
  * @param name signal 对象名。
  */
 #define NS_SIGNAL_DECLARE(name) \
     extern ns_signal_t name
-
-/**
- * @brief 定义一个 signal 对象。
- *
- * @param name signal 对象名。
- * @param payload_type signal 的 payload 类型；无 payload signal 使用
- *        `ns_no_payload_t`。
- */
-#define NS_SIGNAL_DEFINE(name, payload_type) \
-    ns_signal_t name = NS_SIGNAL_INITIALIZER(payload_type)
 
 /**
  * @brief 声明一个带 payload 类型的 slot 函数指针类型。
@@ -244,11 +213,15 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
 /**
  * @brief 动态初始化 signal。
  *
- * 适用于无法使用 `NS_SIGNAL_DEFINE` / `NS_SIGNAL_INITIALIZER` 的对象生命周期。
- * 该宏直接接收 `payload_type`，并在编译期烘焙 payload 字节数。本接口只写入
- * signal 元数据，不拥有 slot 连接资源，也不需要成对的 `ns_signal_deinit`。
- * 调用方销毁承载该 signal 的对象前，应确保相关连接已通过
- * `ns_signal_disconnect` 或 `ns_signal_disconnect_all` 断开。
+ * 该宏直接接收 `payload_type`，并在编译期烘焙 payload 字节数。本接口初始化
+ * signal 元数据和内部 mutex。调用方销毁承载该 signal 的对象前，应确保相关
+ * 连接已通过 `ns_signal_disconnect` 或 `ns_signal_disconnect_all` 断开，并调用
+ * `ns_signal_deinit` 释放内部资源。
+ *
+ * @pre 调用方必须保证同一个 signal 对象的初始化生命周期串行化。本宏不得与
+ *      自身、`ns_signal_deinit_raw()`、`ns_signal_connect()`、
+ *      `ns_signal_disconnect()` 或 `ns_signal_emit_raw()` 在同一个 signal
+ *      对象上并发调用。
  *
  * @param signal 待初始化的 signal 对象指针。
  * @param payload_type signal 的 payload 类型；无 payload signal 使用
@@ -269,6 +242,14 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
  * @param slot_capacity slot 容量提示；0 表示使用实现默认值。
  * @param debug_name 调试名称；库只保存指针，不接管字符串所有权。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ *
+ * @pre 调用方必须保证同一个 signal 对象的初始化生命周期串行化。本函数不得与
+ *      自身、`ns_signal_deinit_raw()`、`ns_signal_connect()`、
+ *      `ns_signal_disconnect()` 或 `ns_signal_emit_raw()` 在同一个 signal
+ *      对象上并发调用。
+ *
+ * 初始化成功返回后，动态初始化的 signal 拥有内部 mutex，后续
+ * connect / disconnect / emit 可从多个线程并发调用。
  */
 extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_capacity, const char *debug_name);
 
@@ -281,8 +262,9 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  * 调用方拥有 `connection` 的存储，连接存活期间必须保证其生命周期长于任何
  * emit 操作。断开连接后可安全释放 `connection`。
  *
- * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
- *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ * @pre 使用前必须调用 `ns_signal_init_raw()` 或 `ns_signal_init()` 初始化。
+ *      初始化后的 signal 由内部 mutex 保护，connect / disconnect / emit 可从
+ *      多个线程并发调用。
  *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。
@@ -304,8 +286,9 @@ extern int ns_signal_connect(
  * 断开连接不会取消已经入队的 slot 调用；调用方仍需保证 `user_data`
  * 的在途生命周期。
  *
- * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
- *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ * @pre 使用前必须调用 `ns_signal_init_raw()` 或 `ns_signal_init()` 初始化。
+ *      初始化后的 signal 由内部 mutex 保护，connect / disconnect / emit 可从
+ *      多个线程并发调用。
  *
  * @param connection 要断开的连接句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -319,8 +302,9 @@ extern int ns_signal_disconnect(ns_connection_t *connection);
  * `ns_signal_disconnect`，使生命周期关系清晰。批量断开不会取消已经入队的
  * slot 调用；调用方仍需保证所有相关 `user_data` 长于任何 in-flight emit。
  *
- * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
- *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ * @pre 使用前必须调用 `ns_signal_init_raw()` 或 `ns_signal_init()` 初始化。
+ *      初始化后的 signal 由内部 mutex 保护，connect / disconnect / emit 可从
+ *      多个线程并发调用。
  *
  * @param signal 要断开所有连接的 signal。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -334,8 +318,9 @@ extern int ns_signal_disconnect_all(ns_signal_t *signal);
  * signal 使用 `payload = NULL` 且 `payload_size = 0`。emit 路径不允许
  * 分配内存。
  *
- * @pre 对同一个 signal 的 `ns_signal_connect()`、`ns_signal_disconnect()` 和
- *      `ns_signal_emit_raw()` 调用必须由调用方串行化，不得并发。
+ * @pre 使用前必须调用 `ns_signal_init_raw()` 或 `ns_signal_init()` 初始化。
+ *      初始化后的 signal 由内部 mutex 保护，connect / disconnect / emit 可从
+ *      多个线程并发调用。
  *
  * @param signal 要触发的 signal。
  * @param payload 指向只读 payload 数据；无 payload 时为 `NULL`。
@@ -347,8 +332,13 @@ extern int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t p
 /**
  * @brief 释放 signal 的内部资源（如 mutex）。
  *
- * 仅释放由 `ns_signal_init_raw` 分配的资源；`NS_SIGNAL_INITIALIZER` 初始化
- * 的 signal 无需调用。调用前应确保所有连接已断开。
+ * 仅释放由 `ns_signal_init_raw` 分配的资源；未成功调用
+ * `ns_signal_init_raw` / `ns_signal_init` 的 signal 无需调用。调用前应确保
+ * 所有连接已断开。
+ *
+ * @pre 调用方必须保证同一个 signal 对象的销毁生命周期串行化。本函数不得与
+ *      `ns_signal_init_raw()`、`ns_signal_connect()`、`ns_signal_disconnect()`
+ *      或 `ns_signal_emit_raw()` 在同一个 signal 对象上并发调用。
  *
  * @param signal 要清理的 signal 对象。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -357,6 +347,14 @@ extern int ns_signal_deinit_raw(ns_signal_t *signal);
 
 /**
  * @brief 释放 signal 的内部资源（宏入口）。
+ *
+ * 仅释放由 `ns_signal_init_raw` 分配的资源；未成功调用
+ * `ns_signal_init_raw` / `ns_signal_init` 的 signal 无需调用。调用前应确保
+ * 所有连接已断开。
+ *
+ * @pre 调用方必须保证同一个 signal 对象的销毁生命周期串行化。本宏不得与
+ *      `ns_signal_init_raw()`、`ns_signal_connect()`、`ns_signal_disconnect()`
+ *      或 `ns_signal_emit_raw()` 在同一个 signal 对象上并发调用。
  *
  * @param signal 要清理的 signal 对象。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

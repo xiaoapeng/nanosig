@@ -2,8 +2,8 @@
 
 Status: P2 public data structures are implemented and covered by unit tests.
 P3 variable-size MPSC record ring is implemented, publicly exposed, and
-reused by the loop runtime. P4 loop management and P5 signal/slot runtime
-are implemented and tested.
+reused by the loop runtime. P4 loop management, P5 signal/slot runtime, and
+P6 phase-1 timer manager are implemented and tested.
 
 ## Publicly Visible Shapes
 
@@ -112,6 +112,7 @@ Each signal owns:
 - no-payload signals enqueue 0 payload bytes; `ns_no_payload_t` is a type
   marker for slot signatures, not a copied payload object
 - `slot_list` (intrusive doubly-linked list head, directly embedded in `ns_signal_t`)
+- internal mutex pointer created by `ns_signal_init_raw` / `ns_signal_init`
 - optional slot capacity hint
 - debug name
 
@@ -119,11 +120,13 @@ Connections are caller-owned (`ns_connection_t` defined in the public header).
 Callers pass a pointer to their own `ns_connection_t` storage to
 `ns_signal_connect`; the library does not allocate or free connection objects.
 
-Signals do not have a public deinit step. Signal metadata is initialized
-statically with `NS_SIGNAL_DEFINE` / `NS_SIGNAL_INITIALIZER` or dynamically with
-`ns_signal_init_raw`; `ns_signal_disconnect` removes the connection from the
-signal's slot list, and the teardown escape hatch `ns_signal_disconnect_all`
-removes all connections. Neither function frees memory; callers own
+Signals are caller-owned storage but must be explicitly initialized with
+`ns_signal_init_raw` / `ns_signal_init` before use. Successful initialization
+creates the internal mutex, so callers must disconnect their connections and
+call `ns_signal_deinit_raw` / `ns_signal_deinit` before the containing object is
+destroyed. `ns_signal_disconnect` removes one connection from the signal's slot
+list, and the teardown escape hatch `ns_signal_disconnect_all` removes all
+connections. None of the disconnect helpers frees memory; callers own
 `ns_connection_t` storage.
 
 Each connection (`ns_connection_t`, caller-owned) contains:

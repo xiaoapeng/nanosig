@@ -1,17 +1,17 @@
 # nanosig API Review Demos
 
-These files are PD-stage API usage demos. They are intentionally not linked as
-runnable targets until P7 because the implementation `.c` files do not exist
-yet. They are compiled through the root `api-compile-checks` target and CTest
-to keep the public API shape from regressing during PD.
+These files are API usage demos. They are still compiled through the root
+`api-compile-checks` target instead of being linked as runnable P7 demos, so
+they can keep the public call shape stable while broker/demo runtime work is
+still pending.
 
 - `demo_same_thread.c`
 - `demo_cross_thread.c`
 - `demo_timer_cross_thread.c`
 
-Use them to review whether the public API feels reasonable before PD sign-off.
-The examples keep function-wrapper connect/emit macros lowercase, keep
-declaration and type-only macros uppercase, and use C designated initializers so
+Use them to review whether the public API feels reasonable. The examples keep
+function-wrapper connect/emit/init macros lowercase, keep declaration,
+payload-metadata, and type-only macros uppercase, and use C designated initializers so
 the call shape stays close to ordinary C APIs. A thread owns at most one loop,
 so cross-thread demos sketch producer and consumer thread entry points instead
 of creating multiple loops in one function. The demos also cover the current

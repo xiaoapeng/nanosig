@@ -4,7 +4,7 @@
 # docs
 
 ## Purpose
-This directory holds the public design documentation for the PD closeout. It explains the consensus plan, requirements interview, public API shape, data-structure ownership, and implementation constraints before runtime implementation begins.
+This directory holds the public design documentation for the PD closeout and implementation phases. It explains the consensus plan, requirements interview, public API shape, data-structure ownership, and runtime implementation constraints.
 
 ## Key Files
 | File | Description |
@@ -39,9 +39,9 @@ This directory holds the public design documentation for the PD closeout. It exp
 ### Common Patterns
 - Prefer concrete code snippets over prose-only API descriptions.
 - Code snippets that acquire more than one nanosig resource must show deterministic teardown with kernel-style `goto` cleanup labels.
-- Use the current macro style in examples: function-wrapper connect/emit macros stay lowercase, while declaration/definition/initializer/type-only macros are uppercase.
+- Use the current macro style in examples: function-wrapper connect/emit/init macros stay lowercase, while declaration, payload-metadata, and type-only macros are uppercase.
 - When documenting signal/slot APIs, keep the payload/no-payload and current-loop/explicit-loop connect matrix visible, and show no-payload usage via `ns_no_payload_t` rather than `0` suffix APIs.
-- Document struct-owned signals with `NS_SIGNAL_INITIALIZER(payload_type)` for aggregate initialization and `ns_signal_init(signal, payload_type)` for dynamic metadata initialization. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT`, `ns_signal_config_t`, or `ns_signal_deinit`; connection resources are released by disconnect calls.
+- Document static and struct-owned signals as caller-owned `ns_signal_t` storage that must be initialized with `ns_signal_init(signal, payload_type)` before use and deinitialized with `ns_signal_deinit(signal)` after connections are disconnected. Do not reintroduce legacy signal config objects or aggregate/static signal initializer macros.
 - Document timers as caller-owned `ns_timer_t` objects with first member `ns_signal_t signal`; timer callbacks connect to that embedded no-payload signal, intervals are `uint64_t` microseconds, attrs are `NS_TIMER_ATTR_*` bitmaps, and `ns_timer_cancel` is valid even when the timer is already stopped.
 
 ## Dependencies

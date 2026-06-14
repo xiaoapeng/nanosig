@@ -2,16 +2,17 @@
 
 Status: PD API closeout complete. P1 loop platform backends, P2 public
 data structures, P3 variable-size MPSC record ring, P4 loop management,
-and P5 signal/slot runtime have landed; timer runtime is still a later
-implementation phase.
+P5 signal/slot runtime, and P6 phase-1 timer manager have landed. Broker-driven
+timer integration remains a later phase.
 
 ## Lifecycle
 
 Applications call `ns_init()` before any other nanosig API and call
 `ns_shutdown()` during deterministic teardown. This keeps the platform layer,
-future loop manager, and future `ns_event_broker_t` lifecycle explicit and
-TSAN-friendly. It does not imply a standalone global timer thread; the current
-timer direction is a broker-owned timer source that emits `timer->signal`.
+loop manager, signal mutexes, timer manager, and future `ns_event_broker_t`
+lifecycle explicit and TSAN-friendly. It does not imply a standalone global
+timer thread; the current timer manager is driven through `next_timeout` /
+`fire_expired`, and later broker integration will call those hooks.
 
 ```c
 int rc = ns_init();
@@ -134,11 +135,17 @@ typedef struct app_sample_payload {
     const char *label;
 } app_sample_payload_t;
 
-NS_SIGNAL_DEFINE(app_sample_ready, app_sample_payload_t);
+ns_signal_t app_sample_ready;
 
 static void on_sample(void *user_data, const app_sample_payload_t *payload);
 
 ns_connection_t connection;
+
+rc = ns_signal_init(&app_sample_ready, app_sample_payload_t);
+if(rc != NS_OK) {
+    return rc;
+}
+
 ns_signal_connect_typed(
     app_sample_ready,
     on_sample,
@@ -153,16 +160,23 @@ app_sample_payload_t payload = {
 ns_signal_emit(app_sample_ready, &payload);
 
 (void)ns_signal_disconnect(&connection);
+(void)ns_signal_deinit(app_sample_ready);
 ```
 
 No-payload signals use the explicit marker type:
 
 ```c
-NS_SIGNAL_DEFINE(app_shutdown_requested, ns_no_payload_t);
+ns_signal_t app_shutdown_requested;
 
 static void on_shutdown(void *user_data, const ns_no_payload_t *payload);
 
 ns_connection_t shutdown_conn;
+
+rc = ns_signal_init(&app_shutdown_requested, ns_no_payload_t);
+if(rc != NS_OK) {
+    return rc;
+}
+
 ns_signal_connect_typed(
     app_shutdown_requested,
     on_shutdown,
@@ -173,6 +187,7 @@ ns_signal_connect_typed(
 ns_signal_emit(app_shutdown_requested, NS_NO_PAYLOAD);
 
 (void)ns_signal_disconnect(&shutdown_conn);
+(void)ns_signal_deinit(app_shutdown_requested);
 ```
 
 The public connect surface keeps loop targeting explicit without adding a
@@ -198,17 +213,18 @@ names use the `ns_signal_*` prefix consistently with `ns_signal_disconnect`.
 For explicit cross-thread or binding-layer use, call the `_to` variants or the
 low-level `ns_signal_connect(..., target_loop, ...)`.
 
-Macros that declare, define, initialize, or perform type-only checks stay
-uppercase, such as `NS_SIGNAL_DEFINE`, `NS_DEFINE_SLOT`,
-`NS_SIGNAL_INITIALIZER`, `NS_SLOT_TYPECHECK`, and `NS_LOOP_CONFIG_DEFAULT`.
+Macros that declare symbols, compute payload metadata, or perform type-only
+checks stay uppercase, such as `NS_SIGNAL_DECLARE`, `NS_DEFINE_SLOT`,
+`NS_SIGNAL_PAYLOAD_SIZE`, `NS_SIGNAL_PAYLOAD_PTR_SIZE`, `NS_SLOT_TYPECHECK`,
+and `NS_LOOP_CONFIG_DEFAULT`.
 Operational function-wrapper macros stay lowercase; `ns_signal_init(signal,
 payload_type)` is one of them and directly accepts the payload type.
 
 ## Struct-Owned Signals
 
-`NS_SIGNAL_DEFINE(name, payload_type)` is for standalone objects. When a signal
-is embedded in a user struct, initialize the member with
-`NS_SIGNAL_INITIALIZER(payload_type)`:
+`ns_signal_t` storage may be static, automatic, heap-allocated, or embedded in a
+user struct, but it must be explicitly initialized before use. The current API
+does not provide an aggregate static initializer for signal objects:
 
 ```c
 typedef struct app_model {
@@ -216,16 +232,12 @@ typedef struct app_model {
     ns_signal_t stopped;
 } app_model_t;
 
-static app_model_t model = {
-    .changed = NS_SIGNAL_INITIALIZER(app_sample_payload_t),
-    .stopped = NS_SIGNAL_INITIALIZER(ns_no_payload_t)
-};
+static app_model_t model;
 ```
 
-For dynamic object lifetimes, use `ns_signal_init`. Signal initialization only
-writes metadata; it does not allocate and has no matching deinit call. The
-resources associated with slots are owned by connections and are released by
-`ns_signal_disconnect`.
+Use `ns_signal_init` during the owning object's initialization. A successful
+init creates an internal mutex, so every successfully initialized signal must be
+deinitialized after its connections have been disconnected.
 
 ```c
 int app_model_init(app_model_t *model)
@@ -239,16 +251,28 @@ int app_model_init(app_model_t *model)
 
     rc = ns_signal_init(&model->stopped, ns_no_payload_t);
     if(rc != NS_OK) {
-        return rc;
+        goto out_changed;
     }
 
     return NS_OK;
+
+out_changed:
+    (void)ns_signal_deinit(model->changed);
+    return rc;
+}
+
+void app_model_deinit(app_model_t *model)
+{
+    /* Disconnect tracked connections before deinitializing these signals. */
+    (void)ns_signal_deinit(model->stopped);
+    (void)ns_signal_deinit(model->changed);
 }
 ```
 
 `ns_signal_deinit(signal)` releases the internal mutex created by
-`ns_signal_init_raw`. Signals initialized only via `NS_SIGNAL_INITIALIZER`
-do not need deinit.
+`ns_signal_init_raw` / `ns_signal_init`. Calling deinit is a serialized lifetime
+operation; it must not race with connect, disconnect, emit, or another init /
+deinit on the same signal.
 
 `ns_signal_disconnect_all(signal)` is a teardown/escape-hatch helper for
 objects that must drop every connection at once. Healthy code should normally
@@ -258,11 +282,9 @@ because that makes ownership clear. Neither `ns_signal_disconnect` nor
 Bulk disconnect still does not cancel already queued slot calls, so
 `user_data` lifetime rules remain unchanged.
 
-This is a deliberate PD review point. The implementation plan originally
-considered a variadic field-list macro. The struct-payload draft is more
-predictable for C11, MSVC, FFI, and documentation because the payload layout is
-visible and reusable. If review prefers the variadic field-list form, PD can
-still change it before implementation phases start.
+The PD review considered a variadic field-list macro, but the accepted API uses
+explicit payload structs. That shape is more predictable for C11, MSVC, FFI, and
+documentation because the payload layout is visible and reusable.
 
 ## Timers
 
@@ -336,10 +358,9 @@ otherwise it falls back to `now + interval_us`. This mirrors the useful
   loop and non-`NULL` for an explicit target loop; default-vs-explicit behavior
   must not be split into duplicate internal functions.
 - `ns_signal_deinit` releases internal resources (mutex) allocated by
-  `ns_signal_init_raw`. Signals initialized only via `NS_SIGNAL_INITIALIZER`
-  do not need deinit. `ns_signal_disconnect` removes the connection from the
-  signal's slot list but does not free memory. Callers own `ns_connection_t`
-  storage.
+  `ns_signal_init_raw` / `ns_signal_init`. `ns_signal_disconnect` removes the
+  connection from the signal's slot list but does not free memory. Callers own
+  `ns_connection_t` storage.
 - Disconnect does not cancel already queued slot invocations.
 - `user_data` must outlive any in-flight emit that can still reach the slot.
 - A destroyed loop rejects new queued work with `NS_E_SHUTDOWN`.

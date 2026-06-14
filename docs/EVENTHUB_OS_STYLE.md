@@ -172,14 +172,14 @@ Observed traits:
 - Initializers use designated fields where readability matters.
 - Backslashes are visually aligned in larger public macros.
 
-For nanosig, follow the user-approved PD rule: function-wrapper signal connect
+For nanosig, follow the user-approved PD rule: function-wrapper signal connect,
 emit, and dynamic init public macros are lowercase and use the `ns_signal_*` prefix
 (`ns_signal_emit`, `ns_signal_connect_typed`,
-`ns_signal_connect_typed_to`, `ns_signal_init`). Public macros that declare, define, initialize, compute
-type/payload metadata, or only perform type checks are uppercase
-(`NS_SIGNAL_DEFINE`, `NS_DEFINE_SLOT`, `NS_SIGNAL_INITIALIZER`,
+`ns_signal_connect_typed_to`, `ns_signal_init`). Public macros that declare,
+compute type/payload metadata, or only perform type checks are uppercase
+(`NS_SIGNAL_DECLARE`, `NS_DEFINE_SLOT`,
 `NS_SIGNAL_PAYLOAD_SIZE`, `NS_SIGNAL_PAYLOAD_PTR_SIZE`, `NS_SLOT_TYPECHECK`,
-`NS_NO_PAYLOAD`, `NS_LOOP_CONFIG_DEFAULT`, `NS_TIMER_INITIALIZER`), and constants remain uppercase
+`NS_NO_PAYLOAD`, `NS_LOOP_CONFIG_DEFAULT`), and constants remain uppercase
 (`NS_OK`, `NS_TIMER_ATTR_REPEAT`, `NS_TIMER_ATTR_RELOAD_FROM_NOW`). No-payload signals use the public marker type
 `ns_no_payload_t` instead of a separate `0` suffix function family. The marker
 type is never a copied payload object; macros map it to 0 payload bytes and
@@ -305,9 +305,9 @@ For nanosig:
 These are deliberate deviations from eventhub_os style:
 
 - Do not expose `__safety` in public nanosig headers for now.
-- Function-wrapper connect/emit public macros are lowercase; declaration,
-  definition, initializer, and type-only macros are uppercase.
-- API examples and initializer macros use designated initializers
+- Function-wrapper connect/emit/init public macros are lowercase; declaration,
+  payload metadata, and type-only macros are uppercase.
+- API examples and configuration structs use designated initializers
   (`.field = value`) for readability.
 - The public API is not source-compatible with eventhub_os.
 - Coroutine/module-init APIs are not ported to nanosig v1.

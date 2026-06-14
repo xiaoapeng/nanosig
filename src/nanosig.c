@@ -11,6 +11,8 @@
 
 #include <platform/port.h>
 
+#include "src/ns_timer_mgr.h"
+
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;
     ns_loop_config_t config;
@@ -37,13 +39,13 @@ typedef struct ns_slot_call {
 
 static int ns_signal_lock(ns_signal_t *signal)
 {
-    if(signal->mutex == NULL) return NS_OK;
+    if((signal == NULL) || (signal->mutex == NULL)) return NS_E_INVAL;
     return ns_platform_mutex_lock(signal->mutex);
 }
 
 static int ns_signal_unlock(ns_signal_t *signal)
 {
-    if(signal->mutex == NULL) return NS_OK;
+    if((signal == NULL) || (signal->mutex == NULL)) return NS_E_INVAL;
     return ns_platform_mutex_unlock(signal->mutex);
 }
 
@@ -154,10 +156,16 @@ int ns_init(void)
     rc = ns_platform_mutex_create(&g_ns_loop_registry_mutex, "nanosig-loop-registry");
     if(rc != NS_OK) goto out_tls;
 
+    rc = ns_timer_mgr_global_init(NULL, NULL);
+    if(rc != NS_OK) goto out_registry_mutex;
+
     ns_list_init(&g_ns_loop_registry_head);
     ns_atomic_store_explicit(&g_ns_initialized, 1, ns_memory_order_release);
     return NS_OK;
 
+out_registry_mutex:
+    (void)ns_platform_mutex_destroy(g_ns_loop_registry_mutex);
+    g_ns_loop_registry_mutex = NULL;
 out_tls:
     (void)ns_platform_tls_key_destroy(g_ns_loop_tls_key);
     g_ns_loop_tls_key = NULL;
@@ -185,6 +193,8 @@ int ns_shutdown(void)
     if(rc != NS_OK) return rc;
 
     ns_atomic_store_explicit(&g_ns_initialized, 0, ns_memory_order_release);
+
+    ns_timer_mgr_global_shutdown();
 
     rc = ns_platform_mutex_destroy(g_ns_loop_registry_mutex);
     g_ns_loop_registry_mutex = NULL;
@@ -407,6 +417,7 @@ int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_cap
     signal->slot_capacity = slot_capacity;
     signal->debug_name = debug_name;
     ns_list_init(&signal->slot_list);
+    signal->mutex = NULL;
 
     rc = ns_platform_mutex_create(&signal->mutex, debug_name ? debug_name : "ns-signal");
     if(rc != NS_OK) return rc;

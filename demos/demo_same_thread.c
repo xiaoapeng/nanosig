@@ -5,8 +5,8 @@ typedef struct sample_payload {
     const char *label;
 } sample_payload_t;
 
-NS_SIGNAL_DEFINE(sample_ready, sample_payload_t);
-NS_SIGNAL_DEFINE(shutdown_requested, ns_no_payload_t);
+ns_signal_t sample_ready;
+ns_signal_t shutdown_requested;
 
 static void on_sample(void *user_data, const sample_payload_t *payload)
 {
@@ -29,13 +29,22 @@ int main(void)
         return 1;
     }
 
+    rc = ns_signal_init(&sample_ready, sample_payload_t);
+    if(rc != NS_OK) {
+        goto out_shutdown;
+    }
+    rc = ns_signal_init(&shutdown_requested, ns_no_payload_t);
+    if(rc != NS_OK) {
+        goto out_sample_signal;
+    }
+
     ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
     cfg.debug_name = "main-loop";
 
     ns_loop_t *loop = NULL;
     rc = ns_loop_create(&loop, &cfg);
     if(rc != NS_OK) {
-        goto out_shutdown;
+        goto out_shutdown_signal;
     }
 
     int last_value = 0;
@@ -72,6 +81,10 @@ out_connection:
     (void)ns_signal_disconnect(&connection);
 out_loop:
     (void)ns_loop_destroy();
+out_shutdown_signal:
+    (void)ns_signal_deinit(shutdown_requested);
+out_sample_signal:
+    (void)ns_signal_deinit(sample_ready);
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

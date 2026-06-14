@@ -5,8 +5,8 @@ typedef struct work_payload {
     const char *source;
 } work_payload_t;
 
-NS_SIGNAL_DEFINE(work_ready, work_payload_t);
-NS_SIGNAL_DEFINE(consumer_wakeup, ns_no_payload_t);
+ns_signal_t work_ready;
+ns_signal_t consumer_wakeup;
 
 static ns_loop_t *consumer_loop = NULL;
 static ns_connection_t connection;
@@ -81,17 +81,30 @@ int main(void)
         return 1;
     }
 
+    rc = ns_signal_init(&work_ready, work_payload_t);
+    if(rc != NS_OK) {
+        goto out_shutdown;
+    }
+    rc = ns_signal_init(&consumer_wakeup, ns_no_payload_t);
+    if(rc != NS_OK) {
+        goto out_work_signal;
+    }
+
     /*
      * PD sketch:
      * - a real P7 demo will start consumer_thread_main on thread B;
      * - producer_thread_main runs on thread A and emits into B's connected loop;
      * - each thread owns at most one ns_loop_t.
-     * - after both threads join, static signals are deinitialized before
+     * - after both threads join, signals are deinitialized before
      *   global shutdown.
      */
     (void)consumer_thread_main;
     (void)producer_thread_main;
 
+out_shutdown:
+    (void)ns_signal_deinit(consumer_wakeup);
+out_work_signal:
+    (void)ns_signal_deinit(work_ready);
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;
 }

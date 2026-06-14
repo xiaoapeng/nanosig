@@ -4,12 +4,13 @@ nanosig is a C11 thread-based signal/slot library planned for Linux and
 Windows. It borrows style from `tmp/eventhub_os` but does not keep
 source-compatible `eh_*` APIs.
 
-Current status: P5 signal/slot runtime is implemented. Loop management,
-cross-thread emit via MPSC record ring, connect/disconnect, and slot
-dispatch are all functional. Public API headers and review demos remain
-stable; list, slist, ring buffer, string-key hashtable, rbtree, and
-variable-size MPSC record-ring utilities are exposed under
-`include/nanosig/` and have CTest coverage on Windows and Linux.
+Current status: P6 phase-1 timer manager is implemented. Loop management,
+cross-thread emit via MPSC record ring, connect/disconnect, slot dispatch, and
+direct timer manager semantics are functional. Public API headers and review
+demos remain stable; list, slist, ring buffer, string-key hashtable, rbtree,
+and variable-size MPSC record-ring utilities are exposed under
+`include/nanosig/` and have CTest coverage on Windows and Linux. Broker-driven
+timer integration remains a later phase.
 
 ## Configure
 
@@ -41,6 +42,6 @@ Review usage demos in:
 - `demos/demo_timer_cross_thread.c`
 
 The PD API syntax checks, platform smoke test, public data-structure tests,
-public MPSC runtime test, and public type/data-structure contract checks are
-wired into CTest and the `api-compile-checks` target. Runtime loop/signal/timer
-behavior is still implemented in later phases.
+public MPSC runtime test, loop/signal/timer runtime tests, and public
+type/data-structure contract checks are wired into CTest and the
+`api-compile-checks` target.
