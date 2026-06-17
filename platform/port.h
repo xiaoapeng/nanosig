@@ -30,11 +30,6 @@ extern "C" {
 typedef uint64_t ns_platform_time_us_t;
 
 /**
- * @brief 平台 TLS key 句柄。
- */
-typedef struct ns_platform_tls_key ns_platform_tls_key_t;
-
-/**
  * @brief 平台 wakeup 句柄。
  *
  * wakeup 是 loop 的等待/唤醒原语。创建和销毁可以分配资源；
@@ -99,42 +94,6 @@ void *ns_platform_alloc(size_t size);
  * @param ptr 待释放指针，可为 `NULL`。
  */
 void ns_platform_free(void *ptr);
-
-/**
- * @brief 创建 TLS key。
- *
- * TLS key 用于 loop manager 的当前线程 fast path。
- *
- * @param out_key 输出 TLS key。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-int ns_platform_tls_key_create(ns_platform_tls_key_t **out_key);
-
-/**
- * @brief 销毁 TLS key。
- *
- * @param key TLS key。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-int ns_platform_tls_key_destroy(ns_platform_tls_key_t *key);
-
-/**
- * @brief 读取当前线程在 TLS key 上绑定的值。
- *
- * @param key TLS key。
- * @param out_value 输出当前线程保存的指针值。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-int ns_platform_tls_get(ns_platform_tls_key_t *key, void **out_value);
-
-/**
- * @brief 设置当前线程在 TLS key 上绑定的值。
- *
- * @param key TLS key。
- * @param value 要保存的指针值，可为 `NULL`。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-int ns_platform_tls_set(ns_platform_tls_key_t *key, void *value);
 
 /**
  * @brief 创建 wakeup handle。

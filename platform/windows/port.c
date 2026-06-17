@@ -14,10 +14,6 @@
 #include <stdlib.h>
 #include <windows.h>
 
-struct ns_platform_tls_key {
-    DWORD index;
-};
-
 struct ns_platform_wakeup {
     HANDLE event;
 };
@@ -62,56 +58,6 @@ void *ns_platform_alloc(size_t size)
 void ns_platform_free(void *ptr)
 {
     free(ptr);
-}
-
-int ns_platform_tls_key_create(ns_platform_tls_key_t **out_key)
-{
-    ns_platform_tls_key_t *key;
-    DWORD index;
-
-    if(out_key == NULL) return NS_E_INVAL;
-
-    *out_key = NULL;
-    key = (ns_platform_tls_key_t *)ns_platform_alloc(sizeof(*key));
-    if(key == NULL) return NS_E_NOMEM;
-
-    index = TlsAlloc();
-    if(index == TLS_OUT_OF_INDEXES){
-        ns_platform_free(key);
-        return NS_E_NOMEM;
-    }
-
-    key->index = index;
-    *out_key = key;
-    return NS_OK;
-}
-
-int ns_platform_tls_key_destroy(ns_platform_tls_key_t *key)
-{
-    if(key == NULL) return NS_E_INVAL;
-
-    if(TlsFree(key->index) == 0){
-        return NS_E_INVAL;
-    }
-
-    ns_platform_free(key);
-    return NS_OK;
-}
-
-int ns_platform_tls_get(ns_platform_tls_key_t *key, void **out_value)
-{
-    if((key == NULL) || (out_value == NULL)) return NS_E_INVAL;
-
-    *out_value = TlsGetValue(key->index);
-    return NS_OK;
-}
-
-int ns_platform_tls_set(ns_platform_tls_key_t *key, void *value)
-{
-    if(key == NULL) return NS_E_INVAL;
-    if(TlsSetValue(key->index, value) == 0) return NS_E_INVAL;
-
-    return NS_OK;
 }
 
 int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)

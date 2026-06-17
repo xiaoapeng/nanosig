@@ -23,7 +23,6 @@ _Static_assert(sizeof(ns_platform_time_us_t) == sizeof(uint64_t), "platform time
 
 static void platform_contract_accept_opaque_handles(void)
 {
-    ns_platform_tls_key_t *tls_key = NULL;
     ns_platform_wakeup_t *wakeup = NULL;
     ns_platform_mutex_t *mutex = NULL;
     ns_platform_thread_t *thread = NULL;
@@ -32,7 +31,6 @@ static void platform_contract_accept_opaque_handles(void)
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
     ns_platform_waitable_t wakeup_waitable = ns_platform_wakeup_get_waitable(wakeup);
 
-    (void)tls_key;
     (void)wakeup;
     (void)mutex;
     (void)thread;

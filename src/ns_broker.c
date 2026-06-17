@@ -50,7 +50,9 @@ static int ns_broker_node_is_initialized(const ns_list_node_t *node)
 
 static int ns_broker_node_is_linked(const ns_list_node_t *node)
 {
-    return ns_broker_node_is_initialized(node) && ((node->next != node) || (node->prev != node));
+    if(!ns_broker_node_is_initialized(node)) return 0;
+    /* ns_list_init 设置 next = prev = node（自环）；非自环说明已挂入链表 */
+    return !ns_list_empty((ns_list_node_t *)node);
 }
 
 static void ns_watcher_reset_empty(ns_watcher_t *watcher)

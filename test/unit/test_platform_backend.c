@@ -45,24 +45,6 @@ static int test_alloc(void)
     return 0;
 }
 
-static int test_tls(void)
-{
-    ns_platform_tls_key_t *key = NULL;
-    void *value = NULL;
-    int marker = 42;
-
-    if(expect_ok(ns_platform_tls_key_create(&key)) != 0) return 1;
-    if(expect_ok(ns_platform_tls_get(key, &value)) != 0) return 1;
-    if(expect_true(value == NULL) != 0) return 1;
-    if(expect_ok(ns_platform_tls_set(key, &marker)) != 0) return 1;
-    if(expect_ok(ns_platform_tls_get(key, &value)) != 0) return 1;
-    if(expect_true(value == &marker) != 0) return 1;
-    if(expect_ok(ns_platform_tls_set(key, NULL)) != 0) return 1;
-    if(expect_ok(ns_platform_tls_key_destroy(key)) != 0) return 1;
-
-    return 0;
-}
-
 static int test_mutex(void)
 {
     ns_platform_mutex_t *mutex = NULL;
@@ -948,7 +930,6 @@ int main(void)
 {
     if(expect_ok(ns_platform_init()) != 0){ fprintf(stderr, "ns_platform_init failed\n"); return 1; }
     if(test_alloc() != 0){ fprintf(stderr, "test_alloc failed\n"); return 1; }
-    if(test_tls() != 0){ fprintf(stderr, "test_tls failed\n"); return 1; }
     if(test_mutex() != 0){ fprintf(stderr, "test_mutex failed\n"); return 1; }
     if(test_wakeup() != 0){ fprintf(stderr, "test_wakeup failed\n"); return 1; }
     if(test_clock() != 0){ fprintf(stderr, "test_clock failed\n"); return 1; }

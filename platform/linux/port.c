@@ -21,10 +21,6 @@
 #include <time.h>
 #include <unistd.h>
 
-struct ns_platform_tls_key {
-    pthread_key_t key;
-};
-
 struct ns_platform_wakeup {
     int fd;
 };
@@ -70,54 +66,6 @@ void *ns_platform_alloc(size_t size)
 void ns_platform_free(void *ptr)
 {
     free(ptr);
-}
-
-int ns_platform_tls_key_create(ns_platform_tls_key_t **out_key)
-{
-    ns_platform_tls_key_t *key;
-
-    if(out_key == NULL) return NS_E_INVAL;
-
-    *out_key = NULL;
-    key = (ns_platform_tls_key_t *)ns_platform_alloc(sizeof(*key));
-    if(key == NULL) return NS_E_NOMEM;
-
-    if(pthread_key_create(&key->key, NULL) != 0){
-        ns_platform_free(key);
-        return NS_E_NOMEM;
-    }
-
-    *out_key = key;
-    return NS_OK;
-}
-
-int ns_platform_tls_key_destroy(ns_platform_tls_key_t *key)
-{
-    if(key == NULL) return NS_E_INVAL;
-
-    if(pthread_key_delete(key->key) != 0){
-        ns_platform_free(key);
-        return NS_E_INVAL;
-    }
-
-    ns_platform_free(key);
-    return NS_OK;
-}
-
-int ns_platform_tls_get(ns_platform_tls_key_t *key, void **out_value)
-{
-    if((key == NULL) || (out_value == NULL)) return NS_E_INVAL;
-
-    *out_value = pthread_getspecific(key->key);
-    return NS_OK;
-}
-
-int ns_platform_tls_set(ns_platform_tls_key_t *key, void *value)
-{
-    if(key == NULL) return NS_E_INVAL;
-    if(pthread_setspecific(key->key, value) != 0) return NS_E_INVAL;
-
-    return NS_OK;
 }
 
 int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)

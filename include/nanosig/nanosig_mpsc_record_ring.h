@@ -166,8 +166,9 @@ extern int ns_mpsc_record_ring_try_pushv(
  * 未 release 前不可再次 acquire。真实记录整体连续；内部 wrap marker 会被
  * 消费者自动跳过，不会暴露给调用方。
  *
- * 当记录的 payload 大小为 0 时，`*out_size` 为 0，`*out_record` 仍为非
- * NULL 但其值无语义意义。调用方应以 `*out_size` 判断是否有可读数据。
+ * 当记录的 payload 大小为 0 时，`*out_size` 为 0，`*out_record` 指向
+ * payload 起始地址（header 之后），但解引用无意义。调用方应以 `*out_size`
+ * 判断是否有可读数据。
  *
  * 线程安全：仅限单个消费者线程调用，不可被多个线程并发 acquire/release。
  *
