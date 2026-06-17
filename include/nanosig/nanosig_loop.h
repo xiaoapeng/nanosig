@@ -1,6 +1,6 @@
 /**
  * @file nanosig_loop.h
- * @brief nanosig 线程绑定事件循环 API。
+ * @brief nanosig 事件循环 API。
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors
@@ -21,10 +21,9 @@ extern "C" {
 #endif
 
 /**
- * @brief 线程绑定事件循环的不透明句柄。
+ * @brief 事件循环不透明句柄。
  *
- * 每个线程最多创建并绑定一个 `ns_loop_t`。名称保留为 loop，因为该对象
- * 仍然表示事件循环；线程绑定是它的生命周期约束，而不是新的 public 类型。
+ * `ns_loop_t` 表示一个事件循环实例。调用方负责管理其生命周期，库不绑定线程。
  */
 typedef struct ns_loop ns_loop_t;
 
@@ -55,13 +54,11 @@ typedef struct ns_loop_config {
     })
 
 /**
- * @brief 在当前线程创建并绑定事件循环。
+ * @brief 创建事件循环。
  *
- * `config` 为 `NULL` 时使用默认配置。成功后，当前线程成为该 loop 的拥有者。
- * 如果当前线程已经绑定 loop，本函数返回 `NS_E_EXISTS`。
+ * `config` 为 `NULL` 时使用默认配置。loop 不绑定线程，调用方负责管理其生命周期。
  *
- * @pre 本函数不得与 `ns_loop_destroy()` 或自身并发调用。调用方应保证在单一线程
- *      中顺序创建和销毁 loop。
+ * @pre 本函数不得与 `ns_loop_destroy()` 或自身并发调用。
  *
  * @param out_loop 输出创建得到的 loop 句柄；可为 `NULL`，此时不向外传值。
  * @param config loop 配置；可为 `NULL`。
@@ -70,29 +67,29 @@ typedef struct ns_loop_config {
 extern int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
 
 /**
- * @brief 销毁当前线程绑定的事件循环并解除绑定。
- *
- * 本函数必须由该 loop 的拥有者线程调用，从 TLS 中取当前线程绑定的 loop。
- * 如果当前线程未绑定 loop，返回 `NS_E_NO_LOOP`。
+ * @brief 销毁事件循环。
  *
  * @pre 调用前必须确保该 loop 不再运行（`ns_loop_run()` 已返回）。
  * @pre 调用前必须断开所有以该 loop 为目标的 signal connection，并确保没有
  *      in-flight 的 `ns_signal_emit_raw()` 仍持有指向该 loop 的指针。
+ * @pre `ns_shutdown()` 尚未调用；shutdown 后调用本函数行为未定义。
  * @pre 本函数不得与 `ns_loop_create()` 或自身并发调用。
  *
+ * @param loop 要销毁的 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_loop_destroy(void);
+extern int ns_loop_destroy(ns_loop_t *loop);
 
 /**
- * @brief 运行当前线程绑定的事件循环。
+ * @brief 运行事件循环。
  *
  * 本函数持续等待并分发队列中的 slot 调用，直到收到 `ns_loop_quit()` 请求。
- * 从 TLS 中取当前线程绑定的 loop；如果当前线程未绑定 loop，返回 `NS_E_NO_LOOP`。
+ * 同一个 loop 不允许被两个线程同时 run（返回 `NS_E_EXISTS`）。
  *
+ * @param loop 要运行的 loop 句柄。
  * @return `NS_OK` 表示正常退出，失败时返回负数状态码。
  */
-extern int ns_loop_run(void);
+extern int ns_loop_run(ns_loop_t *loop);
 
 /**
  * @brief 请求事件循环退出。
@@ -104,25 +101,6 @@ extern int ns_loop_run(void);
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 extern int ns_loop_quit(ns_loop_t *loop);
-
-/**
- * @brief 获取当前线程绑定的事件循环。
- *
- * 如果当前线程尚未创建 loop，本函数返回 `NS_E_NO_LOOP`。
- *
- * @param out_loop 输出当前线程绑定的 loop 句柄。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-extern int ns_loop_current(ns_loop_t **out_loop);
-
-/**
- * @brief 检查调用线程是否为指定 loop 的拥有者线程。
- *
- * @param loop 要检查的 loop 句柄。
- * @param out_is_owner 输出参数；非零表示调用线程是拥有者。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-extern int ns_loop_is_owner(const ns_loop_t *loop, int *out_is_owner);
 
 #ifdef __cplusplus
 }

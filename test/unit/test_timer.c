@@ -112,10 +112,10 @@ static int test_oneshot_broker_fires_signal(void)
     EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
     EXPECT_OK(ns_timer_create(&timer, 1000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &ctx, &conn) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
 
     EXPECT_OK(ns_timer_start(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_run() == NS_OK);
+    EXPECT_OK(ns_loop_run(loop) == NS_OK);
     EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_E_NO_TIMER);
 
     EXPECT_EQ(ctx.seen, 1);
@@ -123,7 +123,7 @@ static int test_oneshot_broker_fires_signal(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_destroy(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -140,16 +140,16 @@ static int test_repeat_timer_rearms_after_fire(void)
     EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
     EXPECT_OK(ns_timer_create(&timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, NULL, &ctx, &conn) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
 
     EXPECT_OK(ns_timer_start(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_run() == NS_OK);
+    EXPECT_OK(ns_loop_run(loop) == NS_OK);
     EXPECT_EQ(ctx.seen, 1);
 
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_destroy(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }

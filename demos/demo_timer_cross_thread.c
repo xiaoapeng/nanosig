@@ -33,7 +33,7 @@ int main(void)
         goto out_loop;
     }
 
-    rc = ns_signal_connect_typed_to(timer.signal, on_tick, ns_no_payload_t, target_loop, &seen, &connection);
+    rc = ns_signal_connect_typed(timer.signal, on_tick, ns_no_payload_t, target_loop, &seen, &connection);
     if(rc != NS_OK) {
         goto out_timer;
     }
@@ -43,7 +43,7 @@ int main(void)
         goto out_connection;
     }
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(target_loop);
 
 out_connection:
     (void)ns_timer_cancel(&timer);
@@ -51,7 +51,7 @@ out_connection:
 out_timer:
     (void)ns_timer_destroy(&timer);
 out_loop:
-    (void)ns_loop_destroy();
+    (void)ns_loop_destroy(target_loop);
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

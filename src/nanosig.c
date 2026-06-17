@@ -19,7 +19,6 @@ struct ns_loop {
     ns_mpsc_record_ring_t queue;
     atomic_int quit_requested;
     atomic_int running;
-    ns_list_node_t registry_node;
 };
 
 /**
@@ -50,9 +49,6 @@ static int ns_signal_unlock(ns_signal_t *signal)
 }
 
 static atomic_int g_ns_initialized = 0;
-static ns_platform_tls_key_t *g_ns_loop_tls_key = NULL;
-static ns_platform_mutex_t *g_ns_loop_registry_mutex = NULL;
-static ns_list_node_t g_ns_loop_registry_head;
 
 static int ns_is_power_of_two(size_t value)
 {
@@ -73,74 +69,6 @@ static int ns_runtime_is_initialized(void)
     return ns_atomic_load_explicit(&g_ns_initialized, ns_memory_order_acquire) != 0;
 }
 
-static int ns_loop_registry_lock(void)
-{
-    if(g_ns_loop_registry_mutex == NULL) return NS_E_SHUTDOWN;
-
-    return ns_platform_mutex_lock(g_ns_loop_registry_mutex);
-}
-
-static int ns_loop_registry_unlock(void)
-{
-    if(g_ns_loop_registry_mutex == NULL) return NS_E_SHUTDOWN;
-
-    return ns_platform_mutex_unlock(g_ns_loop_registry_mutex);
-}
-
-static int ns_loop_tls_get(ns_loop_t **out_loop)
-{
-    void *value = NULL;
-    int rc;
-
-    if(out_loop == NULL) return NS_E_INVAL;
-    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-    if(g_ns_loop_tls_key == NULL) return NS_E_SHUTDOWN;
-
-    rc = ns_platform_tls_get(g_ns_loop_tls_key, &value);
-    if(rc != NS_OK) return rc;
-
-    *out_loop = (ns_loop_t *)value;
-    return NS_OK;
-}
-
-static int ns_loop_tls_set(ns_loop_t *loop)
-{
-    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-    if(g_ns_loop_tls_key == NULL) return NS_E_SHUTDOWN;
-
-    return ns_platform_tls_set(g_ns_loop_tls_key, loop);
-}
-
-static int ns_loop_registry_add(ns_loop_t *loop)
-{
-    int rc;
-
-    if(loop == NULL) return NS_E_INVAL;
-
-    rc = ns_loop_registry_lock();
-    if(rc != NS_OK) return rc;
-
-    ns_list_push_back(&g_ns_loop_registry_head, &loop->registry_node);
-
-    rc = ns_loop_registry_unlock();
-    return rc;
-}
-
-static int ns_loop_registry_remove(ns_loop_t *loop)
-{
-    int rc;
-
-    if(loop == NULL) return NS_E_INVAL;
-
-    rc = ns_loop_registry_lock();
-    if(rc != NS_OK) return rc;
-
-    ns_list_remove_init(&loop->registry_node);
-
-    rc = ns_loop_registry_unlock();
-    return rc;
-}
-
 int ns_init(void)
 {
     int rc;
@@ -150,25 +78,12 @@ int ns_init(void)
     rc = ns_platform_init();
     if(rc != NS_OK) goto out;
 
-    rc = ns_platform_tls_key_create(&g_ns_loop_tls_key);
+    rc = ns_broker_global_init();
     if(rc != NS_OK) goto out_platform;
 
-    rc = ns_platform_mutex_create(&g_ns_loop_registry_mutex, "nanosig-loop-registry");
-    if(rc != NS_OK) goto out_tls;
-
-    rc = ns_broker_global_init();
-    if(rc != NS_OK) goto out_registry_mutex;
-
-    ns_list_init(&g_ns_loop_registry_head);
     ns_atomic_store_explicit(&g_ns_initialized, 1, ns_memory_order_release);
     return NS_OK;
 
-out_registry_mutex:
-    (void)ns_platform_mutex_destroy(g_ns_loop_registry_mutex);
-    g_ns_loop_registry_mutex = NULL;
-out_tls:
-    (void)ns_platform_tls_key_destroy(g_ns_loop_tls_key);
-    g_ns_loop_tls_key = NULL;
 out_platform:
     (void)ns_platform_shutdown();
 out:
@@ -177,32 +92,11 @@ out:
 
 int ns_shutdown(void)
 {
-    int rc;
-
     if(!ns_runtime_is_initialized()) return NS_OK;
-
-    rc = ns_loop_registry_lock();
-    if(rc != NS_OK) return rc;
-
-    if(!ns_list_empty(&g_ns_loop_registry_head)){
-        (void)ns_loop_registry_unlock();
-        return NS_E_EXISTS;
-    }
-
-    rc = ns_loop_registry_unlock();
-    if(rc != NS_OK) return rc;
 
     ns_atomic_store_explicit(&g_ns_initialized, 0, ns_memory_order_release);
 
     ns_broker_global_shutdown();
-
-    rc = ns_platform_mutex_destroy(g_ns_loop_registry_mutex);
-    g_ns_loop_registry_mutex = NULL;
-    if(rc != NS_OK) return rc;
-
-    rc = ns_platform_tls_key_destroy(g_ns_loop_tls_key);
-    g_ns_loop_tls_key = NULL;
-    if(rc != NS_OK) return rc;
 
     return ns_platform_shutdown();
 }
@@ -217,7 +111,6 @@ int ns_is_initialized(int *out_initialized)
 
 int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
 {
-    ns_loop_t *current = NULL;
     ns_loop_t *loop;
     ns_loop_config_t local_config;
     size_t struct_size;
@@ -232,10 +125,6 @@ int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
     rc = ns_loop_config_validate(&local_config);
     if(rc != NS_OK) return rc;
 
-    rc = ns_loop_tls_get(&current);
-    if(rc != NS_OK) return rc;
-    if(current != NULL) return NS_E_EXISTS;
-
     struct_size = ns_align_up(sizeof(*loop), NS_MPSC_RECORD_RING_ALIGNMENT);
     total_size = struct_size + (size_t)local_config.queue_byte_capacity;
     loop = (ns_loop_t *)ns_platform_alloc(total_size);
@@ -245,7 +134,6 @@ int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
     loop->config = local_config;
     ns_atomic_init(&loop->quit_requested, 0);
     ns_atomic_init(&loop->running, 0);
-    ns_list_init(&loop->registry_node);
 
     rc = ns_mpsc_record_ring_init(
         &loop->queue,
@@ -256,53 +144,26 @@ int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
     rc = ns_platform_wakeup_create(&loop->wakeup, local_config.debug_name);
     if(rc != NS_OK) goto out_free;
 
-    rc = ns_loop_registry_add(loop);
-    if(rc != NS_OK) goto out_wakeup;
-
-    rc = ns_loop_tls_set(loop);
-    if(rc != NS_OK) goto out_registry;
-
     if(out_loop != NULL) *out_loop = loop;
     return NS_OK;
 
-out_registry:
-    (void)ns_loop_registry_remove(loop);
-out_wakeup:
-    (void)ns_platform_wakeup_destroy(loop->wakeup);
 out_free:
     ns_platform_free(loop);
     return rc;
 }
 
-int ns_loop_destroy(void)
+int ns_loop_destroy(ns_loop_t *loop)
 {
-    ns_loop_t *loop = NULL;
     int rc;
 
-    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-
-    rc = ns_loop_tls_get(&loop);
-    if(rc != NS_OK) return rc;
-    if(loop == NULL) return NS_E_NO_LOOP;
+    if(loop == NULL) return NS_E_INVAL;
     if(ns_atomic_load_explicit(&loop->running, ns_memory_order_acquire) != 0) return NS_E_INVAL;
 
-    rc = ns_loop_tls_set(NULL);
-    if(rc != NS_OK) return rc;
-
-    rc = ns_loop_registry_remove(loop);
-    if(rc != NS_OK) goto out_restore_tls;
-
     rc = ns_platform_wakeup_destroy(loop->wakeup);
-    if(rc != NS_OK) goto out_restore_registry;
+    if(rc != NS_OK) return rc;
 
     ns_platform_free(loop);
     return NS_OK;
-
-out_restore_registry:
-    (void)ns_loop_registry_add(loop);
-out_restore_tls:
-    (void)ns_loop_tls_set(loop);
-    return rc;
 }
 
 static void ns_loop_dispatch_pending(ns_loop_t *loop)
@@ -327,18 +188,14 @@ static void ns_loop_dispatch_pending(ns_loop_t *loop)
     }
 }
 
-int ns_loop_run(void)
+int ns_loop_run(ns_loop_t *loop)
 {
-    ns_loop_t *loop = NULL;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
     int expected_running = 0;
     int rc;
 
+    if(loop == NULL) return NS_E_INVAL;
     if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-
-    rc = ns_loop_tls_get(&loop);
-    if(rc != NS_OK) return rc;
-    if(loop == NULL) return NS_E_NO_LOOP;
 
     if(!ns_atomic_compare_exchange_strong(&loop->running, &expected_running, 1)) return NS_E_EXISTS;
 
@@ -368,39 +225,6 @@ int ns_loop_quit(ns_loop_t *loop)
 
     ns_atomic_store_explicit(&loop->quit_requested, 1, ns_memory_order_release);
     return ns_platform_wakeup_signal(loop->wakeup);
-}
-
-int ns_loop_current(ns_loop_t **out_loop)
-{
-    int rc;
-
-    if(out_loop == NULL) return NS_E_INVAL;
-    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-
-    rc = ns_loop_tls_get(out_loop);
-    if(rc != NS_OK) return rc;
-    if(*out_loop == NULL) return NS_E_NO_LOOP;
-
-    return NS_OK;
-}
-
-int ns_loop_is_owner(const ns_loop_t *loop, int *out_is_owner)
-{
-    ns_loop_t *current = NULL;
-    int rc;
-
-    if((loop == NULL) || (out_is_owner == NULL)) return NS_E_INVAL;
-    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-
-    rc = ns_loop_tls_get(&current);
-    if(rc == NS_E_NO_LOOP){
-        current = NULL;
-        rc = NS_OK;
-    }
-    if(rc != NS_OK) return rc;
-
-    *out_is_owner = (current == loop) ? 1 : 0;
-    return NS_OK;
 }
 
 /* ------------------------------------------------------------------ */
@@ -444,20 +268,14 @@ int ns_signal_connect(
     void *user_data,
     ns_connection_t *connection)
 {
-    ns_loop_t *loop = target_loop;
     int rc;
 
-    if((signal == NULL) || (slot_fn == NULL) || (connection == NULL)) return NS_E_INVAL;
-
-    if(loop == NULL){
-        rc = ns_loop_current(&loop);
-        if(rc != NS_OK) return rc;
-    }
+    if((signal == NULL) || (slot_fn == NULL) || (target_loop == NULL) || (connection == NULL)) return NS_E_INVAL;
 
     connection->signal = signal;
     connection->slot_fn = slot_fn;
     connection->user_data = user_data;
-    connection->target_loop = loop;
+    connection->target_loop = target_loop;
     ns_list_init(&connection->signal_node);
 
     rc = ns_signal_lock(signal);

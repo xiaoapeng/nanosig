@@ -65,15 +65,16 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)owner;
     (void)dynamic_owner;
     (void)ns_timer_create(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
-    (void)ns_signal_connect_typed_to(timer.signal, matrix_no_payload_slot, ns_no_payload_t, loop, &observed, &connections[0]);
+    (void)ns_signal_connect_typed(timer.signal, matrix_no_payload_slot, ns_no_payload_t, loop, &observed, &connections[0]);
 
     (void)ns_signal_connect_typed(
         matrix_payload_signal,
         matrix_payload_slot,
         matrix_payload_t,
+        loop,
         &observed,
         &connections[1]);
-    (void)ns_signal_connect_typed_to(
+    (void)ns_signal_connect_typed(
         matrix_payload_signal,
         typed_slot,
         matrix_payload_t,
@@ -84,7 +85,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_connect(
         &matrix_payload_signal,
         matrix_raw_slot,
-        NULL,
+        loop,
         &observed,
         &connections[3]);
     (void)ns_signal_connect(
@@ -98,9 +99,10 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
         matrix_no_payload_signal,
         matrix_no_payload_slot,
         ns_no_payload_t,
+        loop,
         &observed,
         &connections[5]);
-    (void)ns_signal_connect_typed_to(
+    (void)ns_signal_connect_typed(
         matrix_no_payload_signal,
         typed_no_payload_slot,
         ns_no_payload_t,
@@ -111,7 +113,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_connect(
         &matrix_no_payload_signal,
         matrix_raw_slot,
-        NULL,
+        loop,
         &observed,
         &connections[7]);
     (void)ns_signal_connect(
@@ -139,9 +141,9 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
 static void matrix_wrong_payload_slot(void *user_data, const unsigned *payload);
 static void matrix_wrong_no_payload_slot(void *user_data, const unsigned *payload);
 
-void ns_pd_macro_matrix_negative_examples(void)
+void ns_pd_macro_matrix_negative_examples(ns_loop_t *loop)
 {
-    ns_signal_connect_typed(matrix_payload_signal, matrix_wrong_payload_slot, matrix_payload_t, 0, 0);
-    ns_signal_connect_typed(matrix_no_payload_signal, matrix_wrong_no_payload_slot, ns_no_payload_t, 0, 0);
+    ns_signal_connect_typed(matrix_payload_signal, matrix_wrong_payload_slot, matrix_payload_t, loop, 0, 0);
+    ns_signal_connect_typed(matrix_no_payload_signal, matrix_wrong_no_payload_slot, ns_no_payload_t, loop, 0, 0);
 }
 #endif

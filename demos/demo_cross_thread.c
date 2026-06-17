@@ -38,23 +38,23 @@ static int consumer_thread_main(void)
         return rc;
     }
 
-    rc = ns_signal_connect_typed_to(work_ready, on_work, work_payload_t, consumer_loop, &last_sequence, &connection);
+    rc = ns_signal_connect_typed(work_ready, on_work, work_payload_t, consumer_loop, &last_sequence, &connection);
     if(rc != NS_OK) {
         goto out_loop;
     }
 
-    rc = ns_signal_connect_typed_to(consumer_wakeup, on_wakeup, ns_no_payload_t, consumer_loop, &wakeup_count, &wakeup_connection);
+    rc = ns_signal_connect_typed(consumer_wakeup, on_wakeup, ns_no_payload_t, consumer_loop, &wakeup_count, &wakeup_connection);
     if(rc != NS_OK) {
         goto out_connection;
     }
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(consumer_loop);
 
     (void)ns_signal_disconnect(&wakeup_connection);
 out_connection:
     (void)ns_signal_disconnect(&connection);
 out_loop:
-    (void)ns_loop_destroy();
+    (void)ns_loop_destroy(consumer_loop);
     consumer_loop = NULL;
     return rc;
 }

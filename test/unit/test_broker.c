@@ -128,9 +128,9 @@ static void broker_loop_worker(broker_loop_ctx_t *ctx)
     }
 
     ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
-    rc = ns_loop_run();
+    rc = ns_loop_run(ctx->loop);
     ns_atomic_store_explicit(&ctx->thread_rc, rc, ns_memory_order_release);
-    (void)ns_loop_destroy();
+    (void)ns_loop_destroy(ctx->loop);
 }
 
 #if defined(_WIN32)

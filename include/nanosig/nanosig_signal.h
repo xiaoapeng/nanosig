@@ -165,35 +165,21 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
 #endif
 
 /**
- * @brief 连接 signal 与带类型检查的 slot，默认使用当前线程 loop。
+ * @brief 连接 signal 与带类型检查的 slot，并显式指定目标 loop。
  *
  * 无 payload signal 使用 `payload_type = ns_no_payload_t`，slot 签名为
  * `void (*)(void *, const ns_no_payload_t *)`。
  *
  * @param signal_name signal 对象名。
  * @param slot_fn slot 函数。
- * @param payload_type signal 的 payload 类型。
- * @param user_data 传给 slot 的调用方数据，nanosig 不接管其所有权。
- * @param connection 调用方拥有的连接对象指针。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
- */
-#define ns_signal_connect_typed(signal_name, slot_fn, payload_type, user_data, connection) \
-    (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
-     ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), NULL, (user_data), (connection)))
-
-/**
- * @brief 连接 signal 与带类型检查的 slot，并显式指定目标 loop。
- *
- * @param signal_name signal 对象名。
- * @param slot_fn slot 函数。
  * @param payload_type signal 的 payload 类型；无 payload signal 使用
  *        `ns_no_payload_t`。
- * @param target_loop slot 回调所属的目标 loop。
+ * @param target_loop slot 回调所属的目标 loop；必须非空。
  * @param user_data 传给 slot 的调用方数据，nanosig 不接管其所有权。
  * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-#define ns_signal_connect_typed_to(signal_name, slot_fn, payload_type, target_loop, user_data, connection) \
+#define ns_signal_connect_typed(signal_name, slot_fn, payload_type, target_loop, user_data, connection) \
     (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
      ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), (target_loop), (user_data), (connection)))
 
@@ -256,8 +242,7 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
 /**
  * @brief 连接 signal、slot 和目标 loop。
  *
- * `target_loop` 为 `NULL` 时使用当前线程绑定的 loop；当前线程没有 loop 时返回
- * `NS_E_NO_LOOP`。非 `NULL` 时使用调用方显式提供的目标 loop。
+ * `target_loop` 必须非空；库不提供隐式 loop 查找。
  *
  * 调用方拥有 `connection` 的存储，连接存活期间必须保证其生命周期长于任何
  * emit 操作。断开连接后可安全释放 `connection`。
@@ -268,7 +253,7 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。
- * @param target_loop 目标 loop；为 `NULL` 时使用当前线程 loop。
+ * @param target_loop 目标 loop；必须非空。
  * @param user_data 传给 slot 的调用方数据。
  * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

@@ -74,7 +74,7 @@ static int emit_quit_run(ns_signal_t *sig, const void *payload, ns_loop_t *loop)
     rc = ns_loop_quit(loop);
     if(rc != NS_OK) return rc;
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(loop);
     return rc;
 }
 
@@ -106,7 +106,7 @@ static int test_no_payload_same_thread(void)
     rc = ns_signal_init_raw(&sig, 0u, 0u, "test-no-payload");
     EXPECT_OK(rc == NS_OK);
 
-    rc = ns_signal_connect(&sig, slot_no_payload, NULL, NULL, &conn);
+    rc = ns_signal_connect(&sig, slot_no_payload, loop, NULL, &conn);
     EXPECT_OK(rc == NS_OK);
 
     rc = emit_quit_run(&sig, NULL, loop);
@@ -116,7 +116,7 @@ static int test_no_payload_same_thread(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -158,7 +158,7 @@ static int test_payload_same_thread(void)
     rc = ns_signal_init_raw(&sig, sizeof(test_payload_t), 0u, "test-payload");
     EXPECT_OK(rc == NS_OK);
 
-    rc = ns_signal_connect(&sig, slot_with_payload, NULL, (void *)0xDEAD, &conn);
+    rc = ns_signal_connect(&sig, slot_with_payload, loop, (void *)0xDEAD, &conn);
     EXPECT_OK(rc == NS_OK);
 
     payload.value = 42;
@@ -170,7 +170,7 @@ static int test_payload_same_thread(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -211,10 +211,10 @@ static void cross_thread_worker(cross_thread_ctx_t *ctx)
 
     ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(ctx->loop);
 
     ns_atomic_store_explicit(&ctx->thread_rc, rc, ns_memory_order_release);
-    ns_loop_destroy();
+    ns_loop_destroy(ctx->loop);
 }
 
 #if defined(_WIN32)
@@ -321,7 +321,7 @@ static int test_disconnect_stops_future(void)
     rc = ns_signal_init_raw(&sig, 0u, 0u, "disconnect-test");
     EXPECT_OK(rc == NS_OK);
 
-    rc = ns_signal_connect(&sig, slot_disconnect, NULL, NULL, &conn);
+    rc = ns_signal_connect(&sig, slot_disconnect, loop, NULL, &conn);
     EXPECT_OK(rc == NS_OK);
 
     /* Disconnect before any emit */
@@ -334,7 +334,7 @@ static int test_disconnect_stops_future(void)
     EXPECT_EQ(g_disconnect_called, 0);
 
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -370,9 +370,9 @@ static int test_disconnect_all(void)
     rc = ns_signal_init_raw(&sig, 0u, 0u, "disconnect-all-test");
     EXPECT_OK(rc == NS_OK);
 
-    EXPECT_OK(ns_signal_connect(&sig, slot_multi, NULL, NULL, &conn1) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&sig, slot_multi, NULL, NULL, &conn2) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&sig, slot_multi, NULL, NULL, &conn3) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&sig, slot_multi, loop, NULL, &conn1) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&sig, slot_multi, loop, NULL, &conn2) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&sig, slot_multi, loop, NULL, &conn3) == NS_OK);
 
     /* Disconnect all */
     EXPECT_OK(ns_signal_disconnect_all(&sig) == NS_OK);
@@ -384,7 +384,7 @@ static int test_disconnect_all(void)
     EXPECT_EQ(g_multi_called, 0);
 
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -418,7 +418,7 @@ static int test_emit_before_run(void)
     rc = ns_signal_init_raw(&sig, 0u, 0u, "queue-first-test");
     EXPECT_OK(rc == NS_OK);
 
-    rc = ns_signal_connect(&sig, slot_queue_first, NULL, NULL, &conn);
+    rc = ns_signal_connect(&sig, slot_queue_first, loop, NULL, &conn);
     EXPECT_OK(rc == NS_OK);
 
     /* Emit before run, then quit so run exits after draining */
@@ -427,14 +427,14 @@ static int test_emit_before_run(void)
 
     EXPECT_OK(ns_loop_quit(loop) == NS_OK);
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(loop);
     EXPECT_OK(rc == NS_OK);
 
     EXPECT_EQ(g_queue_first_called, 1);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -478,8 +478,8 @@ static int test_multiple_connections(void)
     rc = ns_signal_init_raw(&sig, 0u, 0u, "multi-conn-test");
     EXPECT_OK(rc == NS_OK);
 
-    EXPECT_OK(ns_signal_connect(&sig, slot_a, NULL, NULL, &conn_a) == NS_OK);
-    EXPECT_OK(ns_signal_connect(&sig, slot_b, NULL, NULL, &conn_b) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&sig, slot_a, loop, NULL, &conn_a) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&sig, slot_b, loop, NULL, &conn_b) == NS_OK);
 
     rc = emit_quit_run(&sig, NULL, loop);
     EXPECT_OK(rc == NS_OK);
@@ -490,7 +490,7 @@ static int test_multiple_connections(void)
     EXPECT_OK(ns_signal_disconnect(&conn_a) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn_b) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -509,12 +509,12 @@ static int test_uninitialized_signal_rejected(void)
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
-    EXPECT_OK(ns_signal_connect(&sig, slot_no_payload, NULL, NULL, &conn) == NS_E_INVAL);
+    EXPECT_OK(ns_signal_connect(&sig, slot_no_payload, loop, NULL, &conn) == NS_E_INVAL);
     EXPECT_OK(ns_signal_emit_raw(&sig, NULL, 0u) == NS_E_INVAL);
     EXPECT_OK(ns_signal_disconnect_all(&sig) == NS_E_INVAL);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
 
-    EXPECT_OK(ns_loop_destroy() == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -556,9 +556,9 @@ static void concurrent_worker(concurrent_ctx_t *ctx)
 
     ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
 
-    rc = ns_loop_run();
+    rc = ns_loop_run(ctx->loop);
 
-    ns_loop_destroy();
+    ns_loop_destroy(ctx->loop);
 }
 
 #if defined(_WIN32)
