@@ -4,7 +4,7 @@
 # platform
 
 ## Purpose
-Guidance for source directory `platform/`, which contains nanosig's OS abstraction layer. It is the only OS-coupling point for loop-only allocation, TLS, wakeups, mutexes, and clocks during P1b.
+Guidance for source directory `platform/`, which contains nanosig's OS abstraction layer. It is the only OS-coupling point for allocation, wakeups, mutexes, clocks, threads, and waitsets.
 
 ## Key Files
 | File | Description |
@@ -23,9 +23,9 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 
 ### Working In `platform/`
 - Add platform abstractions here, not under `src/`.
-- P1b loop-only scope: TLS, single wakeup, mutex, monotonic clock, and allocation.
-- P5b waitset scope: waitset create/destroy/add/remove/wait, waitable union. Waitset decoupled from wakeup.
-- Do not add thread creation, condvar, fd/socket readiness, or broker APIs until the later phases.
+- Loop-only scope: single wakeup, mutex, monotonic clock, and allocation.
+- Waitset scope: waitset create/destroy/add/remove/wait, waitable union. Waitset decoupled from wakeup.
+- Thread scope: thread create/join.
 - Do not create empty RTOS/MCU backend directories for v1; document future ports instead.
 
 ### Testing Requirements
@@ -41,7 +41,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 - Future dependency of `src/` implementation files.
 
 ### External
-- Linux backend uses pthread TLS/mutex, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
-- Windows backend uses TLS, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
+- Linux backend uses pthread mutex/thread, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
+- Windows backend uses CreateThread, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

@@ -4,7 +4,7 @@
 # bench
 
 ## Purpose
-Guidance for source directory `bench/`, which is reserved for benchmark programs and result scripts. It is currently a placeholder until P8.
+Guidance for source directory `bench/`, which is reserved for benchmark programs and result scripts. Currently a placeholder.
 
 ## Key Files
 | File | Description |

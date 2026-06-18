@@ -1,6 +1,6 @@
 /**
  * @file test_broker.c
- * @brief P6 phase-2 event broker runtime tests.
+ * @brief Event broker runtime tests.
  * @date 2026-06-14
  *
  * @copyright Copyright (c) 2026 nanosig contributors

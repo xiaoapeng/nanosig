@@ -1,6 +1,6 @@
 /**
  * @file test_mpsc.c
- * @brief P3 fixed-capacity MPSC queue unit tests.
+ * @brief Fixed-capacity MPSC queue unit tests.
  * @date 2026-05-23
  *
  * @copyright Copyright (c) 2026 nanosig contributors

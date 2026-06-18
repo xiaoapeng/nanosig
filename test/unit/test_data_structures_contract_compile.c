@@ -1,6 +1,6 @@
 /**
  * @file test_data_structures_contract_compile.c
- * @brief P2 公开数据结构 API syntax-only 契约检查。
+ * @brief 公开数据结构 API syntax-only 契约检查。
  * @date 2026-05-17
  *
  * @copyright Copyright (c) 2026 nanosig contributors

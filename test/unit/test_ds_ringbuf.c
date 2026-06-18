@@ -1,6 +1,6 @@
 /**
  * @file test_ds_ringbuf.c
- * @brief P2 公开字节环形缓冲区单元测试。
+ * @brief 公开字节环形缓冲区单元测试。
  * @date 2026-05-17
  *
  * @copyright Copyright (c) 2026 nanosig contributors

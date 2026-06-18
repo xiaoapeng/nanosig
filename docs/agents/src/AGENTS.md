@@ -4,13 +4,13 @@
 # src
 
 ## Purpose
-Guidance for source directory `src/`, which contains nanosig implementation sources and internal headers. Loop management, signal/slot runtime, data-structure implementations, and the phase-1 timer manager now live here.
+Guidance for source directory `src/`, which contains nanosig implementation sources and internal headers. Loop management, signal/slot runtime, data-structure implementations, timer manager, and event broker live here.
 
 ## Key Files
 | File | Description |
 |------|-------------|
 | `nanosig.c` | Core lifecycle, loop runtime, and signal/slot runtime. |
-| `ns_timer.c` | Phase-1 timer manager and public timer API implementation. |
+| `ns_timer.c` | Timer manager and public timer API implementation. |
 | `ns_timer_mgr.h` | Internal timer manager interface used by core lifecycle and timer tests. |
 
 ## Subdirectories
@@ -22,7 +22,7 @@ Guidance for source directory `src/`, which contains nanosig implementation sour
 
 ### Working In `src/`
 - Keep OS-specific code out of this directory; use `platform/` instead.
-- Keep timer manager broker-independent; phase 1 is tested through `next_timeout` / `fire_expired`, with broker integration deferred.
+- Keep timer manager broker-independent; tested through `next_timeout` / `fire_expired`.
 
 ### Testing Requirements
 - Source changes require targeted unit/integration tests plus relevant sanitizer presets.

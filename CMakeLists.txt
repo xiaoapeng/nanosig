@@ -16,7 +16,7 @@ endif()
 
 option(NANOSIG_BUILD_TESTS "Build nanosig tests" ON)
 option(NANOSIG_BUILD_DEMOS "Build nanosig demos once implementation phases land" OFF)
-option(NANOSIG_BUILD_API_CHECKS "Register compile-only PD API checks" ON)
+option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
 set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_atomic.h
@@ -62,7 +62,7 @@ elseif(UNIX AND NOT APPLE)
         platform/linux/port.c
     )
 else()
-    message(FATAL_ERROR "nanosig P1b supports only Linux and Windows platform backends")
+    message(FATAL_ERROR "nanosig supports only Linux and Windows platform backends")
 endif()
 
 add_library(nanosig STATIC
@@ -166,6 +166,6 @@ if(NANOSIG_BUILD_API_CHECKS)
 endif()
 
 add_custom_target(sanitize-all
-    COMMAND ${CMAKE_COMMAND} -E echo "sanitize-all: P0 scaffold has no sanitizer/audit targets yet"
+    COMMAND ${CMAKE_COMMAND} -E echo "sanitize-all: no sanitizer/audit targets yet"
     VERBATIM
 )

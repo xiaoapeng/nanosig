@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /**
- * @brief PD 阶段的安全注解约束。
+ * @brief 安全注解约束。
  *
  * nanosig v1 当前公开 API 不沿用 eventhub_os 的 `__safety` 或 ISR 注解。
  * 该头文件仅作为未来 v2 MCU/ISR 审计的扩展点保留，当前不定义任何会出现在

@@ -3,7 +3,7 @@
 # nanosig
 
 ## Purpose
-nanosig is a new C11 signal/slot library being built with explicit-passing event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, an event broker, and Linux/Windows platform backends. The repository has completed P0-P6: scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, signal/slot runtime, timer manager, and event broker are implemented and tested.
+nanosig is a new C11 signal/slot library being built with explicit-passing event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, an event broker, and Linux/Windows platform backends. The repository has completed scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, signal/slot runtime, timer manager, and event broker — all implemented and tested.
 
 ## Key Files
 | File | Description |
@@ -35,8 +35,8 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 
 ### Working In This Directory
 - Treat `docs/共识计划.md` and `docs/需求访谈.md` as the binding design context. Hidden `.omx/` and `.omc/` artifacts are workflow caches, not the public source of truth.
-- Keep P0/PD boundaries clear: public headers and docs may change during API review; implementation logic starts only after PD closeout. The empty `src/nanosig.c` file is a compile-anchor exception for CMake and clangd, and `api-compile-checks` is syntax-only.
-- Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` P1a reuse.
+- The empty `src/nanosig.c` file is a compile-anchor exception for CMake and clangd, and `api-compile-checks` is syntax-only.
+- Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` reuse.
 - Preserve the latest PD API style: no public `__safety` annotations for now; function-wrapper connect/emit macros are lowercase, while declaration/definition/initializer/type-only macros are uppercase; use C designated initializers in examples.
 - The moved per-directory AGENTS instructions are centralized under `docs/agents/`; update those copies when source-tree guidance changes.
 - Preserve the one-loop-per-thread invariant: `ns_loop_create` binds the current thread, default connect APIs use the current thread loop, and explicit `_to` connect APIs are escape hatches.
@@ -49,6 +49,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 - For later implementation phases, add targeted tests first, then run the relevant preset plus `sanitize-all`.
 
 ### Common Patterns
+- **源码中禁止出现阶段计划编号。** 源文件（`.c`、`.h`、`CMakeLists.txt`、`demos/`、`test/`）的注释、字符串和标识符中不得包含 `P0`、`P1a`、`P1b`、`P2`、`P3`、`P4`、`P5b`、`P6`、`P7`、`PD`、`phase-1`、`phase-2` 等计划阶段引用。这些信息只属于 `docs/` 目录下的设计文档。新代码和修改后的代码必须遵守此规则。
 - Public symbols use `ns_*`, public constants use `NS_*`, function-wrapper signal connect/emit macros use lowercase `ns_signal_*`, and declaration/definition/initializer/type-only macros use uppercase `NS_*`.
 - Signal connect macros must provide the payload/no-payload and current-loop/explicit-loop matrix without adding a separate `0` function family; no-payload signals use `ns_no_payload_t` and `NS_NO_PAYLOAD`, and typed variants use compile-time slot signature checks.
 - Zero tolerance for duplicate internal/public-low-level functions that only differ by default-vs-explicit parameters. Use a parameter such as nullable `target_loop` instead; wrapper macros may keep ergonomic names but must call the single underlying function.

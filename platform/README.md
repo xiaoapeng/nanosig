@@ -1,12 +1,12 @@
 # nanosig 平台抽象层
 
-状态：P5b waitset 契约已追加；Windows 和 Linux 已验证。
+状态：waitset 契约已追加；Windows 和 Linux 已验证。
 
 `platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过
 `platform/port.h` 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS
 头文件或写平台分支。
 
-## P1a 契约（loop-only 原语）
+## loop-only 原语
 
 `platform/port.h` 冻结以下能力：
 
@@ -17,7 +17,7 @@
 - 时间：单调微秒时钟。
 - 线程：创建、join。
 
-## P5b 契约（waitset 原语）
+## waitset 原语
 
 `platform/port.h` 追加以下 waitset 能力：
 

@@ -9,12 +9,13 @@ Guidance for source directory `test/`, which contains nanosig unit, integration,
 ## Key Files
 | File | Description |
 |------|-------------|
-| `unit/test_macro_expansion.c` | PD compile-only check for the public signal/slot macro matrix. |
-| `unit/test_platform_contract_compile.c` | P1a compile-only check for `platform/port.h` and internal atomic contract. |
-| `unit/test_platform_backend.c` | P1b runtime smoke test for the loop-only platform backend. |
-| `unit/test_loop.c` | Loop lifecycle and one-loop-per-thread runtime tests. |
+| `unit/test_macro_expansion.c` | Compile-only check for the public signal/slot macro matrix. |
+| `unit/test_platform_contract_compile.c` | Compile-only check for `platform/port.h` and internal atomic contract. |
+| `unit/test_platform_backend.c` | Runtime smoke test for the platform backend. |
+| `unit/test_loop.c` | Loop lifecycle runtime tests. |
 | `unit/test_signal.c` | Signal/slot runtime tests. |
-| `unit/test_timer.c` | Phase-1 timer manager runtime tests. |
+| `unit/test_timer.c` | Timer manager runtime tests. |
+| `unit/test_broker.c` | Event broker runtime tests. |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -24,7 +25,7 @@ Guidance for source directory `test/`, which contains nanosig unit, integration,
 ## For AI Agents
 
 ### Working In `test/`
-- Add focused tests with the implementation phase that introduces behavior.
+- Add focused tests with the implementation that introduces behavior.
 - Keep tests deterministic; demos should assert exit status, not stdout ordering.
 - Keep compile-only API tests free of runtime assumptions; put runtime behavior in linked unit tests.
 

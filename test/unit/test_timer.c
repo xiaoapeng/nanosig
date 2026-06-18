@@ -1,6 +1,6 @@
 /**
  * @file test_timer.c
- * @brief P6 phase-1 timer manager unit tests.
+ * @brief Timer manager unit tests.
  * @date 2026-06-13
  *
  * @copyright Copyright (c) 2026 nanosig contributors

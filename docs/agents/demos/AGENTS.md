@@ -4,12 +4,12 @@
 # demos
 
 ## Purpose
-Guidance for source directory `demos/`, which contains API review demos. They are examples for reviewing call shape and are intentionally kept as syntax-only checks until P7 promotes runnable demos.
+Guidance for source directory `demos/`, which contains API review demos. They are examples for reviewing call shape and are intentionally kept as syntax-only checks.
 
 ## Key Files
 | File | Description |
 |------|-------------|
-| `README.md` | Explains why demos are review-only during PD. |
+| `README.md` | Explains why demos are review-only. |
 | `demo_same_thread.c` | Shows same-thread loop creation, typed connection, emit, disconnect, and teardown. |
 | `demo_cross_thread.c` | Sketches producer/consumer threads where the consumer thread owns the target loop. |
 | `demo_timer_cross_thread.c` | Sketches repeating timer creation, embedded timer signal connection, and cross-loop delivery. |
@@ -24,9 +24,9 @@ Guidance for source directory `demos/`, which contains API review demos. They ar
 ### Working In `demos/`
 - Keep examples readable and explicit; use `.field = value` designated initializers.
 - Every example that acquires multiple resources must use kernel-style `goto` cleanup labels and release each successfully initialized resource on every failure path.
-- Do not wire these files into CMake as linked executables until the corresponding implementation phase can link them.
+- Do not wire these files into CMake as linked executables until the corresponding implementation can link them.
 - Keep demo API usage synchronized with `docs/API_DESIGN.md`.
-- Keep at least one demo covering no-payload signal usage and one demo covering explicit target-loop `_to` connection usage.
+- Keep at least one demo covering no-payload signal usage and one demo covering explicit target-loop connection usage.
 
 ### Testing Requirements
 - Run `ctest --preset windows-release` or `cmake --build --preset windows-release --target api-compile-checks`.

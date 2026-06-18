@@ -1,6 +1,6 @@
 /**
  * @file test_loop.c
- * @brief P4 loop lifecycle and thread-binding unit tests.
+ * @brief Loop lifecycle unit tests.
  * @date 2026-05-24
  *
  * @copyright Copyright (c) 2026 nanosig contributors

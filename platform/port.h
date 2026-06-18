@@ -216,7 +216,7 @@ int ns_platform_thread_create(
 int ns_platform_thread_join(ns_platform_thread_t *thread);
 
 /* ------------------------------------------------------------------ */
-/*  waitset（P5b broker / waitset 契约追加）                            */
+/*  waitset                                                              */
 /* ------------------------------------------------------------------ */
 
 /**

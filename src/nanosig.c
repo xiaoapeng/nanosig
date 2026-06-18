@@ -1,6 +1,6 @@
 /**
  * @file nanosig.c
- * @brief nanosig core lifecycle and P4 loop runtime.
+ * @brief nanosig core lifecycle and loop runtime.
  * @date 2026-05-24
  *
  * @copyright Copyright (c) 2026 nanosig contributors

@@ -1,6 +1,6 @@
 /**
  * @file test_platform_contract_compile.c
- * @brief P1a platform/port.h and nanosig_atomic.h syntax-only contract check.
+ * @brief platform/port.h and nanosig_atomic.h syntax-only contract check.
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors

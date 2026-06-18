@@ -1,6 +1,6 @@
 /**
  * @file test_platform_backend.c
- * @brief P1b loop-only + P5b waitset platform backend runtime smoke test.
+ * @brief Platform backend runtime smoke test.
  * @date 2026-05-17
  *
  * @copyright Copyright (c) 2026 nanosig contributors
@@ -31,7 +31,7 @@ static int expect_true(int condition)
 }
 
 /* ------------------------------------------------------------------ */
-/*  P1b basic tests                                                    */
+/*  basic tests                                                          */
 /* ------------------------------------------------------------------ */
 
 static int test_alloc(void)
@@ -114,7 +114,7 @@ static int test_thread(void)
 }
 
 /* ------------------------------------------------------------------ */
-/*  P5b waitset tests                                                  */
+/*  waitset tests                                                        */
 /* ------------------------------------------------------------------ */
 
 static ns_platform_waitable_t test_create_raw_waitable(void)

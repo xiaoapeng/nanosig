@@ -91,8 +91,8 @@ int main(void)
     }
 
     /*
-     * PD sketch:
-     * - a real P7 demo will start consumer_thread_main on thread B;
+     * sketch:
+     * - a real demo will start consumer_thread_main on thread B;
      * - producer_thread_main runs on thread A and emits into B's connected loop;
      * - each thread owns at most one ns_loop_t.
      * - after both threads join, signals are deinitialized before

@@ -1,6 +1,6 @@
 /**
  * @file test_signal.c
- * @brief P5 signal/slot runtime unit tests.
+ * @brief Signal/slot runtime unit tests.
  * @date 2026-05-31
  *
  * @copyright Copyright (c) 2026 nanosig contributors

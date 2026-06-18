@@ -4,7 +4,7 @@
 # cmake
 
 ## Purpose
-Guidance for source directory `cmake/`, which contains reusable CMake modules for compiler warnings, sanitizer configuration, and compile-only PD API checks used by the top-level build.
+Guidance for source directory `cmake/`, which contains reusable CMake modules for compiler warnings, sanitizer configuration, and compile-only API checks used by the top-level build.
 
 ## Key Files
 | File | Description |
@@ -23,7 +23,7 @@ Guidance for source directory `cmake/`, which contains reusable CMake modules fo
 ### Working In `cmake/`
 - Keep helpers small and target-scoped; do not add global compiler flags unless the top-level build explicitly needs them.
 - Preserve `/Zc:preprocessor` on MSVC because the public API macro design depends on conforming preprocessing.
-- Keep API compile checks syntax-only; demos should not be linked as runnable targets until P7 intentionally promotes them.
+- Keep API compile checks syntax-only; demos should not be linked as runnable targets until intentionally promoted.
 
 ### Testing Requirements
 - Reconfigure at least one preset after editing these files.

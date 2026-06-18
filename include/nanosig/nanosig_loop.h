@@ -35,7 +35,7 @@ typedef struct ns_loop ns_loop_t;
 typedef struct ns_loop_config {
     /** MPSC record ring 字节容量，决定跨线程 emit 可排队的总字节数。须为 2 的幂。 */
     ns_capacity_t queue_byte_capacity;
-    /** 预留标志位，当前 PD 阶段必须为 0。 */
+    /** 预留标志位，当前必须为 0。 */
     uint32_t flags;
     /** 调试名称；库只保存指针，不接管字符串所有权。 */
     const char *debug_name;
