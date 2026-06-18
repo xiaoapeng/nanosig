@@ -14,7 +14,7 @@ This directory holds the public design documentation for the PD closeout and imp
 | `API_DESIGN.md` | Public API draft, usage examples, lifecycle rules, and PD review notes. |
 | `DATA_STRUCTURES.md` | Public opaque type list and internal structure design draft for later phases. |
 | `EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig adaptation rules. |
-| `THREAD_LOOP_BINDING.md` | One-loop-per-thread invariant, default connect behavior, and loop manager/platform TLS decision. |
+| `THREAD_LOOP_BINDING.md` | Loop lifecycle model (explicit passing, no thread binding) and connect behavior. |
 | `agents/AGENTS.md` | Central index for moved directory-specific AGENTS instructions. |
 
 ## Subdirectories
@@ -40,7 +40,7 @@ This directory holds the public design documentation for the PD closeout and imp
 - Prefer concrete code snippets over prose-only API descriptions.
 - Code snippets that acquire more than one nanosig resource must show deterministic teardown with kernel-style `goto` cleanup labels.
 - Use the current macro style in examples: function-wrapper connect/emit/init macros stay lowercase, while declaration, payload-metadata, and type-only macros are uppercase.
-- When documenting signal/slot APIs, keep the payload/no-payload and current-loop/explicit-loop connect matrix visible, and show no-payload usage via `ns_no_payload_t` rather than `0` suffix APIs.
+- When documenting signal/slot APIs, keep the payload/no-payload connect matrix visible, and show no-payload usage via `ns_no_payload_t` rather than `0` suffix APIs. Loop is always explicitly passed (no implicit current-thread loop).
 - Document static and struct-owned signals as caller-owned `ns_signal_t` storage that must be initialized with `ns_signal_init(signal, payload_type)` before use and deinitialized with `ns_signal_deinit(signal)` after connections are disconnected. Do not reintroduce legacy signal config objects or aggregate/static signal initializer macros.
 - Document timers as caller-owned `ns_timer_t` objects with first member `ns_signal_t signal`; timer callbacks connect to that embedded no-payload signal, intervals are `uint64_t` microseconds, attrs are `NS_TIMER_ATTR_*` bitmaps, and `ns_timer_cancel` is valid even when the timer is already stopped.
 

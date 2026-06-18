@@ -3,7 +3,7 @@
 # nanosig
 
 ## Purpose
-nanosig is a new C11 signal/slot library being built with thread-owned event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, and Linux/Windows platform backends. The repository has completed P0-P5: scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, and signal/slot runtime are implemented and tested.
+nanosig is a new C11 signal/slot library being built with explicit-passing event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, an event broker, and Linux/Windows platform backends. The repository has completed P0-P6: scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, signal/slot runtime, timer manager, and event broker are implemented and tested.
 
 ## Key Files
 | File | Description |

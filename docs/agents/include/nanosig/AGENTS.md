@@ -24,10 +24,10 @@ Guidance for source directory `include/nanosig/`, which defines the public nanos
 
 ### Working In `include/nanosig/`
 - Every public API declaration and public macro must have a Chinese doc comment.
-- Keep function-wrapper public macros lowercase with the `ns_signal_*` prefix, for example `ns_signal_connect_typed(...)`, `ns_signal_connect_typed_to(...)`, `ns_signal_emit(...)`, and `ns_signal_init(...)`; use uppercase for declaration, payload metadata, and type-only macros.
+- Keep function-wrapper public macros lowercase with the `ns_signal_*` prefix, for example `ns_signal_connect_typed(...)`, `ns_signal_emit(...)`, `ns_signal_init(...)`, and `ns_signal_deinit(...)`; use uppercase for declaration, payload metadata, and type-only macros.
 - Do not reintroduce public `__safety` annotations unless the user explicitly changes the PD decision.
 - Use designated initializers in public examples and configuration structs.
-- Do not add low-level function pairs that only differ by default-vs-explicit target parameters. `ns_signal_connect` uses a nullable `target_loop` parameter for both cases; wrapper macros may keep ergonomic `_to` names.
+- Do not add low-level function pairs that only differ by default-vs-explicit target parameters. `ns_signal_connect` uses an explicit non-nullable `target_loop` parameter (loop does not bind to threads); wrapper macros keep ergonomic names.
 - Keep `ns_no_payload_t` as a type marker only: public macros must map it to `payload_size == 0`, no-payload emit uses `NS_NO_PAYLOAD`, and implementations must copy 0 payload bytes for it.
 - Support static and struct-owned signals as caller-owned `ns_signal_t` storage initialized through `ns_signal_init(signal, payload_type)` and cleaned with `ns_signal_deinit(signal)` after connections are disconnected. Do not reintroduce legacy signal config objects or aggregate/static signal initializer macros; connection resources are released by `ns_signal_disconnect`, with `ns_signal_disconnect_all` as a teardown escape hatch.
 

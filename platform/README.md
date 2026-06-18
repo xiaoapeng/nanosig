@@ -12,10 +12,10 @@
 
 - 平台生命周期：`ns_platform_init`、`ns_platform_shutdown`。
 - 内存：`ns_platform_alloc`、`ns_platform_free`。
-- TLS：创建 key、销毁 key、当前线程 get/set。
 - wakeup：创建、销毁、signal、单个等待。
 - 同步：mutex 的创建、销毁、加锁和解锁。
 - 时间：单调微秒时钟。
+- 线程：创建、join。
 
 ## P5b 契约（waitset 原语）
 
@@ -44,7 +44,8 @@ timeout 语义：微秒输入，后端向上取整到毫秒 / tick。保证等�
 
 Linux 后端：
 
-- TLS 和 mutex 使用 POSIX 线程设施。
+- mutex 使用 POSIX pthread_mutex。
+- 线程使用 pthread_create / pthread_join。
 - wakeup 使用 eventfd、pipe 或等价单 wakeup 机制。
 - 单调时间使用 `clock_gettime` 的 monotonic 时钟。
 - 内存分配集中在平台层封装。
@@ -53,7 +54,7 @@ Linux 后端：
 
 Windows 后端：
 
-- TLS 使用 Win32 TLS 或等价线程本地存储设施。
+- 线程使用 CreateThread / WaitForSingleObject(join)。
 - wakeup 使用 auto-reset event。
 - 单 wakeup 等待使用 WaitForSingleObject 或等价机制。
 - 锁使用 SRWLOCK 或等价 mutex 原语。
@@ -69,7 +70,7 @@ Windows 后端：
 平台层 handle 都是不透明类型。创建函数返回的 handle 归调用方所有，必须用匹配
 destroy 函数释放。
 
-wakeup、mutex 和 TLS key 的 create/destroy 可以分配和释放资源。emit 路径只能
+wakeup、mutex、线程和 waitset 的 create/destroy 可以分配和释放资源。emit 路径只能
 使用已经创建好的资源，不能触发平台分配。
 
 ## 等待语义
