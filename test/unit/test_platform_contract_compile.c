@@ -91,11 +91,12 @@ static void platform_contract_check_waitset_types(void)
     ns_platform_waitset_completion_t c;
     ns_platform_waitset_t *ws = NULL;
 
-    w = ns_waitable_init();
+    ns_waitable_init(&w);
     w.fd = 0;
     w.handle = NULL;
     w.event_bit = 0;
     w.user_data = NULL;
+    w.registered_waitset = NULL;
     w.events = NS_WAITABLE_EVENT_IN;
     w.edge_triggered = 0;
 

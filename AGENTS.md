@@ -3,19 +3,19 @@
 # nanosig
 
 ## Purpose
-nanosig is a new C11 signal/slot library being built with explicit-passing event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, an event broker, and Linux/Windows platform backends. The repository has completed scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, signal/slot runtime, timer manager, and event broker — all implemented and tested.
+nanosig is a new C11 signal/slot library being built with explicit-passing event loops, variable-size MPSC record-ring cross-thread emit, a global timer service, an event broker, and Linux/macOS/Windows platform backends. The repository has completed scaffolding, API design, platform backends, data structures, MPSC record ring, loop management, signal/slot runtime, timer manager, and event broker — all implemented and tested.
 
 ## Key Files
 | File | Description |
 |------|-------------|
 | `CMakeLists.txt` | Top-level CMake project, static compile-anchor target, compile-only API checks, testing enablement, and `sanitize-all` placeholder. |
-| `CMakePresets.json` | Linux and Windows configure/build/test presets, all writing to `build/` for clangd and CMake plugin integration. |
+| `CMakePresets.json` | Linux, macOS, and Windows configure/build/test presets, all writing to `build/` for clangd and CMake plugin integration. |
 | `README.md` | Current project status, quick configure commands, and API review entry points. |
 | `LICENSE` | MIT license for nanosig. |
 | `docs/共识计划.md` | 中文权威共识计划，记录当前阶段状态、API 决策、阶段计划和验证证据。 |
 | `docs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和被 PD 更新覆盖的早期结论。 |
 | `docs/EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig-specific adaptations. |
-| `docs/THREAD_LOOP_BINDING.md` | Current one-loop-per-thread and default-connect design constraint. |
+| `docs/THREAD_LOOP_BINDING.md` | Current explicit-loop-passing design constraint. |
 | `docs/agents/AGENTS.md` | Central index for moved directory-specific AGENTS instructions. |
 
 ## Subdirectories
@@ -39,7 +39,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 - Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` reuse.
 - Preserve the latest PD API style: no public `__safety` annotations for now; function-wrapper connect/emit macros are lowercase, while declaration/definition/initializer/type-only macros are uppercase; use C designated initializers in examples.
 - The moved per-directory AGENTS instructions are centralized under `docs/agents/`; update those copies when source-tree guidance changes.
-- Preserve the one-loop-per-thread invariant: `ns_loop_create` binds the current thread, default connect APIs use the current thread loop, and explicit `_to` connect APIs are escape hatches.
+- Preserve the explicit loop-passing model: `ns_loop_create` does not bind a thread, and `ns_signal_connect` requires a non-null target loop.
 - Follow `docs/EVENTHUB_OS_STYLE.md` when borrowing eventhub_os coding/comment style.
 - Do not generate AGENTS files inside hidden workflow/runtime directories such as `.omx/`, `.omc/`, or `.github/` unless the user explicitly asks for workflow documentation.
 - Keep reference-code documentation shallow; `tmp/eventhub_os/AGENTS.md` is enough unless active work moves into that tree.
@@ -56,7 +56,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 - Configuration examples use C designated initializers.
 - Examples that acquire more than one nanosig resource must show kernel-style `goto` cleanup labels and release every successfully initialized resource on all failure paths.
 - `ns_no_payload_t` is only a compile-time marker for typed no-payload slots; no-payload emit must pass `NS_NO_PAYLOAD` and copy 0 bytes.
-- `ns_signal_t` may be embedded in user structs; initialize members with `NS_SIGNAL_INITIALIZER(payload_type)` or `ns_signal_init(signal, payload_type)`. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT` or `ns_signal_config_t`. There is no `ns_signal_deinit`; `ns_signal_disconnect` removes the connection from the signal's slot list, with `ns_signal_disconnect_all` reserved for teardown escape hatches. Neither function frees memory; callers own `ns_connection_t` storage.
+- `ns_signal_t` may be embedded in user structs; initialize members with `ns_signal_init(signal, payload_type)` and release internal resources with `ns_signal_deinit(signal)` after disconnecting connections. Do not reintroduce `NS_SIGNAL_CONFIG_DEFAULT`, `ns_signal_config_t`, or aggregate/static signal initializer macros. `ns_signal_disconnect` removes the connection from the signal's slot list, with `ns_signal_disconnect_all` reserved for teardown escape hatches. Neither function frees memory; callers own `ns_connection_t` storage.
 - `ns_timer_t` uses caller-owned storage, has `ns_signal_t signal` as its first field, only emits no-payload events, uses `uint64_t` microsecond intervals, and uses `NS_TIMER_ATTR_*` bitmaps for repeat/reload behavior.
 - Platform-specific code belongs under `platform/`; code outside `platform/` should not contain OS preprocessor branches.
 
@@ -69,6 +69,6 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 ### External
 - C11 compiler and CMake 3.20 or newer.
 - Ninja or Make depending on selected CMake preset.
-- Future Linux sanitizer runs need ASAN/TSAN/UBSAN-capable Clang/GCC; Windows validation targets MSVC/Clang-cl style environments.
+- Future Linux/macOS sanitizer runs need ASAN/TSAN/UBSAN-capable Clang/GCC or Apple Clang; Windows validation targets MSVC/Clang-cl style environments.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

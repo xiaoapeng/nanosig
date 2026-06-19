@@ -39,7 +39,7 @@ Guidance for source directory `include/nanosig/`, which defines the public nanos
 - Opaque handles use forward declarations such as `typedef struct ns_loop ns_loop_t;`.
 - Public functions return `int` status codes from `ns_status_t`.
 - `ns_signal_t` is visible for caller-owned/static storage; its internal mutex pointer is initialized by `ns_signal_init`.
-- `ns_loop_t` remains the public event-loop type, with a one-loop-per-thread binding invariant.
+- `ns_loop_t` remains the public event-loop type; loop ownership is explicit, and signal connections use a non-null target loop.
 - Signal connect macros must cover payload/no-payload and current-loop/explicit-loop combinations without adding a separate `0` function family; no-payload signals use `ns_no_payload_t` and `NS_NO_PAYLOAD`.
 - `ns_timer_t` is caller-owned storage; its first field is `ns_signal_t signal`, timer callbacks connect to that no-payload signal, intervals are `uint64_t` microseconds, and attr bits follow `NS_TIMER_ATTR_*`. `ns_timer_cancel` is valid for any successfully created timer and is a no-op success path when it is not running.
 

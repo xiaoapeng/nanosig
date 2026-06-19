@@ -62,7 +62,7 @@ static void ns_watcher_reset_empty(ns_watcher_t *watcher)
     watcher->signal.slot_capacity = 0u;
     watcher->signal.debug_name = NULL;
     ns_list_init(&watcher->signal.slot_list);
-    watcher->waitable = ns_waitable_init();
+    ns_waitable_init(&watcher->waitable);
     ns_list_init(&watcher->broker_node);
 }
 
@@ -133,7 +133,7 @@ int ns_watcher_deinit(ns_watcher_t *watcher)
     if(ns_broker_node_is_linked(&watcher->broker_node)) return NS_E_EXISTS;
 
     rc = ns_signal_deinit_raw(&watcher->signal);
-    watcher->waitable = ns_waitable_init();
+    ns_waitable_init(&watcher->waitable);
     ns_list_init(&watcher->broker_node);
     return rc;
 }
@@ -294,7 +294,7 @@ int ns_broker_global_init(void)
     broker->thread = NULL;
     broker->waitset = NULL;
     broker->wakeup = NULL;
-    broker->wakeup_waitable = ns_waitable_init();
+    ns_waitable_init(&broker->wakeup_waitable);
     broker->watcher_mutex = NULL;
     ns_list_init(&broker->watcher_head);
     ns_atomic_init(&broker->quit_requested, 0);

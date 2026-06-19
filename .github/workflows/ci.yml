@@ -3,7 +3,7 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   linux:
@@ -35,3 +35,24 @@ jobs:
         run: ctest --preset windows-debug-asan
       - name: Audits
         run: cmake --build --preset windows-debug-asan --target sanitize-all
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      # NOTE: macos-debug-asan may hang during dyld startup on certain macOS
+      # runner images (ASAN shadow memory init deadlocks in
+      # StaticSpinMutex::LockSlow). If CI stalls on the ASAN entry, remove it
+      # from the matrix until the runner image or Apple Clang ASAN runtime is
+      # updated. UBSAN and release presets are unaffected.
+      matrix:
+        preset: [macos-debug-asan, macos-debug-ubsan, macos-release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Audits
+        run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all

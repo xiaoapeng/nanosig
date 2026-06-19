@@ -127,7 +127,9 @@ int ns_platform_wakeup_wait(
 
 ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup)
 {
-    ns_platform_waitable_t waitable = ns_waitable_init();
+    ns_platform_waitable_t waitable;
+
+    ns_waitable_init(&waitable);
 
     if(wakeup != NULL){
         waitable.handle = wakeup->event;
@@ -284,6 +286,7 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
 int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
 {
     if(waitset == NULL) return NS_E_INVAL;
+    if(waitset->count != 0u) return NS_E_EXISTS;
 
     CloseHandle(waitset->timer);
     ns_platform_free(waitset);
@@ -309,23 +312,25 @@ static int ns_waitable_handle_is_invalid(const ns_platform_waitable_t *waitable)
 
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable)
+    ns_platform_waitable_t *waitable)
 {
     if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
         return NS_E_INVAL;
     }
+    if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(ns_waitset_find(waitset, (HANDLE)waitable->handle) >= 0) return NS_E_EXISTS;
     if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;
 
     waitset->handles[waitset->count] = (HANDLE)waitable->handle;
     waitset->waitables[waitset->count] = waitable;
     waitset->count++;
+    waitable->registered_waitset = waitset;
     return NS_OK;
 }
 
 int ns_platform_waitset_remove(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable)
+    ns_platform_waitable_t *waitable)
 {
     int idx;
     DWORD last;
@@ -333,6 +338,7 @@ int ns_platform_waitset_remove(
     if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
         return NS_E_INVAL;
     }
+    if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
     idx = ns_waitset_find(waitset, (HANDLE)waitable->handle);
     if(idx < 0) return NS_E_INVAL;
@@ -343,6 +349,7 @@ int ns_platform_waitset_remove(
         waitset->waitables[idx] = waitset->waitables[last];
     }
     waitset->count--;
+    waitable->registered_waitset = NULL;
     return NS_OK;
 }
 

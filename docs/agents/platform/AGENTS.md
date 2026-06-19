@@ -17,6 +17,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 | Directory | Purpose |
 |-----------|---------|
 | `linux/` | Linux loop-only backend source. |
+| `macos/` | macOS loop-only backend source. |
 | `windows/` | Windows loop-only backend source. |
 
 ## For AI Agents
@@ -24,13 +25,13 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 ### Working In `platform/`
 - Add platform abstractions here, not under `src/`.
 - Loop-only scope: single wakeup, mutex, monotonic clock, and allocation.
-- Waitset scope: waitset create/destroy/add/remove/wait, waitable union. Waitset decoupled from wakeup.
+- Waitset scope: waitset create/destroy/add/remove/wait, and waitable registration state. Waitset decoupled from wakeup.
 - Thread scope: thread create/join.
 - Do not create empty RTOS/MCU backend directories for v1; document future ports instead.
 
 ### Testing Requirements
-- Platform edits require `ctest --preset windows-release --output-on-failure` locally and Linux preset smoke tests where available.
-- Waitset tests use platform primitives (event/eventfd) directly, not wakeup. Tests: lifecycle, add/remove semantics, timeout, single signal, multi waitable.
+- Platform edits require the relevant OS preset smoke tests where available, including `ctest --preset macos-release --output-on-failure` on macOS.
+- Waitset tests use platform primitives directly, not wakeup: Windows event, Linux eventfd, and macOS kqueue user event. Tests: lifecycle, add/remove semantics, timeout, single signal, multi waitable.
 
 ### Common Patterns
 - Public core code should consume `platform/port.h` without OS-specific preprocessor branches.
@@ -42,6 +43,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 
 ### External
 - Linux backend uses pthread mutex/thread, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
+- macOS backend uses pthread mutex/thread, kqueue EVFILT_USER wakeups, clock APIs, platform allocation, and kqueue/kevent for waitset.
 - Windows backend uses CreateThread, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

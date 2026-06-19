@@ -7,18 +7,11 @@
  */
 
 #include "platform/port.h"
+#include "test_helpers.h"
 
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
-#include <unistd.h>
-#include <sys/eventfd.h>
-#endif
 
 static int expect_ok(int rc)
 {
@@ -117,36 +110,8 @@ static int test_thread(void)
 /*  waitset tests                                                        */
 /* ------------------------------------------------------------------ */
 
-static ns_platform_waitable_t test_create_raw_waitable(void)
-{
-    ns_platform_waitable_t w = ns_waitable_init();
-#ifdef _WIN32
-    w.handle = CreateEventA(NULL, FALSE, FALSE, NULL);
-#else
-    w.fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
-#endif
-    w.events = NS_WAITABLE_EVENT_IN;
-    return w;
-}
-
-static void test_destroy_raw_waitable(ns_platform_waitable_t w)
-{
-#ifdef _WIN32
-    if(w.handle != NULL) CloseHandle(w.handle);
-#else
-    if(w.fd >= 0) close(w.fd);
-#endif
-}
-
-static void test_signal_raw_waitable(ns_platform_waitable_t w)
-{
-#ifdef _WIN32
-    SetEvent((HANDLE)w.handle);
-#else
-    uint64_t val = 1u;
-    (void)write(w.fd, &val, sizeof(val));
-#endif
-}
+/* test_create_raw_waitable, test_destroy_raw_waitable, test_signal_raw_waitable
+   are provided by test_helpers.h */
 
 static int test_waitset_lifecycle(void)
 {
@@ -195,7 +160,7 @@ static int test_waitset_null_params(void)
     ns_platform_waitset_completion_t cc[1];
     size_t cnt = 0u;
 
-    w = ns_waitable_init();
+    ns_waitable_init(&w);
 
     if(ns_platform_waitset_create(NULL) != NS_E_INVAL) return 1;
     if(ns_platform_waitset_destroy(NULL) != NS_E_INVAL) return 1;
@@ -340,6 +305,9 @@ static int test_waitset_destroy_with_entries(void)
     if(expect_ok(ns_platform_waitset_add(ws, &w[0])) != 0) return 1;
     if(expect_ok(ns_platform_waitset_add(ws, &w[1])) != 0) return 1;
 
+    if(ns_platform_waitset_destroy(ws) != NS_E_EXISTS) return 1;
+    if(expect_ok(ns_platform_waitset_remove(ws, &w[0])) != 0) return 1;
+    if(expect_ok(ns_platform_waitset_remove(ws, &w[1])) != 0) return 1;
     if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
 
     test_destroy_raw_waitable(w[0]);
@@ -476,19 +444,17 @@ static int test_waitset_signal_after_wait(void)
     if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
     if(expect_true(cnt == 1u) != 0) return 1;
 
-    /* remove + re-add 模拟信号消费（eventfd level-triggered，需要 read() 才能清除，
-       但平台层不暴露 read()，通过 remove/add 重置 epoll 注册状态） */
+    /* remove + re-add 只重置 waitset 注册，不消费底层 readiness。 */
     if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
     if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
 
     cnt = 99u;
     if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
-    /* Linux eventfd: signal 仍然 readable（level-triggered），remove/add 不能清除。
+    /* POSIX fd/kqueue readiness 仍然可读，remove/add 不能清除。
        Windows auto-reset event: signal 已被消费，返回 0。 */
 #ifdef _WIN32
     if(expect_true(cnt == 0u) != 0) return 1;
 #else
-    /* Linux: eventfd 仍然 readable，epoll 仍然返回 */
     if(expect_true(cnt >= 1u) != 0) return 1;
 #endif
 
@@ -617,7 +583,7 @@ static int test_waitset_multi_pointer_identity(void)
         if(cc[i].waitable == &w[0]) found0++;
         if(cc[i].waitable == &w[2]) found2++;
     }
-    /* Windows WFMO 只返回 1 个；Linux epoll 可能返回 2 个 */
+    /* Windows WFMO 只返回 1 个；POSIX waitsets 可能返回 2 个 */
     if(expect_true(found0 + found2 >= 1) != 0) goto fail;
 
     for(i = 0; i < created; i++){
@@ -650,7 +616,7 @@ static int test_waitset_capacity(void)
     int rc;
     int limit;
 
-    /* Linux: 64, Windows: 63（预留 1 个给 timer） */
+    /* POSIX: 64, Windows: 63（预留 1 个给 timer） */
 #ifdef _WIN32
     limit = 63;
 #else
@@ -728,8 +694,8 @@ fail:
     return 1;
 }
 
-/** add events=0 → 成功，signal 后 wait 不返回 completion（Linux epoll 语义） */
-#ifdef __linux__
+/** add events=0 → 成功，signal 后 wait 不返回 completion */
+#if defined(__linux__) || defined(__APPLE__)
 static int test_waitset_events_zero(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -755,34 +721,22 @@ static int test_waitset_events_zero(void)
 }
 #endif
 
-/** 同一 waitable 加到两个 waitset，各自独立 */
+/** 同一 waitable 只能注册到一个 waitset */
 static int test_waitset_two_waitsets(void)
 {
     ns_platform_waitset_t *ws1 = NULL, *ws2 = NULL;
     ns_platform_waitable_t w;
-    ns_platform_waitset_completion_t cc[4];
-    size_t cnt = 0u;
 
     if(expect_ok(ns_platform_waitset_create(&ws1)) != 0) return 1;
     if(expect_ok(ns_platform_waitset_create(&ws2)) != 0) goto fail2;
 
     w = test_create_raw_waitable();
     if(expect_ok(ns_platform_waitset_add(ws1, &w)) != 0) goto fail;
+    if(ns_platform_waitset_add(ws2, &w) != NS_E_EXISTS) goto fail;
+
+    if(expect_ok(ns_platform_waitset_remove(ws1, &w)) != 0) goto fail;
     if(expect_ok(ns_platform_waitset_add(ws2, &w)) != 0) goto fail;
-
-    /* signal 后两个 waitset 都应该能收到 */
-    test_signal_raw_waitable(w);
-
-    cnt = 0u;
-    if(expect_ok(ns_platform_waitset_wait(ws1, 0u, cc, 4, &cnt)) != 0) goto fail;
-    if(expect_true(cnt == 1u) != 0) goto fail;
-
-    /* ws2 的 wait：auto-reset event 已被 ws1 消费，Linux epoll LT 模式可能还能收到 */
-    cnt = 0u;
-    (void)ns_platform_waitset_wait(ws2, 0u, cc, 4, &cnt);
-
-    (void)ns_platform_waitset_remove(ws1, &w);
-    (void)ns_platform_waitset_remove(ws2, &w);
+    if(expect_ok(ns_platform_waitset_remove(ws2, &w)) != 0) goto fail;
     test_destroy_raw_waitable(w);
     (void)ns_platform_waitset_destroy(ws1);
     (void)ns_platform_waitset_destroy(ws2);
@@ -790,6 +744,7 @@ static int test_waitset_two_waitsets(void)
 
 fail:
     (void)ns_platform_waitset_remove(ws1, &w);
+    (void)ns_platform_waitset_remove(ws2, &w);
     test_destroy_raw_waitable(w);
 fail2:
     if(ws1 != NULL) (void)ns_platform_waitset_destroy(ws1);
@@ -836,7 +791,7 @@ static int test_waitset_lifecycle_readd(void)
     return 0;
 }
 
-/** destroy 有注册项的 waitset → 成功，不崩溃 */
+/** destroy 有注册项的 waitset → 拒绝，避免 waitable 注册状态悬挂 */
 static int test_waitset_destroy_then_ops(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -846,7 +801,8 @@ static int test_waitset_destroy_then_ops(void)
     w = test_create_raw_waitable();
     if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
 
-    /* 有注册项时 destroy → 成功 */
+    if(ns_platform_waitset_destroy(ws) != NS_E_EXISTS) return 1;
+    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
     if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
 
     test_destroy_raw_waitable(w);
@@ -854,7 +810,7 @@ static int test_waitset_destroy_then_ops(void)
 }
 
 #ifdef __linux__
-/** edge_triggered：signal → wait → 再 signal → wait 第二次才触发 */
+/** edge_triggered：signal → wait → 再 wait 不触发（ET，需要新边沿） → signal → wait 触发 */
 static int test_waitset_edge_triggered(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -890,7 +846,7 @@ static int test_waitset_edge_triggered(void)
     return 0;
 }
 
-/** level_triggered：signal → wait → 再 wait 仍然触发（信号未消费） */
+/** level_triggered：signal → wait → 再 wait 不触发（底层事件已消费） */
 static int test_waitset_level_triggered(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -908,8 +864,7 @@ static int test_waitset_level_triggered(void)
     if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
     if(expect_true(cnt == 1u) != 0) return 1;
 
-    /* eventfd 已被 drain（level-triggered 但 poll 后 read 了），再 wait → 不触发 */
-    /* 注：eventfd 的 POLLIN 在 drain 后消失，所以 LT 模式下第二次也不触发 */
+    /* 再 wait → 不触发（eventfd 已 drain） */
     cnt = 99u;
     if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
     if(expect_true(cnt == 0u) != 0) return 1;
@@ -953,7 +908,7 @@ int main(void)
     if(test_waitset_multi_pointer_identity() != 0){ fprintf(stderr, "test_waitset_multi_pointer_identity failed\n"); return 1; }
     if(test_waitset_capacity() != 0){ fprintf(stderr, "test_waitset_capacity failed\n"); return 1; }
     if(test_waitset_max_completions_truncate() != 0){ fprintf(stderr, "test_waitset_max_completions_truncate failed\n"); return 1; }
-#ifdef __linux__
+#if defined(__linux__) || defined(__APPLE__)
     if(test_waitset_events_zero() != 0){ fprintf(stderr, "test_waitset_events_zero failed\n"); return 1; }
 #endif
     if(test_waitset_two_waitsets() != 0){ fprintf(stderr, "test_waitset_two_waitsets failed\n"); return 1; }

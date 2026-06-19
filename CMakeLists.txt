@@ -10,7 +10,7 @@ include(cmake/CompileWarnings.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/ApiCompileChecks.cmake)
 
-if(UNIX AND NOT APPLE)
+if(UNIX)
     find_package(Threads REQUIRED)
 endif()
 
@@ -57,12 +57,16 @@ if(WIN32)
     set(NANOSIG_PLATFORM_SOURCES
         platform/windows/port.c
     )
+elseif(APPLE)
+    set(NANOSIG_PLATFORM_SOURCES
+        platform/macos/port.c
+    )
 elseif(UNIX AND NOT APPLE)
     set(NANOSIG_PLATFORM_SOURCES
         platform/linux/port.c
     )
 else()
-    message(FATAL_ERROR "nanosig supports only Linux and Windows platform backends")
+    message(FATAL_ERROR "nanosig supports only Linux, macOS, and Windows platform backends")
 endif()
 
 add_library(nanosig STATIC
@@ -85,7 +89,7 @@ target_include_directories(nanosig PRIVATE
     ${PROJECT_SOURCE_DIR}
 )
 
-if(UNIX AND NOT APPLE)
+if(UNIX)
     target_link_libraries(nanosig PRIVATE Threads::Threads)
 endif()
 

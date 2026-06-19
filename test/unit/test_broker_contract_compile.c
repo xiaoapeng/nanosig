@@ -8,7 +8,7 @@ static void broker_contract_check_types(void)
     ns_watcher_t watcher;
     ns_watcher_event_t event;
 
-    watcher.waitable = ns_waitable_init();
+    ns_waitable_init(&watcher.waitable);
     watcher.waitable.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR;
     watcher.waitable.edge_triggered = 1;
     watcher.waitable.user_data = &watcher;

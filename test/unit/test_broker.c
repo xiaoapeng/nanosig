@@ -7,18 +7,14 @@
  */
 
 #include <nanosig/nanosig.h>
+#include "test_helpers.h"
 
 #include <stdio.h>
 #include <stdint.h>
 
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
+#if !defined(_WIN32)
 #include <pthread.h>
 #include <sched.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
 #endif
 
 static int expect_true(int condition)
@@ -52,18 +48,8 @@ static void test_yield(void)
 #endif
 }
 
-static ns_platform_waitable_t test_create_raw_waitable(void)
-{
-    ns_platform_waitable_t w = ns_waitable_init();
-
-#if defined(_WIN32)
-    w.handle = CreateEventA(NULL, FALSE, FALSE, NULL);
-#else
-    w.fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
-#endif
-    w.events = NS_WAITABLE_EVENT_IN;
-    return w;
-}
+/* test_create_raw_waitable, test_destroy_raw_waitable, test_signal_raw_waitable
+   are provided by test_helpers.h */
 
 static int test_raw_waitable_is_valid(ns_platform_waitable_t w)
 {
@@ -71,25 +57,6 @@ static int test_raw_waitable_is_valid(ns_platform_waitable_t w)
     return w.handle != NULL;
 #else
     return w.fd >= 0;
-#endif
-}
-
-static void test_destroy_raw_waitable(ns_platform_waitable_t w)
-{
-#if defined(_WIN32)
-    if(w.handle != NULL) CloseHandle((HANDLE)w.handle);
-#else
-    if(w.fd >= 0) close(w.fd);
-#endif
-}
-
-static void test_signal_raw_waitable(ns_platform_waitable_t w)
-{
-#if defined(_WIN32)
-    (void)SetEvent((HANDLE)w.handle);
-#else
-    uint64_t val = 1u;
-    (void)write(w.fd, &val, sizeof(val));
 #endif
 }
 
@@ -294,7 +261,7 @@ static int test_watcher_event_reaches_loop(void)
     int rc;
 
     broker_loop_ctx_init(&ctx);
-    raw = ns_waitable_init();
+    ns_waitable_init(&raw);
 
     EXPECT_OK(ns_init() == NS_OK);
     broker = ns_broker();

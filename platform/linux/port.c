@@ -165,7 +165,9 @@ int ns_platform_wakeup_wait(
 
 ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup)
 {
-    ns_platform_waitable_t waitable = ns_waitable_init();
+    ns_platform_waitable_t waitable;
+
+    ns_waitable_init(&waitable);
 
     if(wakeup != NULL){
         waitable.fd = wakeup->fd;
@@ -347,6 +349,7 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
     int rc_epoll, rc_timer;
 
     if(waitset == NULL) return NS_E_INVAL;
+    if(waitset->count != 0u) return NS_E_EXISTS;
 
     do{
         rc_epoll = close(waitset->epoll_fd);
@@ -385,11 +388,12 @@ static uint32_t ns_waitset_from_epoll_events(uint32_t ep_events)
 
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable)
+    ns_platform_waitable_t *waitable)
 {
     struct epoll_event ev;
 
     if((waitset == NULL) || (waitable == NULL) || (waitable->fd < 0)) return NS_E_INVAL;
+    if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= NS_WAITSET_MAX_ENTRIES) return NS_E_TOO_MANY_HANDLES;
 
     ev.events = ns_waitset_to_epoll_events(waitable->events);
@@ -402,20 +406,23 @@ int ns_platform_waitset_add(
     }
 
     waitset->count++;
+    waitable->registered_waitset = waitset;
     return NS_OK;
 }
 
 int ns_platform_waitset_remove(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable)
+    ns_platform_waitable_t *waitable)
 {
     if((waitset == NULL) || (waitable == NULL) || (waitable->fd < 0)) return NS_E_INVAL;
+    if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
     if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->fd, NULL) < 0){
         return NS_E_INVAL;
     }
 
     waitset->count--;
+    waitable->registered_waitset = NULL;
     return NS_OK;
 }
 

@@ -123,9 +123,10 @@ int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup);
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup);
 
 /**
- * @brief 等待单个 wakeup（毫秒精度）。
+ * @brief 等待单个 wakeup。
  *
- * 超时精度为毫秒（Linux poll / Windows WaitForSingleObject 原生粒度）。
+ * 超时精度随后端原生等待能力而定：Linux poll 和 Windows
+ * WaitForSingleObject 以毫秒为粒度，macOS kevent 使用 timespec timeout。
  *
  * @param wakeup wakeup 句柄。
  * @param timeout_us 超时时间，单位为微秒；`NS_PLATFORM_WAIT_INFINITE_US`
@@ -235,6 +236,7 @@ typedef struct ns_platform_waitset_completion {
  *
  * waitset 是一次等待多个事件源的容器。
  * - Linux：epoll，`data.ptr` 直接指向 caller 的 waitable（零拷贝）。
+ * - macOS：kqueue，`udata` 直接指向 caller 的 waitable（零拷贝）。
  * - Windows：WaitForMultipleObjects + 内部数组映射。
  * - RTOS（v2）：event group。
  */
@@ -251,6 +253,8 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset);
 /**
  * @brief 销毁 waitset。
  *
+ * waitset 必须没有已注册的 waitable；仍有注册项时返回 `NS_E_EXISTS`。
+ *
  * @param waitset waitset 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -260,15 +264,17 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset);
  * @brief 向 waitset 注册一个 waitable。
  *
  * waitset 内部存储 caller waitable 的指针（零拷贝）。调用方必须保证
- * waitable 在 `ns_platform_waitset_remove` 之前一直有效。
+ * waitable 在 `ns_platform_waitset_remove` 之前一直有效。注册成功后平台层
+ * 会写入 waitable 的注册状态，同一 waitable 不可同时注册到多个 waitset。
  *
  * @param waitset waitset 句柄。
  * @param waitable 要注册的 waitable（含 events、edge_triggered、user_data）。
- * @return `NS_OK` 成功，`NS_E_EXISTS` 重复注册，`NS_E_TOO_MANY_HANDLES` 容量满。
+ * @return `NS_OK` 成功，`NS_E_EXISTS` 表示同一 waitable 已注册，
+ *         `NS_E_TOO_MANY_HANDLES` 容量满。
  */
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable);
+    ns_platform_waitable_t *waitable);
 
 /**
  * @brief 从 waitset 移除一个 waitable。
@@ -279,13 +285,14 @@ int ns_platform_waitset_add(
  */
 int ns_platform_waitset_remove(
     ns_platform_waitset_t *waitset,
-    const ns_platform_waitable_t *waitable);
+    ns_platform_waitable_t *waitable);
 
 /**
- * @brief 等待事件（微秒精度）。
+ * @brief 等待事件（微秒输入）。
  *
  * 阻塞直到至少一个 waitable 触发或超时。timeout 单位为微秒，
- * 通过 timerfd（Linux）或 WaitableTimer（Windows）实现微秒级精度。
+ * 通过 timerfd（Linux）、kevent timeout（macOS）或 WaitableTimer（Windows）
+ * 实现微秒级精度。
  * 用于 broker 的 timer deadline 等待场景。
  *
  * @param waitset waitset 句柄。
