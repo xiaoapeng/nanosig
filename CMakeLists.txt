@@ -26,7 +26,6 @@ set(NANOSIG_PUBLIC_HEADERS
     include/nanosig/nanosig_hashtable.h
     include/nanosig/nanosig_list.h
     include/nanosig/nanosig_loop.h
-    include/nanosig/nanosig_mpsc.h
     include/nanosig/nanosig_mpsc_record_ring.h
     include/nanosig/nanosig_rbtree.h
     include/nanosig/nanosig_ringbuf.h
@@ -47,7 +46,6 @@ set(NANOSIG_INTERNAL_HEADERS
 
 set(NANOSIG_DS_SOURCES
     src/ds/ns_hashtable.c
-    src/ds/ns_mpsc.c
     src/ds/ns_mpsc_record_ring.c
     src/ds/ns_rbtree.c
     src/ds/ns_ringbuf.c
@@ -121,9 +119,7 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
     nanosig_add_unit_test(nanosig_test_signal test/unit/test_signal.c)
     nanosig_add_unit_test(nanosig_test_timer test/unit/test_timer.c)
-    nanosig_add_unit_test(nanosig_test_mpsc test/unit/test_mpsc.c)
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring test/unit/test_mpsc_record_ring.c)
-    set_tests_properties(nanosig_test_mpsc PROPERTIES TIMEOUT 420)
     nanosig_add_unit_test(nanosig_test_ds_list test/unit/test_ds_list.c)
     nanosig_add_unit_test(nanosig_test_ds_slist test/unit/test_ds_slist.c)
     nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
