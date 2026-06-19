@@ -85,6 +85,8 @@ extern int ns_loop_destroy(ns_loop_t *loop);
  *
  * 本函数持续等待并分发队列中的 slot 调用，直到收到 `ns_loop_quit()` 请求。
  * 同一个 loop 不允许被两个线程同时 run（返回 `NS_E_EXISTS`）。
+ * 已通过 `ns_loop_start()` 启动后台线程的 loop 不可再调 `ns_loop_run()`，
+ * 会返回 `NS_E_BUSY`。
  *
  * @param loop 要运行的 loop 句柄。
  * @return `NS_OK` 表示正常退出，失败时返回负数状态码。
@@ -101,6 +103,31 @@ extern int ns_loop_run(ns_loop_t *loop);
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 extern int ns_loop_quit(ns_loop_t *loop);
+
+/**
+ * @brief 在后台线程中启动事件循环。
+ *
+ * 创建一个新的平台线程，在新线程中调用 `ns_loop_run()`。调用方可通过
+ * `ns_loop_stop()` 终止循环并等待线程退出。
+ *
+ * 同一 loop 不可重复调用 `ns_loop_start()`（返回 `NS_E_BUSY`）。
+ * 已 start 的 loop 不可再调 `ns_loop_run()`（返回 `NS_E_BUSY`）。
+ *
+ * @param loop 目标 loop 句柄。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+extern int ns_loop_start(ns_loop_t *loop);
+
+/**
+ * @brief 停止后台事件循环并等待线程退出。
+ *
+ * 内部调用 `ns_loop_quit()` 请求退出，然后 join 后台线程。join 完成后
+ * 释放线程句柄，loop 状态恢复为可再次 `start`。
+ *
+ * @param loop 目标 loop 句柄。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+extern int ns_loop_stop(ns_loop_t *loop);
 
 #ifdef __cplusplus
 }

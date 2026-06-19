@@ -19,6 +19,8 @@ struct ns_loop {
     ns_mpsc_record_ring_t queue;
     atomic_int quit_requested;
     atomic_int running;
+    ns_platform_thread_t *async_thread;
+    int                    async_rc;
 };
 
 /**
@@ -135,6 +137,9 @@ int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
     ns_atomic_init(&loop->quit_requested, 0);
     ns_atomic_init(&loop->running, 0);
 
+    loop->async_thread = NULL;
+    loop->async_rc = NS_OK;
+
     rc = ns_mpsc_record_ring_init(
         &loop->queue,
         ((uint8_t *)loop) + struct_size,
@@ -157,6 +162,7 @@ int ns_loop_destroy(ns_loop_t *loop)
     int rc;
 
     if(loop == NULL) return NS_E_INVAL;
+    if(loop->async_thread != NULL) return NS_E_BUSY;
     if(ns_atomic_load_explicit(&loop->running, ns_memory_order_acquire) != 0) return NS_E_INVAL;
 
     rc = ns_platform_wakeup_destroy(loop->wakeup);
@@ -188,7 +194,7 @@ static void ns_loop_dispatch_pending(ns_loop_t *loop)
     }
 }
 
-int ns_loop_run(ns_loop_t *loop)
+static int ns_loop_run_impl(ns_loop_t *loop)
 {
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
     int expected_running = 0;
@@ -218,6 +224,15 @@ out:
     return rc;
 }
 
+int ns_loop_run(ns_loop_t *loop)
+{
+    if(loop == NULL) return NS_E_INVAL;
+    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
+    if(loop->async_thread != NULL) return NS_E_BUSY;
+
+    return ns_loop_run_impl(loop);
+}
+
 int ns_loop_quit(ns_loop_t *loop)
 {
     if(loop == NULL) return NS_E_INVAL;
@@ -225,6 +240,46 @@ int ns_loop_quit(ns_loop_t *loop)
 
     ns_atomic_store_explicit(&loop->quit_requested, 1, ns_memory_order_release);
     return ns_platform_wakeup_signal(loop->wakeup);
+}
+
+/* ------------------------------------------------------------------ */
+/*  async loop （后台线程）                                              */
+/* ------------------------------------------------------------------ */
+
+static void ns_loop_async_entry(void *arg)
+{
+    ns_loop_t *loop = (ns_loop_t *)arg;
+
+    loop->async_rc = ns_loop_run_impl(loop);
+}
+
+int ns_loop_start(ns_loop_t *loop)
+{
+    if(loop == NULL) return NS_E_INVAL;
+    if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
+    if(loop->async_thread != NULL) return NS_E_BUSY;
+
+    loop->async_rc = NS_OK;
+
+    return ns_platform_thread_create(
+        &loop->async_thread,
+        ns_loop_async_entry,
+        loop,
+        loop->config.debug_name ? loop->config.debug_name : "ns-loop");
+}
+
+int ns_loop_stop(ns_loop_t *loop)
+{
+    int rc;
+
+    if(loop == NULL) return NS_E_INVAL;
+    if(loop->async_thread == NULL) return NS_E_INVAL;
+
+    (void)ns_loop_quit(loop);
+    rc = ns_platform_thread_join(loop->async_thread);
+    loop->async_thread = NULL;
+
+    return rc != NS_OK ? rc : loop->async_rc;
 }
 
 /* ------------------------------------------------------------------ */

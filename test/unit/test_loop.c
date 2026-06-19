@@ -211,11 +211,204 @@ static int test_cross_thread_quit_and_ownership(void)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  async loop tests                                                   */
+/* ------------------------------------------------------------------ */
+
+/** ns_loop_start → ns_loop_stop 基本生命周期 */
+static int test_async_start_stop(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/** 重复 start 应返回 NS_E_BUSY */
+static int test_async_repeat_start(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_E_BUSY);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/** stop 未 start 的 loop 应返回 NS_E_INVAL */
+static int test_async_stop_without_start(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_stop(loop) == NS_E_INVAL);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/** start 后 run 应返回 NS_E_BUSY */
+static int test_async_run_while_started(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_run(loop) == NS_E_BUSY);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/** start 后 destroy 应返回 NS_E_BUSY */
+static int test_async_destroy_while_started(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_E_BUSY);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/** start → stop → start → stop 循环使用 */
+static int test_async_twice(void)
+{
+    ns_loop_t *loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+static atomic_int g_slot_called;
+
+static void on_slot(void *user_data, const ns_no_payload_t *payload)
+{
+    (void)payload;
+    (void)user_data;
+
+    ns_atomic_store_explicit(&g_slot_called, 1, ns_memory_order_release);
+}
+
+/** start → emit → 验证 slot 被调 → stop */
+static int test_async_signal_delivery(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    int i;
+
+    ns_atomic_init(&g_slot_called, 0);
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    EXPECT_OK(ns_signal_connect_typed(sig, on_slot, ns_no_payload_t, loop, NULL, &conn) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+
+    /* emit，等待 slot 被调 */
+    EXPECT_OK(ns_signal_emit(sig, NS_NO_PAYLOAD) == NS_OK);
+
+    for(i = 0; i < 1000000; i++){
+        if(ns_atomic_load_explicit(&g_slot_called, ns_memory_order_acquire) != 0) break;
+        test_yield();
+    }
+    EXPECT_OK(ns_atomic_load_explicit(&g_slot_called, ns_memory_order_acquire) != 0);
+
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit(sig) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+static void on_quit_slot(void *user_data, const ns_no_payload_t *payload)
+{
+    (void)payload;
+
+    ns_loop_t *loop = (ns_loop_t *)user_data;
+
+    ns_atomic_store_explicit(&g_slot_called, 1, ns_memory_order_release);
+    ns_loop_quit(loop);
+}
+
+/** slot 内 quit，stop 应正常 join */
+static int test_async_quit_in_slot(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+
+    ns_atomic_init(&g_slot_called, 0);
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_signal_connect_typed(sig, on_quit_slot, ns_no_payload_t, loop, loop, &conn) == NS_OK);
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+
+    EXPECT_OK(ns_signal_emit(sig, NS_NO_PAYLOAD) == NS_OK);
+
+    /* slot 已 quit，stop 只需 join */
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_atomic_load_explicit(&g_slot_called, ns_memory_order_acquire) != 0);
+
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit(sig) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
 int main(void)
 {
     if(test_invalid_args_and_lifecycle() != 0) return 1;
     if(test_same_thread_binding() != 0) return 1;
     if(test_cross_thread_quit_and_ownership() != 0) return 1;
+    if(test_async_start_stop() != 0) return 1;
+    if(test_async_repeat_start() != 0) return 1;
+    if(test_async_stop_without_start() != 0) return 1;
+    if(test_async_run_while_started() != 0) return 1;
+    if(test_async_destroy_while_started() != 0) return 1;
+    if(test_async_twice() != 0) return 1;
+    if(test_async_signal_delivery() != 0) return 1;
+    if(test_async_quit_in_slot() != 0) return 1;
 
     return 0;
 }

@@ -25,7 +25,8 @@ typedef enum ns_status {
     NS_E_NO_LOOP = -7,
     NS_E_EMPTY = -8,
     NS_E_CORRUPT = -9,
-    NS_E_NO_TIMER = -10
+    NS_E_NO_TIMER = -10,
+    NS_E_BUSY = -11
 } ns_status_t;
 
 #endif /* NANOSIG_STATUS_H */
