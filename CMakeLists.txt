@@ -15,7 +15,7 @@ if(UNIX)
 endif()
 
 option(NANOSIG_BUILD_TESTS "Build nanosig tests" ON)
-option(NANOSIG_BUILD_DEMOS "Build nanosig demos once implementation phases land" OFF)
+option(NANOSIG_BUILD_DEMOS "Build nanosig demo executables" ON)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
 set(NANOSIG_PUBLIC_HEADERS
@@ -131,13 +131,15 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
 endif()
 
-if(NANOSIG_BUILD_API_CHECKS)
-    nanosig_add_api_compile_check(nanosig_api_check_demos
-        demos/demo_same_thread.c
-        demos/demo_cross_thread.c
-        demos/demo_timer_cross_thread.c
-    )
+if(NANOSIG_BUILD_DEMOS)
+    nanosig_add_unit_test(nanosig_demo_same_thread demos/demo_same_thread.c)
+    nanosig_add_unit_test(nanosig_demo_cross_thread demos/demo_cross_thread.c)
+    set_tests_properties(nanosig_demo_cross_thread PROPERTIES TIMEOUT 10)
+    nanosig_add_unit_test(nanosig_demo_timer_cross_thread demos/demo_timer_cross_thread.c)
+    set_tests_properties(nanosig_demo_timer_cross_thread PROPERTIES TIMEOUT 10)
+endif()
 
+if(NANOSIG_BUILD_API_CHECKS)
     nanosig_add_api_compile_check(nanosig_api_check_macro_matrix
         test/unit/test_macro_expansion.c
     )
@@ -160,7 +162,6 @@ if(NANOSIG_BUILD_API_CHECKS)
 
     add_custom_target(api-compile-checks
         DEPENDS
-            nanosig_api_check_demos
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
             nanosig_api_check_broker_contract

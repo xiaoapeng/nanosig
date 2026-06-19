@@ -145,10 +145,9 @@ static int test_invalid_accessors(void)
 
 static int test_invalid_args(void)
 {
-    const ns_capacity_t storage_item_count = NS_CAPACITY_2;
     ns_mpsc_queue_t queue;
-    ns_mpsc_slot_t slots[storage_item_count];
-    uint8_t storage[sizeof(test_item_t) * storage_item_count];
+    ns_mpsc_slot_t slots[NS_CAPACITY_2];
+    uint8_t storage[sizeof(test_item_t) * NS_CAPACITY_2];
     test_item_t item = { 0 };
 
     if(expect_true(ns_mpsc_init(NULL, slots, storage, NS_CAPACITY_2, sizeof(test_item_t)) == NS_E_INVAL) != 0) return 1;
@@ -171,32 +170,31 @@ static int test_invalid_args(void)
 
 static int test_single_thread_paths(void)
 {
-    const ns_capacity_t queue_capacity = NS_CAPACITY_4;
     ns_mpsc_queue_t queue;
-    ns_mpsc_slot_t slots[queue_capacity];
-    uint8_t storage[sizeof(test_item_t) * queue_capacity];
+    ns_mpsc_slot_t slots[NS_CAPACITY_4];
+    uint8_t storage[sizeof(test_item_t) * NS_CAPACITY_4];
     test_item_t in;
     test_item_t out;
     uint32_t i;
 
-    if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
-    if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
+    if(expect_true(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_4, sizeof(test_item_t)) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_capacity(&queue) == (size_t)NS_CAPACITY_4) != 0) return 1;
+    if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)NS_CAPACITY_4) != 0) return 1;
 
     memset(&out, 0, sizeof(out));
     if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_E_EMPTY) != 0) return 1;
 
-    for(i = 0u; i < queue_capacity; ++i){
+    for(i = 0u; i < NS_CAPACITY_4; ++i){
         test_fill_item(&in, 7u, i);
         if(expect_true(ns_mpsc_try_push(&queue, &in) == NS_OK) != 0) return 1;
-        if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)queue_capacity - (size_t)i - 1u)) != 0) return 1;
+        if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)NS_CAPACITY_4 - (size_t)i - 1u)) != 0) return 1;
     }
 
     test_fill_item(&in, 7u, 99u);
     if(expect_true(ns_mpsc_try_push(&queue, &in) == NS_E_QUEUE_FULL) != 0) return 1;
     if(expect_true(ns_mpsc_free_capacity(&queue) == 0u) != 0) return 1;
 
-    for(i = 0u; i < queue_capacity; ++i){
+    for(i = 0u; i < NS_CAPACITY_4; ++i){
         memset(&out, 0, sizeof(out));
         if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 7u, i) == 0) != 0) return 1;
@@ -208,12 +206,12 @@ static int test_single_thread_paths(void)
     for(i = 0u; i < 12u; ++i){
         test_fill_item(&in, 11u, i);
         if(expect_true(ns_mpsc_try_push(&queue, &in) == NS_OK) != 0) return 1;
-        if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)queue_capacity - 1u)) != 0) return 1;
+        if(expect_true(ns_mpsc_free_capacity(&queue) == ((size_t)NS_CAPACITY_4 - 1u)) != 0) return 1;
 
         memset(&out, 0, sizeof(out));
         if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 11u, i) == 0) != 0) return 1;
-        if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
+        if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)NS_CAPACITY_4) != 0) return 1;
     }
 
     return 0;
@@ -221,16 +219,15 @@ static int test_single_thread_paths(void)
 
 static int test_counter_wraparound(void)
 {
-    const ns_capacity_t queue_capacity = NS_CAPACITY_4;
     ns_mpsc_queue_t queue;
-    ns_mpsc_slot_t slots[queue_capacity];
-    uint8_t storage[sizeof(test_item_t) * queue_capacity];
+    ns_mpsc_slot_t slots[NS_CAPACITY_4];
+    uint8_t storage[sizeof(test_item_t) * NS_CAPACITY_4];
     size_t base = SIZE_MAX - 1u;
     test_item_t in;
     test_item_t out;
     uint32_t i;
 
-    if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_4, sizeof(test_item_t)) == NS_OK) != 0) return 1;
 
     ns_atomic_store_explicit(&queue.enqueue_pos, base, ns_memory_order_relaxed);
     ns_atomic_store_explicit(&queue.dequeue_pos, base, ns_memory_order_relaxed);
@@ -239,7 +236,7 @@ static int test_counter_wraparound(void)
     ns_atomic_store_explicit(&slots[2].sequence, base, ns_memory_order_relaxed);
     ns_atomic_store_explicit(&slots[3].sequence, base + 1u, ns_memory_order_relaxed);
 
-    for(i = 0u; i < queue_capacity; ++i){
+    for(i = 0u; i < NS_CAPACITY_4; ++i){
         test_fill_item(&in, 17u, i);
         if(expect_true(ns_mpsc_try_push(&queue, &in) == NS_OK) != 0) return 1;
     }
@@ -247,7 +244,7 @@ static int test_counter_wraparound(void)
     test_fill_item(&in, 17u, 99u);
     if(expect_true(ns_mpsc_try_push(&queue, &in) == NS_E_QUEUE_FULL) != 0) return 1;
 
-    for(i = 0u; i < queue_capacity; ++i){
+    for(i = 0u; i < NS_CAPACITY_4; ++i){
         memset(&out, 0, sizeof(out));
         if(expect_true(ns_mpsc_try_pop(&queue, &out) == NS_OK) != 0) return 1;
         if(expect_true(test_item_matches(&out, 17u, i) == 0) != 0) return 1;
@@ -333,11 +330,9 @@ static int test_multi_producer(void)
         producer_count = 4,
         per_producer_count = 2048
     };
-    const ns_capacity_t queue_capacity = NS_CAPACITY_64;
-
     ns_mpsc_queue_t queue;
-    ns_mpsc_slot_t slots[queue_capacity];
-    uint8_t storage[sizeof(test_item_t) * queue_capacity];
+    ns_mpsc_slot_t slots[NS_CAPACITY_64];
+    uint8_t storage[sizeof(test_item_t) * NS_CAPACITY_64];
     producer_ctx_t producers[producer_count];
     uint8_t seen[producer_count][per_producer_count];
     uint32_t started = 0u;
@@ -349,7 +344,7 @@ static int test_multi_producer(void)
     memset(seen, 0, sizeof(seen));
     memset(producers, 0, sizeof(producers));
 
-    if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_64, sizeof(test_item_t)) == NS_OK) != 0) return 1;
 
     for(i = 0u; i < producer_count; ++i){
         producers[i].queue = &queue;
@@ -414,14 +409,13 @@ static int test_stress_multi_producer_long_run(void)
     enum {
         producer_count = 16
     };
-    const ns_capacity_t queue_capacity = NS_CAPACITY_1024;
     ns_platform_time_us_t start_us = 0u;
     ns_platform_time_us_t now_us = 0u;
     ns_platform_time_us_t deadline_us = 0u;
     ns_platform_time_us_t duration_us = test_stress_duration_us();
     ns_mpsc_queue_t queue;
-    ns_mpsc_slot_t slots[queue_capacity];
-    uint8_t storage[sizeof(test_item_t) * queue_capacity];
+    ns_mpsc_slot_t slots[NS_CAPACITY_1024];
+    uint8_t storage[sizeof(test_item_t) * NS_CAPACITY_1024];
     producer_ctx_t producers[producer_count];
     uint32_t next_sequence[producer_count];
     size_t started = 0u;
@@ -431,12 +425,14 @@ static int test_stress_multi_producer_long_run(void)
     size_t i;
     size_t idle_spins = 0u;
 
+    (void)idle_spins;
+
     memset(producers, 0, sizeof(producers));
     memset(next_sequence, 0, sizeof(next_sequence));
 
-    if(expect_true(ns_mpsc_init(&queue, slots, storage, queue_capacity, sizeof(test_item_t)) == NS_OK) != 0) return 1;
-    if(expect_true(ns_mpsc_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
-    if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)queue_capacity) != 0) return 1;
+    if(expect_true(ns_mpsc_init(&queue, slots, storage, NS_CAPACITY_1024, sizeof(test_item_t)) == NS_OK) != 0) return 1;
+    if(expect_true(ns_mpsc_capacity(&queue) == (size_t)NS_CAPACITY_1024) != 0) return 1;
+    if(expect_true(ns_mpsc_free_capacity(&queue) == (size_t)NS_CAPACITY_1024) != 0) return 1;
     if(test_now_us(&start_us) != 0) return 1;
 
     deadline_us = start_us + duration_us;
