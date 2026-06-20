@@ -42,20 +42,33 @@ typedef struct ns_mpsc_record_part {
  * @brief MPSC 记录环主结构。
  *
  * 调用方应将其视为不透明类型，仅通过公开接口访问。
- * 字段说明：
- *   - storage      : 调用方提供的外部存储区域（不拥有生命周期）
- *   - capacity     : 存储区域的字节容量（2 的幂）
- *   - reserve_pos  : 生产者 CAS 竞争的预留位置（原子）
- *   - write_pos    : 已提交写入的位置（原子，release 语义）
- *   - read_pos     : 消费者已读取的位置（原子，release 语义）
+ *
+ * 桌面平台（NS_MPSC_CACHELINE_ALIGNED）使用手动 padding 将
+ * reserve_pos/write_pos（生产者写入）与 read_pos（消费者写入）
+ * 分离到不同的 64 字节 cache line，避免 false sharing。
  */
-typedef struct ns_mpsc_record_ring {
-    uint8_t *storage;
-    size_t capacity;
+typedef struct ns_mpsc_record_ring  {
+#ifdef NS_MPSC_CACHELINE_ALIGNED
+    /* 生产者侧：reserve_pos, write_pos 各占独立 cache line */
+    atomic_size_t reserve_pos;
+    char          _cl0[56];
+    atomic_size_t write_pos;
+    char          _cl1[56];
+    /* 消费者侧 */
+    atomic_size_t read_pos;
+    char          _cl2[56];
+    /* 只读 */
+    uint8_t      *storage;
+    size_t        capacity;
+#else
     atomic_size_t reserve_pos;
     atomic_size_t write_pos;
     atomic_size_t read_pos;
+    uint8_t      *storage;
+    size_t        capacity;
+#endif
 } ns_mpsc_record_ring_t;
+
 
 /**
  * @brief 初始化 MPSC 记录环。

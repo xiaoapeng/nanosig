@@ -16,6 +16,7 @@ endif()
 
 option(NANOSIG_BUILD_TESTS "Build nanosig tests" ON)
 option(NANOSIG_BUILD_DEMOS "Build nanosig demo executables" ON)
+option(NANOSIG_BUILD_BENCH "Build nanosig benchmarks" OFF)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
 set(NANOSIG_PUBLIC_HEADERS
@@ -91,6 +92,11 @@ if(UNIX)
     target_link_libraries(nanosig PRIVATE Threads::Threads)
 endif()
 
+if(WIN32 OR UNIX)
+    # PUBLIC so consumers (tests, demos) get the same struct layout as the library
+    target_compile_definitions(nanosig PUBLIC NS_MPSC_CACHELINE_ALIGNED)
+endif()
+
 nanosig_apply_private_warnings(nanosig)
 nanosig_apply_sanitizers(nanosig)
 
@@ -133,6 +139,13 @@ if(NANOSIG_BUILD_DEMOS)
     set_tests_properties(nanosig_demo_cross_thread PROPERTIES TIMEOUT 10)
     nanosig_add_unit_test(nanosig_demo_timer_cross_thread demos/demo_timer_cross_thread.c)
     set_tests_properties(nanosig_demo_timer_cross_thread PROPERTIES TIMEOUT 10)
+endif()
+
+if(NANOSIG_BUILD_BENCH)
+    nanosig_add_unit_test(nanosig_bench_same_thread bench/bench_same_thread.c)
+    nanosig_add_unit_test(nanosig_bench_cross_thread bench/bench_cross_thread.c)
+    nanosig_add_unit_test(nanosig_bench_throughput bench/bench_throughput.c)
+    set_tests_properties(nanosig_bench_throughput PROPERTIES TIMEOUT 30)
 endif()
 
 if(NANOSIG_BUILD_API_CHECKS)
