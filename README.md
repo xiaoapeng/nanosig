@@ -7,7 +7,7 @@ C11 signal/slot 库 — Linux / macOS / Windows。
 - **显式 loop 绑定**：loop 不绑定线程，跨线程 emit 安全。
 - **事件 broker**：全局 `ns_event_broker_t` 转换平台事件（fd/handle readiness）和定时器为 signal emit。
 
-**状态**：P0–P9 已完成（2026-06-20）。详见 [共识计划](docs/共识计划.md)。
+**状态**：P0–P9 已完成（2026-06-20）。详见 [共识计划](docs/plans/共识计划.md)。
 
 ## 构建
 
@@ -79,7 +79,7 @@ int main(void)
 
 ## 设计文档
 
-- [共识计划](docs/共识计划.md) — 阶段计划与 API 决策
+- [共识计划](docs/plans/共识计划.md) — 阶段计划与 API 决策
 - [架构](docs/ARCHITECTURE.md) — 架构、数据流、所有权模型、线程安全
 - [API 设计](docs/API_DESIGN.md)
 - [数据结构](docs/DATA_STRUCTURES.md)

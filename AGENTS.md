@@ -12,8 +12,10 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 | `CMakePresets.json` | Linux, macOS, and Windows configure/build/test presets, all writing to `build/` for clangd and CMake plugin integration. |
 | `README.md` | Current project status, quick configure commands, and API review entry points. |
 | `LICENSE` | MIT license for nanosig. |
-| `docs/共识计划.md` | 中文权威共识计划，记录当前阶段状态、API 决策、阶段计划和验证证据。 |
-| `docs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和被 PD 更新覆盖的早期结论。 |
+| `docs/plans/共识计划.md` | 中文权威共识计划，记录当前阶段状态、API 决策、阶段计划和验证证据。 |
+| `docs/specs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和被 PD 更新覆盖的早期结论。 |
+| `docs/plans/子计划-信号槽定时器代理测试方案.md` | 共识评审后的信号槽/Timer/Broker 全量测试实施计划。 |
+| `docs/specs/深度访谈-信号槽定时器代理测试规格.md` | 深度访谈输出的信号槽/Timer/Broker 测试规格文档。 |
 | `docs/EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig-specific adaptations. |
 | `docs/THREAD_LOOP_BINDING.md` | Current explicit-loop-passing design constraint. |
 | `docs/agents/AGENTS.md` | Central index for moved directory-specific AGENTS instructions. |
@@ -34,7 +36,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 ## For AI Agents
 
 ### Working In This Directory
-- Treat `docs/共识计划.md` and `docs/需求访谈.md` as the binding design context. Hidden `.omx/` and `.omc/` artifacts are workflow caches, not the public source of truth.
+- Treat `docs/plans/共识计划.md` and `docs/specs/需求访谈.md` as the binding design context. Hidden `.omx/` and `.omc/` artifacts are workflow caches, not the public source of truth.
 - The empty `src/nanosig.c` file is a compile-anchor exception for CMake and clangd, and `api-compile-checks` is syntax-only.
 - Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` reuse.
 - Preserve the latest PD API style: no public `__safety` annotations for now; function-wrapper connect/emit macros are lowercase, while declaration/definition/initializer/type-only macros are uppercase; use C designated initializers in examples.

@@ -9,8 +9,10 @@ This directory holds the public design documentation for the PD closeout and imp
 ## Key Files
 | File | Description |
 |------|-------------|
-| `共识计划.md` | 中文权威共识计划，记录当前状态、API 决策、阶段计划和验证证据。 |
-| `需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和最终修订。 |
+| `plans/共识计划.md` | 中文权威共识计划，记录当前状态、API 决策、阶段计划和验证证据。 |
+| `specs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和最终修订。 |
+| `plans/子计划-信号槽定时器代理测试方案.md` | 共识评审后的信号槽/Timer/Broker 全量测试实施计划。 |
+| `specs/深度访谈-信号槽定时器代理测试规格.md` | 深度访谈输出的信号槽/Timer/Broker 测试规格文档。 |
 | `API_DESIGN.md` | Public API draft, usage examples, lifecycle rules, and PD review notes. |
 | `DATA_STRUCTURES.md` | Public opaque type list and internal structure design draft for later phases. |
 | `EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig adaptation rules. |
@@ -20,13 +22,15 @@ This directory holds the public design documentation for the PD closeout and imp
 ## Subdirectories
 | Directory | Purpose |
 |-----------|---------|
+| `plans/` | 中文测试方案与实施计划文档（原 `.omc/plans/`）。 |
+| `specs/` | 中文需求规格与需求访谈文档（原 `.omc/specs/` + 需求访谈）。 |
 | `agents/` | Centralized AGENTS copies for source-tree instructions. |
 
 ## For AI Agents
 
 ### Working In This Directory
 - Keep docs synchronized with `include/nanosig/*.h` and `demos/*.c` in the same change.
-- Keep `共识计划.md` and `需求访谈.md` synchronized with current implementation decisions; do not let hidden workflow artifacts become the only updated copy.
+- Keep `plans/共识计划.md` and `specs/需求访谈.md` synchronized with current implementation decisions; do not let hidden workflow artifacts become the only updated copy.
 - Mark unresolved public API choices as PD review points instead of silently treating them as final.
 - Keep the centralized `docs/agents/` copies synchronized with the source-tree directories they describe.
 - Keep `EVENTHUB_OS_STYLE.md` updated when nanosig deliberately accepts or rejects an eventhub_os style convention.
@@ -48,7 +52,7 @@ This directory holds the public design documentation for the PD closeout and imp
 
 ### Internal
 - Mirrors `include/nanosig/` and `demos/`.
-- `共识计划.md` and `需求访谈.md` are the public source of truth for planning context.
+- `plans/共识计划.md` and `specs/需求访谈.md` are the public source of truth for planning context.
 
 ### External
 - None.

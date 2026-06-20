@@ -19,32 +19,6 @@ option(NANOSIG_BUILD_DEMOS "Build nanosig demo executables" ON)
 option(NANOSIG_BUILD_BENCH "Build nanosig benchmarks" OFF)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
-set(NANOSIG_PUBLIC_HEADERS
-    include/nanosig/nanosig_atomic.h
-    include/nanosig/nanosig_broker.h
-    include/nanosig/nanosig_ds.h
-    include/nanosig/nanosig.h
-    include/nanosig/nanosig_hashtable.h
-    include/nanosig/nanosig_list.h
-    include/nanosig/nanosig_loop.h
-    include/nanosig/nanosig_mpsc_record_ring.h
-    include/nanosig/nanosig_rbtree.h
-    include/nanosig/nanosig_ringbuf.h
-    include/nanosig/nanosig_safety.h
-    include/nanosig/nanosig_signal.h
-    include/nanosig/nanosig_slist.h
-    include/nanosig/nanosig_status.h
-    include/nanosig/nanosig_timer.h
-    include/nanosig/nanosig_types.h
-    include/nanosig/nanosig_waitable.h
-)
-
-set(NANOSIG_INTERNAL_HEADERS
-    platform/port.h
-    src/ns_broker.h
-    src/ns_timer_mgr.h
-)
-
 set(NANOSIG_DS_SOURCES
     src/ds/ns_hashtable.c
     src/ds/ns_mpsc_record_ring.c
@@ -74,8 +48,6 @@ add_library(nanosig STATIC
     src/ns_timer.c
     ${NANOSIG_PLATFORM_SOURCES}
     ${NANOSIG_DS_SOURCES}
-    ${NANOSIG_PUBLIC_HEADERS}
-    ${NANOSIG_INTERNAL_HEADERS}
 )
 add_library(nanosig::nanosig ALIAS nanosig)
 
@@ -109,6 +81,7 @@ function(nanosig_add_unit_test name source)
     target_link_libraries(${name} PRIVATE nanosig::nanosig)
     target_include_directories(${name} PRIVATE
         ${PROJECT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/test
     )
     nanosig_apply_private_warnings(${name})
     nanosig_apply_sanitizers(${name})
@@ -121,6 +94,8 @@ endfunction()
 
 if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_broker test/unit/test_broker.c)
+    target_compile_definitions(nanosig_test_broker PRIVATE NANOSIG_TEST)
+    target_compile_definitions(nanosig PRIVATE NANOSIG_TEST)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
     nanosig_add_unit_test(nanosig_test_signal test/unit/test_signal.c)
@@ -131,6 +106,10 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
     nanosig_add_unit_test(nanosig_test_ds_hashtable test/unit/test_ds_hashtable.c)
     nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
+
+    # Previously unregistered stress test
+    nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)
+    set_tests_properties(nanosig_test_mpsc_record_ring_stress PROPERTIES TIMEOUT 1300 LABELS "stress;long-stability")
 endif()
 
 if(NANOSIG_BUILD_DEMOS)

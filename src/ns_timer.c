@@ -6,7 +6,7 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include "src/ns_timer_mgr.h"
+#include "nanosig/internal/ns_timer_mgr.h"
 
 #include <nanosig/nanosig.h>
 

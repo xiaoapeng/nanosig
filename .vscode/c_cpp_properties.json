@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "macos",
+            "intelliSenseMode": "macos-clang-arm64",
+            "compilerPath": "/usr/bin/cc",
+            "cStandard": "c11",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}"
+            ],
+            "defines": [
+                "NS_MPSC_CACHELINE_ALIGNED"
+            ]
+        }
+    ],
+    "version": 4
+}

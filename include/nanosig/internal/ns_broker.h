@@ -16,6 +16,12 @@ extern "C" {
 int ns_broker_global_init(void);
 void ns_broker_global_shutdown(void);
 
+#ifdef NANOSIG_TEST
+/* Test hook: set to non-NS_OK before ns_init() to inject waitset_wait failure.
+ * After one injection it resets to NS_OK so the broker can recover. */
+extern volatile int g_ns_test_waitset_wait_result;
+#endif
+
 #ifdef __cplusplus
 }
 #endif

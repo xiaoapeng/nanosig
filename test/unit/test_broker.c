@@ -7,7 +7,9 @@
  */
 
 #include <nanosig/nanosig.h>
+#include "test_macros.h"
 #include "test_helpers.h"
+#include "nanosig/internal/ns_broker.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -16,28 +18,6 @@
 #include <pthread.h>
 #include <sched.h>
 #endif
-
-static int expect_true(int condition)
-{
-    return condition ? 0 : 1;
-}
-
-#define EXPECT_OK(expr) \
-    do { \
-        if(expect_true((expr)) != 0){ \
-            fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, #expr); \
-            return 1; \
-        } \
-    } while(0)
-
-#define EXPECT_EQ(a, b) \
-    do { \
-        if(expect_true((a) == (b)) != 0){ \
-            fprintf(stderr, "EXPECT failed at %s:%d: %s == %s (%lld != %lld)\n", \
-                __FILE__, __LINE__, #a, #b, (long long)(a), (long long)(b)); \
-            return 1; \
-        } \
-    } while(0)
 
 static void test_yield(void)
 {
@@ -446,6 +426,89 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Test: broker error continue (CRITICAL)                             */
+/* ------------------------------------------------------------------ */
+
+static int test_broker_error_continue(void)
+{
+    ns_event_broker_t *broker;
+
+    /* Inject waitset_wait failure BEFORE ns_init */
+    g_ns_test_waitset_wait_result = NS_E_INVAL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    broker = ns_broker();
+    EXPECT_OK(broker != NULL);
+
+    /* The injected error was consumed in ns_broker_run's first iteration.
+     * The broker thread continued (didn't crash) and we can still interact.
+     * Verify by doing a simple shutdown — if broker thread survived, this
+     * succeeds. */
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: watcher deinit before broker_remove                          */
+/* ------------------------------------------------------------------ */
+
+static int test_watcher_deinit_before_remove(void)
+{
+    ns_event_broker_t *broker;
+    ns_watcher_t watcher;
+    ns_platform_waitable_t raw;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    broker = ns_broker();
+    EXPECT_OK(broker != NULL);
+
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+#if defined(_WIN32)
+    EXPECT_OK(ns_watcher_init_handle(&watcher, raw.handle, NS_WAITABLE_EVENT_IN, 0) == NS_OK);
+#else
+    EXPECT_OK(ns_watcher_init_fd(&watcher, raw.fd, NS_WAITABLE_EVENT_IN, 0) == NS_OK);
+#endif
+    EXPECT_OK(ns_broker_add(broker, &watcher) == NS_OK);
+
+    /* Deinit before remove — the operation should not crash.
+     * Remove after deinit may or may not succeed depending on platform. */
+    (void)ns_watcher_deinit(&watcher);
+    (void)ns_broker_remove(broker, &watcher);
+
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    test_destroy_raw_waitable(raw);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: broker_add with invalid fd returns error                     */
+/* ------------------------------------------------------------------ */
+
+static int test_broker_add_invalid_fd(void)
+{
+    ns_event_broker_t *broker;
+    ns_watcher_t watcher;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    broker = ns_broker();
+    EXPECT_OK(broker != NULL);
+
+    /* Invalid fd (-1) — init_fd may fail, and add with invalid waitable should too */
+    if(ns_watcher_init_fd(&watcher, -1, NS_WAITABLE_EVENT_IN, 0) == NS_OK){
+        EXPECT_OK(ns_broker_add(broker, &watcher) != NS_OK);
+        (void)ns_broker_remove(broker, &watcher);
+        EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
+    }
+
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  main                                                               */
+/* ------------------------------------------------------------------ */
 
 int main(void)
 {
@@ -455,6 +518,9 @@ int main(void)
     if(test_watcher_event_reaches_loop() != 0) return 1;
     if(test_shutdown_removes_residual_watcher() != 0) return 1;
     if(test_broker_remove_does_not_retract_enqueued() != 0) return 1;
+    if(test_broker_error_continue() != 0) return 1;
+    if(test_watcher_deinit_before_remove() != 0) return 1;
+    if(test_broker_add_invalid_fd() != 0) return 1;
 
     return 0;
 }

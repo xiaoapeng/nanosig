@@ -47,7 +47,7 @@ function(nanosig_add_api_compile_check name)
 
     add_custom_target(${name}
         COMMAND ${CMAKE_C_COMPILER} ${_syntax_flags} ${_sources}
-        DEPENDS ${_source_deps} ${NANOSIG_PUBLIC_HEADERS} ${NANOSIG_INTERNAL_HEADERS}
+        DEPENDS ${_source_deps}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         VERBATIM
     )

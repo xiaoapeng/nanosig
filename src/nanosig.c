@@ -11,7 +11,7 @@
 
 #include <platform/port.h>
 
-#include "src/ns_broker.h"
+#include "nanosig/internal/ns_broker.h"
 
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;

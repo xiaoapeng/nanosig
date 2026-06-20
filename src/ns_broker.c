@@ -6,12 +6,18 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include "src/ns_broker.h"
-#include "src/ns_timer_mgr.h"
+#include "nanosig/internal/ns_broker.h"
+#include "nanosig/internal/ns_timer_mgr.h"
 
 #include <nanosig/nanosig.h>
 
 #include <platform/port.h>
+
+#ifdef NANOSIG_TEST
+/* Test hook: non-NS_OK value injects waitset_wait failure.
+ * Set before ns_init() to verify broker thread survives waitset errors. */
+volatile int g_ns_test_waitset_wait_result = NS_OK;
+#endif
 
 #define NS_BROKER_COMPLETION_CAPACITY 16u
 
@@ -190,6 +196,13 @@ static void ns_broker_run(void *arg)
             completions,
             NS_BROKER_COMPLETION_CAPACITY,
             &count);
+#ifdef NANOSIG_TEST
+        if(g_ns_test_waitset_wait_result != NS_OK){
+            rc = g_ns_test_waitset_wait_result;
+            /* Inject one failure, then reset so subsequent iterations work normally */
+            g_ns_test_waitset_wait_result = NS_OK;
+        }
+#endif
         if(rc == NS_OK){
             for(i = 0u; i < count; ++i){
                 if(completions[i].waitable == &broker->wakeup_waitable){

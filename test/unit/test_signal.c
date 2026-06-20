@@ -8,6 +8,8 @@
 
 #include <nanosig/nanosig.h>
 
+#include "test_macros.h"
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,28 +27,6 @@
 /* ------------------------------------------------------------------ */
 /*  Test infrastructure                                                */
 /* ------------------------------------------------------------------ */
-
-static int expect_true(int condition)
-{
-    return condition ? 0 : 1;
-}
-
-#define EXPECT_OK(expr) \
-    do { \
-        if(expect_true((expr)) != 0){ \
-            fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, #expr); \
-            return 1; \
-        } \
-    } while(0)
-
-#define EXPECT_EQ(a, b) \
-    do { \
-        if(expect_true((a) == (b)) != 0){ \
-            fprintf(stderr, "EXPECT failed at %s:%d: %s == %s (%d != %d)\n", \
-                __FILE__, __LINE__, #a, #b, (int)(a), (int)(b)); \
-            return 1; \
-        } \
-    } while(0)
 
 static void test_yield(void)
 {
@@ -691,6 +671,211 @@ static int test_disconnect_does_not_retract_enqueued(void)
 }
 
 /* ------------------------------------------------------------------ */
+/*  Test: emit with wrong payload size is rejected                     */
+/* ------------------------------------------------------------------ */
+
+static int test_emit_wrong_payload_size(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    int rc;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    /* Signal with 4-byte payload */
+    rc = ns_signal_init_raw(&sig, 4u, 0u, "wrong-size");
+    EXPECT_OK(rc == NS_OK);
+
+    rc = ns_signal_connect(&sig, slot_no_payload, loop, NULL, &conn);
+    EXPECT_OK(rc == NS_OK);
+
+    /* emit_raw with size=8, but signal was init'd with 4 — should reject */
+    rc = ns_signal_emit_raw(&sig, NULL, 8u);
+    EXPECT_EQ(rc, NS_E_INVAL);
+
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: connect with NULL target_loop is rejected                     */
+/* ------------------------------------------------------------------ */
+
+static int test_connect_null_loop(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    int rc;
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    rc = ns_signal_init_raw(&sig, 0u, 0u, "null-loop");
+    EXPECT_OK(rc == NS_OK);
+
+    /* NULL target_loop must be rejected */
+    rc = ns_signal_connect(&sig, slot_no_payload, NULL, NULL, &conn);
+    EXPECT_EQ(rc, NS_E_INVAL);
+
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: deinit with active connections                                */
+/* ------------------------------------------------------------------ */
+
+static int g_deinit_with_conns_called = 0;
+
+static void slot_deinit_with_conns(void *user_data, const void *payload)
+{
+    (void)user_data;
+    (void)payload;
+    g_deinit_with_conns_called++;
+}
+
+static int test_deinit_with_connections(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    int rc;
+
+    g_deinit_with_conns_called = 0;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    rc = ns_signal_init_raw(&sig, 0u, 0u, "deinit-with-conns");
+    EXPECT_OK(rc == NS_OK);
+
+    rc = ns_signal_connect(&sig, slot_deinit_with_conns, loop, NULL, &conn);
+    EXPECT_OK(rc == NS_OK);
+
+    /* Deinit while connection still active — implementation must handle gracefully */
+    rc = ns_signal_deinit_raw(&sig);
+    EXPECT_OK(rc == NS_OK);
+
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: signal as struct member, cross-thread emit                    */
+/* ------------------------------------------------------------------ */
+
+typedef struct struct_signal_ctx {
+    ns_signal_t sig;
+    atomic_int slot_called;
+    atomic_int ready;
+    ns_loop_t *loop;
+#if defined(_WIN32)
+    HANDLE thread;
+#else
+    pthread_t thread;
+#endif
+} struct_signal_ctx_t;
+
+static void slot_struct_member(void *user_data, const void *payload)
+{
+    struct_signal_ctx_t *ctx = (struct_signal_ctx_t *)user_data;
+    (void)payload;
+    ns_atomic_store_explicit(&ctx->slot_called, 1, ns_memory_order_release);
+}
+
+static void struct_member_worker(struct_signal_ctx_t *ctx)
+{
+    int rc;
+
+    rc = ns_loop_create(&ctx->loop, NULL);
+    if(rc != NS_OK) return;
+
+    ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
+    (void)ns_loop_run(ctx->loop);
+    ns_loop_destroy(ctx->loop);
+}
+
+#if defined(_WIN32)
+static DWORD WINAPI struct_member_main(LPVOID arg)
+{
+    struct_member_worker((struct_signal_ctx_t *)arg);
+    return 0u;
+}
+#else
+static void *struct_member_main(void *arg)
+{
+    struct_member_worker((struct_signal_ctx_t *)arg);
+    return NULL;
+}
+#endif
+
+static int test_signal_struct_member_cross_thread(void)
+{
+    struct_signal_ctx_t ctx;
+
+    ns_atomic_init(&ctx.slot_called, 0);
+    ns_atomic_init(&ctx.ready, 0);
+    ctx.loop = NULL;
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    /* signal embedded in a struct */
+    EXPECT_OK(ns_signal_init_raw(&ctx.sig, 0u, 0u, "struct-member") == NS_OK);
+
+    /* Start worker thread */
+#if defined(_WIN32)
+    ctx.thread = CreateThread(NULL, 0u, struct_member_main, &ctx, 0u, NULL);
+    EXPECT_OK(ctx.thread != NULL);
+#else
+    EXPECT_OK(pthread_create(&ctx.thread, NULL, struct_member_main, &ctx) == 0);
+#endif
+
+    while(ns_atomic_load_explicit(&ctx.ready, ns_memory_order_acquire) == 0){
+        test_yield();
+    }
+
+    {
+        ns_connection_t conn;
+        int rc;
+
+        rc = ns_signal_connect(&ctx.sig, slot_struct_member, ctx.loop, &ctx, &conn);
+        EXPECT_OK(rc == NS_OK);
+
+        rc = ns_signal_emit_raw(&ctx.sig, NULL, 0u);
+        EXPECT_OK(rc == NS_OK);
+
+        while(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) == 0){
+            test_yield();
+        }
+
+        EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
+
+#if defined(_WIN32)
+        WaitForSingleObject(ctx.thread, INFINITE);
+        CloseHandle(ctx.thread);
+#else
+        pthread_join(ctx.thread, NULL);
+#endif
+
+        EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    }
+
+    EXPECT_OK(ns_signal_deinit_raw(&ctx.sig) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /*  main                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -706,6 +891,10 @@ int main(void)
     if(test_uninitialized_signal_rejected() != 0) return 1;
     if(test_concurrent_connect_emit() != 0) return 1;
     if(test_disconnect_does_not_retract_enqueued() != 0) return 1;
+    if(test_emit_wrong_payload_size() != 0) return 1;
+    if(test_connect_null_loop() != 0) return 1;
+    if(test_deinit_with_connections() != 0) return 1;
+    if(test_signal_struct_member_cross_thread() != 0) return 1;
 
     return 0;
 }

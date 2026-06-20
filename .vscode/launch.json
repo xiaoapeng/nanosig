@@ -1,0 +1,77 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "test: signal",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_test_signal",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "test: broker",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_test_broker",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "test: timer",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_test_timer",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "test: loop",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_test_loop",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "test: mpsc",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_test_mpsc_record_ring",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "demo: same_thread",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_demo_same_thread",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "demo: cross_thread",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_demo_cross_thread",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        },
+        {
+            "name": "demo: timer",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/nanosig_demo_timer_cross_thread",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "sourceMap": { "/Volumes/zizz1T/Users/zizz/project/nanosig": "${workspaceFolder}" }
+        }
+    ]
+}
