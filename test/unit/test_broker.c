@@ -349,6 +349,104 @@ static int test_shutdown_removes_residual_watcher(void)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Test: broker_remove does not retract already-enqueued emit         */
+/*  Uses a witness loop to confirm the broker has emitted before       */
+/*  removal — once the witness dispatches, the test loop's MPSC ring   */
+/*  already holds the same emit (atomic per signal slot_list).         */
+/* ------------------------------------------------------------------ */
+
+static int g_broker_remove_retract_test = 0;
+
+static void slot_broker_retract_testee(void *user_data, const void *payload)
+{
+    (void)user_data;
+    (void)payload;
+    g_broker_remove_retract_test++;
+}
+
+static int test_broker_remove_does_not_retract_enqueued(void)
+{
+    broker_loop_ctx_t witness;
+    ns_platform_waitable_t raw;
+    ns_watcher_t watcher;
+    ns_connection_t conn_witness;
+    ns_connection_t conn_test;
+    ns_loop_t *test_loop = NULL;
+    ns_event_broker_t *broker;
+    int rc;
+
+    g_broker_remove_retract_test = 0;
+    ns_waitable_init(&raw);
+    broker_loop_ctx_init(&witness);
+
+    EXPECT_OK(ns_init() == NS_OK);
+    broker = ns_broker();
+    EXPECT_OK(broker != NULL);
+
+    rc = broker_loop_start(&witness);
+    EXPECT_OK(rc == NS_OK);
+    EXPECT_OK(broker_wait_until_ready(&witness) == NS_OK);
+    /* no "worker_started" flag — cleanup is sequential on fail */
+
+    /* Create the test loop — NOT started, so its ring accumulates */
+    EXPECT_OK(ns_loop_create(&test_loop, NULL) == NS_OK);
+
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+#if defined(_WIN32)
+    rc = ns_watcher_init_handle(&watcher, raw.handle, NS_WAITABLE_EVENT_IN, 0);
+#else
+    rc = ns_watcher_init_fd(&watcher, raw.fd, NS_WAITABLE_EVENT_IN, 1);
+#endif
+    EXPECT_OK(rc == NS_OK);
+
+    /* Connection 1 — to the running witness loop */
+    rc = ns_signal_connect(&watcher.signal, (ns_slot_fn)broker_watcher_slot,
+                           witness.loop, &witness, &conn_witness);
+    EXPECT_OK(rc == NS_OK);
+
+    /* Connection 2 — to the paused test loop */
+    rc = ns_signal_connect(&watcher.signal, slot_broker_retract_testee,
+                           test_loop, NULL, &conn_test);
+    EXPECT_OK(rc == NS_OK);
+
+    rc = ns_broker_add(broker, &watcher);
+    EXPECT_OK(rc == NS_OK);
+
+    /* Signal — broker fires watcher.signal → iterates BOTH connections
+     * atomically (slot_list locked). test_loop's ring gets the entry. */
+    test_signal_raw_waitable(raw);
+
+    /* Wait for witness to confirm broker processed */
+    EXPECT_OK(broker_wait_until_slot_called(&witness) == NS_OK);
+
+    /* Witness loop already quit (slot calls ns_loop_quit). Rejoin thread. */
+    broker_loop_join(&witness);
+
+    /* Remove watcher — does NOT touch the already-committed ring entry */
+    EXPECT_OK(ns_broker_remove(broker, &watcher) == NS_OK);
+    EXPECT_OK(ns_signal_disconnect(&conn_witness) == NS_OK);
+
+    /* Signal again — no effect, watcher removed */
+    test_signal_raw_waitable(raw);
+
+    /* Drain the test loop — the pre-removal emit must dispatch */
+    EXPECT_OK(ns_loop_quit(test_loop) == NS_OK);
+    rc = ns_loop_run(test_loop);
+    EXPECT_OK(rc == NS_OK);
+
+    EXPECT_EQ(g_broker_remove_retract_test, 1);
+
+    EXPECT_OK(ns_signal_disconnect(&conn_test) == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
+    test_destroy_raw_waitable(raw);
+    EXPECT_OK(ns_loop_destroy(test_loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
+
 int main(void)
 {
     if(test_broker_lifecycle() != 0) return 1;
@@ -356,6 +454,7 @@ int main(void)
     if(test_broker_add_remove() != 0) return 1;
     if(test_watcher_event_reaches_loop() != 0) return 1;
     if(test_shutdown_removes_residual_watcher() != 0) return 1;
+    if(test_broker_remove_does_not_retract_enqueued() != 0) return 1;
 
     return 0;
 }

@@ -639,6 +639,58 @@ static int test_concurrent_connect_emit(void)
 }
 
 /* ------------------------------------------------------------------ */
+/*  Test: disconnect does not cancel already-enqueued slot             */
+/* ------------------------------------------------------------------ */
+
+static int g_disconnect_does_not_retract = 0;
+
+static void slot_disconnect_no_retract(void *user_data, const void *payload)
+{
+    (void)user_data;
+    (void)payload;
+    g_disconnect_does_not_retract++;
+}
+
+static int test_disconnect_does_not_retract_enqueued(void)
+{
+    ns_signal_t sig;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    int rc;
+
+    g_disconnect_does_not_retract = 0;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+
+    rc = ns_signal_init_raw(&sig, 0u, 0u, "disconnect-no-retract");
+    EXPECT_OK(rc == NS_OK);
+
+    rc = ns_signal_connect(&sig, slot_disconnect_no_retract, loop, NULL, &conn);
+    EXPECT_OK(rc == NS_OK);
+
+    /* Emit BEFORE disconnect — slot_call is already committed to the ring */
+    rc = ns_signal_emit_raw(&sig, NULL, 0u);
+    EXPECT_OK(rc == NS_OK);
+
+    /* Disconnect AFTER emit — must NOT retract the already-queued call */
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+
+    /* Run loop — enqueued slot_call must still dispatch */
+    EXPECT_OK(ns_loop_quit(loop) == NS_OK);
+    rc = ns_loop_run(loop);
+    EXPECT_OK(rc == NS_OK);
+
+    EXPECT_EQ(g_disconnect_does_not_retract, 1);
+
+    EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /*  main                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -653,6 +705,7 @@ int main(void)
     if(test_multiple_connections() != 0) return 1;
     if(test_uninitialized_signal_rejected() != 0) return 1;
     if(test_concurrent_connect_emit() != 0) return 1;
+    if(test_disconnect_does_not_retract_enqueued() != 0) return 1;
 
     return 0;
 }

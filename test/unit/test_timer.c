@@ -154,6 +154,40 @@ static int test_repeat_timer_rearms_after_fire(void)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Test: repeat timer with RELOAD_FROM_NOW attr bit                   */
+/* ------------------------------------------------------------------ */
+
+static int test_repeat_timer_reload_from_now(void)
+{
+    ns_timer_t timer;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    timer_slot_ctx_t ctx;
+
+    ctx.loop = NULL;
+    ctx.seen = 0;
+
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    ctx.loop = loop;
+
+    /* REPEAT | RELOAD_FROM_NOW */
+    EXPECT_OK(ns_timer_create(&timer, 20000u,
+        NS_TIMER_ATTR_REPEAT | NS_TIMER_ATTR_RELOAD_FROM_NOW) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
+
+    EXPECT_OK(ns_timer_start(&timer) == NS_OK);
+    EXPECT_OK(ns_loop_run(loop) == NS_OK);
+    EXPECT_EQ(ctx.seen, 1);
+
+    EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_timer_destroy(&timer) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+
+    return 0;
+}
+
 int main(void)
 {
     ns_platform_time_us_t timeout = 0u;
@@ -166,6 +200,7 @@ int main(void)
     if(test_start_cancel_and_restart_semantics() != 0) return 1;
     if(test_oneshot_broker_fires_signal() != 0) return 1;
     if(test_repeat_timer_rearms_after_fire() != 0) return 1;
+    if(test_repeat_timer_reload_from_now() != 0) return 1;
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;

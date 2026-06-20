@@ -63,6 +63,9 @@ NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, signal) == 0u, "ns_watcher_t.signal m
  * 填充 `waitable.fd` / `events` / `edge_triggered`，并初始化 broker 链表节点。
  * 调用方负责在当前平台传入 waitset 后端可等待的 fd。
  *
+ * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
+ *          init 一次 → deinit 一次。
+ *
  * @param watcher 待初始化的 watcher。
  * @param fd 平台 fd。
  * @param events `NS_WAITABLE_EVENT_*` 位组合。
@@ -77,6 +80,9 @@ extern int ns_watcher_init_fd(ns_watcher_t *watcher, int fd, uint32_t events, in
  * 本函数初始化调用方提供的 `ns_watcher_t`。参数有效时，它会初始化内嵌 signal、
  * 填充 `waitable.handle` / `events` / `edge_triggered`，并初始化 broker 链表节点。
  * 调用方负责在当前平台传入 waitset 后端可等待的 handle。
+ *
+ * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
+ *          init 一次 → deinit 一次。
  *
  * @param watcher 待初始化的 watcher。
  * @param handle 平台 handle。

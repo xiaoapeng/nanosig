@@ -223,6 +223,9 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
  * 该函数是 `ns_signal_init` 宏的底层入口，供实现层、绑定层或无法使用 C 宏的
  * 调用方使用。普通 C 调用方应优先使用 `ns_signal_init(signal, payload_type)`。
  *
+ * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
+ *          init 一次 → deinit 一次。
+ *
  * @param signal 待初始化的 signal 对象。
  * @param payload_size 每次 emit 复制的 payload 字节数；无 payload signal 为 0。
  * @param slot_capacity slot 容量提示；0 表示使用实现默认值。
