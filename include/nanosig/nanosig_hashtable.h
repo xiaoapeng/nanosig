@@ -44,6 +44,9 @@ typedef struct ns_hashtable {
 
 /**
  * @brief 计算字符串哈希值。
+ *
+ * @param key 待计算哈希值的字符串。
+ * @return 字符串的哈希值。
  */
 extern uint32_t ns_hash_string(const char *key);
 
@@ -70,12 +73,18 @@ extern void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, v
  * @brief 插入节点。
  *
  * 相同 key 已存在时返回 `NS_E_EXISTS`。
+ *
+ * @param table 哈希表对象。
+ * @param node  待插入的节点。
+ * @return `NS_OK` 表示成功；相同 key 已存在时返回 `NS_E_EXISTS`。
  */
 extern int ns_hashtable_insert(ns_hashtable_t *table, ns_hashtable_node_t *node);
 
 /**
  * @brief 查找指定 key 的节点。
  *
+ * @param table 哈希表对象。
+ * @param key   待查找的字符串键。
  * @return 找到时返回节点，未找到返回 `NULL`。
  */
 extern ns_hashtable_node_t *ns_hashtable_find(const ns_hashtable_t *table, const char *key);
@@ -83,6 +92,8 @@ extern ns_hashtable_node_t *ns_hashtable_find(const ns_hashtable_t *table, const
 /**
  * @brief 移除指定 key 的节点。
  *
+ * @param table 哈希表对象。
+ * @param key   待移除节点的字符串键。
  * @return 找到时返回被移除节点，未找到返回 `NULL`。
  */
 extern ns_hashtable_node_t *ns_hashtable_remove(ns_hashtable_t *table, const char *key);
@@ -91,6 +102,8 @@ extern ns_hashtable_node_t *ns_hashtable_remove(ns_hashtable_t *table, const cha
  * @brief 清空哈希表。
  *
  * 本函数只脱链节点，不释放用户对象。
+ *
+ * @param table 哈希表对象。
  */
 extern void ns_hashtable_clear(ns_hashtable_t *table);
 

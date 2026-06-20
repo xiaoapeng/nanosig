@@ -77,16 +77,24 @@ extern void ns_rbtree_init(ns_rbtree_t *tree, int (*cmp)(const ns_rbtree_node_t 
  * @brief 初始化红黑树节点为"空"状态。
  *
  * 空节点的 `parent_and_color` 指向自身。
+ *
+ * @param node 待初始化的节点。
  */
 extern void ns_rbtree_node_init(ns_rbtree_node_t *node);
 
 /**
  * @brief 判断红黑树是否为空。
+ *
+ * @param tree 红黑树根。
+ * @return 树为空返回非零，否则返回 0。
  */
 extern int ns_rbtree_empty(const ns_rbtree_t *tree);
 
 /**
  * @brief 判断节点是否已经链接到某棵红黑树。
+ *
+ * @param node 红黑树节点。
+ * @return 节点已链接返回非零，否则返回 0。
  */
 extern int ns_rbtree_node_is_linked(const ns_rbtree_node_t *node);
 
@@ -95,33 +103,51 @@ extern int ns_rbtree_node_is_linked(const ns_rbtree_node_t *node);
  *
  * 返回被插入的节点。如果插入后该节点成为最左节点，返回值即为该节点；
  * 否则返回 `NULL`。
+ *
+ * @param tree 红黑树根。
+ * @param node 待插入的节点。
+ * @return 插入后该节点成为最左节点时返回该节点，否则返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_insert(ns_rbtree_t *tree, ns_rbtree_node_t *node);
 
 /**
  * @brief 移除节点。
  *
+ * @param tree 红黑树根。
+ * @param node 待移除的节点。
  * @return 被移除的节点，无效输入时返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node);
 
 /**
  * @brief 返回 key 最小的节点（中序第一个）。
+ *
+ * @param tree 红黑树根。
+ * @return key 最小的节点，空树返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_first(const ns_rbtree_t *tree);
 
 /**
  * @brief 返回 key 最大的节点（中序最后一个）。
+ *
+ * @param tree 红黑树根。
+ * @return key 最大的节点，空树返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_last(const ns_rbtree_t *tree);
 
 /**
  * @brief 返回中序遍历的下一个节点。
+ *
+ * @param node 当前节点。
+ * @return 中序遍历的下一个节点，无后续节点返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_next(const ns_rbtree_node_t *node);
 
 /**
  * @brief 返回中序遍历的上一个节点。
+ *
+ * @param node 当前节点。
+ * @return 中序遍历的上一个节点，无前驱节点返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node);
 
@@ -129,7 +155,10 @@ extern ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node);
  * @brief 查找与 key 匹配的第一个节点（最左匹配）。
  *
  * 使用树的比较函数，key 作为 `cmp` 的第一个参数参与比较。
- * 返回找到的节点，未找到返回 `NULL`。
+ *
+ * @param key  用于匹配的 key 节点。
+ * @param tree 红黑树根。
+ * @return 找到的第一个匹配节点，未找到返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_find_first(
     const ns_rbtree_node_t *key, const ns_rbtree_t *tree);
@@ -137,7 +166,12 @@ extern ns_rbtree_node_t *ns_rbtree_find_first(
 /**
  * @brief 查找与 key 匹配的下一个节点。
  *
- * 从 `node` 之后继续查找，返回下一个匹配节点，无更多匹配返回 `NULL`。
+ * 从 `node` 之后继续查找。
+ *
+ * @param key  用于匹配的 key 节点。
+ * @param node 起始节点。
+ * @param tree 红黑树根。
+ * @return 下一个匹配节点，无更多匹配返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_next_match(
     const ns_rbtree_node_t *key, ns_rbtree_node_t *node, const ns_rbtree_t *tree);
@@ -146,6 +180,10 @@ extern ns_rbtree_node_t *ns_rbtree_next_match(
  * @brief 查找或插入。
  *
  * 查找与 `node` 匹配的节点：找到则返回已有节点，未找到则插入 `node` 并返回 `NULL`。
+ *
+ * @param node 待查找或插入的节点。
+ * @param tree 红黑树根。
+ * @return 找到时返回已有节点，未找到时插入 `node` 并返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t *tree);
 
@@ -154,6 +192,13 @@ extern ns_rbtree_node_t *ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t 
  *
  * 使用外部 `match` 函数查找。找到则返回已有节点；
  * 未找到则调用 `new_node(user_data)` 创建新节点并插入，返回新建节点。
+ *
+ * @param key       外部匹配用的 key。
+ * @param tree      红黑树根。
+ * @param match     外部匹配函数。
+ * @param user_data 传递给 `new_node` 和 `match` 的用户数据。
+ * @param new_node  新建节点回调函数。
+ * @return 找到时返回已有节点，未找到时返回新建并插入的节点。
  */
 extern ns_rbtree_node_t *ns_rbtree_find_new_add(
     const void *key, ns_rbtree_t *tree,
@@ -165,7 +210,11 @@ extern ns_rbtree_node_t *ns_rbtree_find_new_add(
  * @brief 使用外部匹配函数查找节点。
  *
  * 从根开始查找，返回第一个 `match(key, node) == 0` 的节点。
- * 未找到返回 `NULL`。
+ *
+ * @param key   外部匹配用的 key。
+ * @param tree  红黑树根。
+ * @param match 外部匹配函数。
+ * @return 第一个匹配节点，未找到返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_match_find(
     const void *key, const ns_rbtree_t *tree,
@@ -173,11 +222,17 @@ extern ns_rbtree_node_t *ns_rbtree_match_find(
 
 /**
  * @brief 返回后序遍历的第一个节点。
+ *
+ * @param tree 红黑树根。
+ * @return 后序遍历的第一个节点，空树返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_first_postorder(const ns_rbtree_t *tree);
 
 /**
  * @brief 返回后序遍历的下一个节点。
+ *
+ * @param node 当前节点。
+ * @return 后序遍历的下一个节点，无后续节点返回 `NULL`。
  */
 extern ns_rbtree_node_t *ns_rbtree_next_postorder(const ns_rbtree_node_t *node);
 

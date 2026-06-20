@@ -65,6 +65,7 @@ NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, signal) == 0u, "ns_watcher_t.signal m
  *
  * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
  *          init 一次 → deinit 一次。
+ * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
  * @param fd 平台 fd。
@@ -83,6 +84,7 @@ extern int ns_watcher_init_fd(ns_watcher_t *watcher, int fd, uint32_t events, in
  *
  * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
  *          init 一次 → deinit 一次。
+ * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
  * @param handle 平台 handle。
@@ -98,6 +100,8 @@ extern int ns_watcher_init_handle(ns_watcher_t *watcher, void *handle, uint32_t 
  * 调用前应先通过 `ns_broker_remove()` 从 broker 注销 watcher。本函数释放内嵌
  * signal 的内部资源，并把 waitable 和 broker 链表节点重置为未注册状态。
  *
+ * @warning 本函数必须串行化调用，非 MPM-safe。
+ *
  * @param watcher 待释放的 watcher。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -108,7 +112,8 @@ extern int ns_watcher_deinit(ns_watcher_t *watcher);
  *
  * `ns_init()` 前和 `ns_shutdown()` 后返回 `NULL`。
  *
- * @return 全局 broker 指针，或 `NULL`。
+ * @return 全局 broker 指针，或 `NULL`。返回值在 `ns_init()` 与 `ns_shutdown()`
+ * 之间恒定不变，可在任意线程安全读取。
  */
 extern ns_event_broker_t *ns_broker(void);
 

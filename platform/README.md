@@ -1,10 +1,11 @@
 # nanosig 平台抽象层
 
-状态：waitset 契约已追加；Windows、Linux 和 macOS 后端可构建验证。
+`platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `platform/port.h`
+使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS 头文件或写平台分支。
 
-`platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过
-`platform/port.h` 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS
-头文件或写平台分支。
+三后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
+Windows（WaitForMultipleObjects + SRWLOCK）。后端必须同步推进，不允许一个 OS
+领先另一个完整阶段。
 
 ## loop-only 原语
 
@@ -108,3 +109,19 @@ v1 不创建空 RTOS 或 MCU 后端目录。未来 v2 如果需要 ISR / RTOS �
 RTOS 前向兼容：`ns_platform_waitable_t` 的 `event_bit` 字段为 RTOS 预留，waitset
 可映射为 event group（FreeRTOS `xEventGroupWaitBits`、Zephyr `k_poll`）。
 RTOS ISR 安全是 v2 课题，v1 不承诺。
+
+## 新增后端清单
+
+新增一个平台后端时，需要：
+
+1. **实现文件**：在 `platform/` 下创建 `<platform>/port.c`，实现 `platform/port.h` 中所有 `extern` 函数（`ns_platform_*`）。
+2. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。
+3. **编译检查**：`cmake --build` 零警告通过。
+4. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
+5. **完整构建 + 测试**：`cmake --build <preset> --target api-compile-checks` + `ctest <preset>` 全通过。
+6. **bench 基线**（可选）：跑 1 轮 bench 归档到 `bench/results/`。
+
+新增后端**不允许**：
+- 在 `src/` 或 `include/nanosig/` 中新增 OS 分支。
+- 修改 `platform/port.h` 的接口签名（只能新增扩展点）。
+- 修改其他后端的实现文件。

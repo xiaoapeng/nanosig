@@ -27,6 +27,8 @@ extern "C" {
 /**
  * @brief 可等待句柄。
  *
+ * @note 本类型通过 watcher init 填充，调用方不应直接修改 union 成员。
+ *
  * 本结构体直接内嵌在 `ns_watcher_t` 中。调用方通常通过
  * `ns_watcher_init_fd` 或 `ns_watcher_init_handle` 填充它，而不是直接修改
  * union 成员。
@@ -49,6 +51,8 @@ typedef struct ns_platform_waitable {
 
 /**
  * @brief 初始化 waitable 为未注册的无效状态。
+ *
+ * @thread-safety unsafe 只应在初始化线程单线程调用。
  *
  * 本函数把平台原语 union 初始化为全 1 位无效值：Windows 对应
  * `INVALID_HANDLE_VALUE`，Linux/macOS fd 对应 `-1`。

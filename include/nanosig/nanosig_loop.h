@@ -1,6 +1,12 @@
 /**
  * @file nanosig_loop.h
  * @brief nanosig 事件循环 API。
+ * @thread-safety
+ *   - ns_loop_create / ns_loop_destroy：调用方必须串行化调用，非 MPM-safe。
+ *   - ns_loop_run：单线程（绑定到调用者线程）；跨线程 quit 通过原子操作安全，
+ *     但调用方必须保证 run 返回前 loop 不再被使用。
+ *   - ns_loop_start / ns_loop_stop：调用方必须串行化；二次 stop 返回 NS_E_INVAL。
+ *   - ns_loop_quit：MPM-safe。
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors
@@ -123,6 +129,9 @@ extern int ns_loop_start(ns_loop_t *loop);
  *
  * 内部调用 `ns_loop_quit()` 请求退出，然后 join 后台线程。join 完成后
  * 释放线程句柄，loop 状态恢复为可再次 `start`。
+ *
+ * @pre 本函数必须与 `ns_loop_start()` 串行化调用，不得并发。二次 stop
+ *      返回 `NS_E_INVAL`。
  *
  * @param loop 目标 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

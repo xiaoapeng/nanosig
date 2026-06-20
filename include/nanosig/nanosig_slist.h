@@ -3,6 +3,8 @@
  * @brief nanosig intrusive 单向链表。
  * @date 2026-05-17
  *
+ * @warning 本数据结构不是线程安全的。同一节点上的并发操作需要外部同步。
+ *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
