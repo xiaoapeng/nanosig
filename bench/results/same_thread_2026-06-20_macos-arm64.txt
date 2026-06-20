@@ -1,0 +1,7 @@
+=== nanosig bench: same_thread_latency ===
+  iterations: 100000
+  avg:  358.00 ns  (0.358 us)
+  p50:   0.00 ns  (0.000 us)
+  p99:  1000.00 ns  (1.000 us)
+  min:   0.00 ns  (0.000 us)
+  max:  35000.00 ns  (35.000 us)

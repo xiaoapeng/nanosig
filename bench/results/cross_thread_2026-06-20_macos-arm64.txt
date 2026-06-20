@@ -1,0 +1,7 @@
+=== nanosig bench: cross_thread_latency ===
+  iterations: 50000
+  avg:  3448.00 ns  (3.448 us)
+  p50:  3000.00 ns  (3.000 us)
+  p99:  18000.00 ns  (18.000 us)
+  min:   0.00 ns  (0.000 us)
+  max:  129000.00 ns  (129.000 us)

@@ -1,0 +1,6 @@
+=== nanosig bench: throughput ===
+  duration:     1000000 us
+  emitted:      2887840
+  processed:    2199097
+  emit rate:    2887840 emits/sec
+  drain rate:   2199097 emits/sec
