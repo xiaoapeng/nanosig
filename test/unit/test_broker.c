@@ -28,17 +28,8 @@ static void test_yield(void)
 #endif
 }
 
-/* test_create_raw_waitable, test_destroy_raw_waitable, test_signal_raw_waitable
-   are provided by test_helpers.h */
-
-static int test_raw_waitable_is_valid(ns_platform_waitable_t w)
-{
-#if defined(_WIN32)
-    return w.handle != NULL;
-#else
-    return w.fd >= 0;
-#endif
-}
+/* test_create_raw_waitable, test_destroy_raw_waitable, test_signal_raw_waitable,
+   test_raw_waitable_is_valid are provided by test_helpers.h */
 
 typedef struct broker_loop_ctx {
     atomic_int ready;
@@ -181,8 +172,8 @@ static int test_watcher_invalid_paths(void)
     EXPECT_OK(ns_watcher_init_fd(&watcher, 0, invalid_event, 0) == NS_E_INVAL);
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_INVAL);
     EXPECT_OK(ns_watcher_init_handle(&watcher, NULL, NS_WAITABLE_EVENT_IN, 0) == NS_E_INVAL);
-    EXPECT_OK(ns_broker_add(NULL, NULL) == NS_E_INVAL);
-    EXPECT_OK(ns_broker_remove(NULL, NULL) == NS_E_INVAL);
+    EXPECT_OK(ns_broker_add(NULL) == NS_E_INVAL);
+    EXPECT_OK(ns_broker_remove(NULL) == NS_E_INVAL);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -202,11 +193,8 @@ static int test_broker_add_remove(void)
 {
     ns_watcher_t watcher;
     ns_platform_waitable_t raw;
-    ns_event_broker_t *broker;
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -216,10 +204,10 @@ static int test_broker_add_remove(void)
     EXPECT_OK(ns_watcher_init_fd(&watcher, raw.fd, NS_WAITABLE_EVENT_IN, 0) == NS_OK);
 #endif
 
-    EXPECT_OK(ns_broker_add(broker, &watcher) == NS_OK);
-    EXPECT_OK(ns_broker_add(broker, &watcher) == NS_E_EXISTS);
-    EXPECT_OK(ns_broker_remove(broker, &watcher) == NS_OK);
-    EXPECT_OK(ns_broker_remove(broker, &watcher) == NS_E_INVAL);
+    EXPECT_OK(ns_broker_add(&watcher) == NS_OK);
+    EXPECT_OK(ns_broker_add(&watcher) == NS_E_EXISTS);
+    EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
+    EXPECT_OK(ns_broker_remove(&watcher) == NS_E_INVAL);
 
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     test_destroy_raw_waitable(raw);
@@ -233,7 +221,6 @@ static int test_watcher_event_reaches_loop(void)
     ns_watcher_t watcher;
     ns_connection_t conn;
     ns_platform_waitable_t raw;
-    ns_event_broker_t *broker;
     int worker_started = 0;
     int watcher_initialized = 0;
     int connected = 0;
@@ -244,8 +231,6 @@ static int test_watcher_event_reaches_loop(void)
     ns_waitable_init(&raw);
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     rc = broker_loop_start(&ctx);
     if(rc != NS_OK) goto fail;
@@ -267,7 +252,7 @@ static int test_watcher_event_reaches_loop(void)
     if(rc != NS_OK) goto fail;
     connected = 1;
 
-    rc = ns_broker_add(broker, &watcher);
+    rc = ns_broker_add(&watcher);
     if(rc != NS_OK) goto fail;
     added = 1;
 
@@ -281,7 +266,7 @@ static int test_watcher_event_reaches_loop(void)
     EXPECT_EQ(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire), 1);
     EXPECT_OK((ctx.triggered_events & NS_WAITABLE_EVENT_IN) != 0u);
 
-    EXPECT_OK(ns_broker_remove(broker, &watcher) == NS_OK);
+    EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
     added = 0;
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     connected = 0;
@@ -292,7 +277,7 @@ static int test_watcher_event_reaches_loop(void)
     return 0;
 
 fail:
-    if(added) (void)ns_broker_remove(broker, &watcher);
+    if(added) (void)ns_broker_remove(&watcher);
     if(connected) (void)ns_signal_disconnect(&conn);
     if(watcher_initialized) (void)ns_watcher_deinit(&watcher);
     if(test_raw_waitable_is_valid(raw)) test_destroy_raw_waitable(raw);
@@ -308,11 +293,8 @@ static int test_shutdown_removes_residual_watcher(void)
 {
     ns_watcher_t watcher;
     ns_platform_waitable_t raw;
-    ns_event_broker_t *broker;
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -321,7 +303,7 @@ static int test_shutdown_removes_residual_watcher(void)
 #else
     EXPECT_OK(ns_watcher_init_fd(&watcher, raw.fd, NS_WAITABLE_EVENT_IN, 0) == NS_OK);
 #endif
-    EXPECT_OK(ns_broker_add(broker, &watcher) == NS_OK);
+    EXPECT_OK(ns_broker_add(&watcher) == NS_OK);
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
@@ -353,7 +335,6 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     ns_connection_t conn_witness;
     ns_connection_t conn_test;
     ns_loop_t *test_loop = NULL;
-    ns_event_broker_t *broker;
     int rc;
 
     g_broker_remove_retract_test = 0;
@@ -361,8 +342,6 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     broker_loop_ctx_init(&witness);
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     rc = broker_loop_start(&witness);
     EXPECT_OK(rc == NS_OK);
@@ -391,7 +370,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
                            test_loop, NULL, &conn_test);
     EXPECT_OK(rc == NS_OK);
 
-    rc = ns_broker_add(broker, &watcher);
+    rc = ns_broker_add(&watcher);
     EXPECT_OK(rc == NS_OK);
 
     /* Signal — broker fires watcher.signal → iterates BOTH connections
@@ -405,7 +384,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     broker_loop_join(&witness);
 
     /* Remove watcher — does NOT touch the already-committed ring entry */
-    EXPECT_OK(ns_broker_remove(broker, &watcher) == NS_OK);
+    EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn_witness) == NS_OK);
 
     /* Signal again — no effect, watcher removed */
@@ -432,14 +411,11 @@ static int test_broker_remove_does_not_retract_enqueued(void)
 
 static int test_broker_error_continue(void)
 {
-    ns_event_broker_t *broker;
 
     /* Inject waitset_wait failure BEFORE ns_init */
     g_ns_test_waitset_wait_result = NS_E_INVAL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     /* The injected error was consumed in ns_broker_run's first iteration.
      * The broker thread continued (didn't crash) and we can still interact.
@@ -455,13 +431,10 @@ static int test_broker_error_continue(void)
 
 static int test_watcher_deinit_before_remove(void)
 {
-    ns_event_broker_t *broker;
     ns_watcher_t watcher;
     ns_platform_waitable_t raw;
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -470,12 +443,12 @@ static int test_watcher_deinit_before_remove(void)
 #else
     EXPECT_OK(ns_watcher_init_fd(&watcher, raw.fd, NS_WAITABLE_EVENT_IN, 0) == NS_OK);
 #endif
-    EXPECT_OK(ns_broker_add(broker, &watcher) == NS_OK);
+    EXPECT_OK(ns_broker_add(&watcher) == NS_OK);
 
     /* Deinit before remove — the operation should not crash.
      * Remove after deinit may or may not succeed depending on platform. */
     (void)ns_watcher_deinit(&watcher);
-    (void)ns_broker_remove(broker, &watcher);
+    (void)ns_broker_remove(&watcher);
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     test_destroy_raw_waitable(raw);
@@ -488,20 +461,116 @@ static int test_watcher_deinit_before_remove(void)
 
 static int test_broker_add_invalid_fd(void)
 {
-    ns_event_broker_t *broker;
     ns_watcher_t watcher;
 
     EXPECT_OK(ns_init() == NS_OK);
-    broker = ns_broker();
-    EXPECT_OK(broker != NULL);
 
     /* Invalid fd (-1) — init_fd may fail, and add with invalid waitable should too */
     if(ns_watcher_init_fd(&watcher, -1, NS_WAITABLE_EVENT_IN, 0) == NS_OK){
-        EXPECT_OK(ns_broker_add(broker, &watcher) != NS_OK);
-        (void)ns_broker_remove(broker, &watcher);
+        EXPECT_OK(ns_broker_add(&watcher) != NS_OK);
+        (void)ns_broker_remove(&watcher);
         EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     }
 
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: edge_triggered vs level_triggered watchers (Minor 4-B4)      */
+/*  Verify both edge and level modes can create and register watchers  */
+/*  that work correctly. The deep semantic difference (edge vs level   */
+/*  retrigger) is platform-dependent and validated in platform tests.   */
+/* ------------------------------------------------------------------ */
+
+static int test_broker_edge_vs_level(void)
+{
+    ns_watcher_t edge_watcher, level_watcher;
+    ns_platform_waitable_t raw;
+    int rc;
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+
+    /* Edge-triggered watcher: create and register */
+#if defined(_WIN32)
+    rc = ns_watcher_init_handle(&edge_watcher, raw.handle, NS_WAITABLE_EVENT_IN, 1);
+#else
+    rc = ns_watcher_init_fd(&edge_watcher, raw.fd, NS_WAITABLE_EVENT_IN, 1);
+#endif
+    EXPECT_OK(rc == NS_OK);
+    EXPECT_OK(ns_broker_add(&edge_watcher) == NS_OK);
+    EXPECT_OK(ns_broker_remove(&edge_watcher) == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&edge_watcher) == NS_OK);
+
+    /* Level-triggered watcher: create and register */
+#if defined(_WIN32)
+    rc = ns_watcher_init_handle(&level_watcher, raw.handle, NS_WAITABLE_EVENT_IN, 0);
+#else
+    rc = ns_watcher_init_fd(&level_watcher, raw.fd, NS_WAITABLE_EVENT_IN, 0);
+#endif
+    EXPECT_OK(rc == NS_OK);
+    EXPECT_OK(ns_broker_add(&level_watcher) == NS_OK);
+    EXPECT_OK(ns_broker_remove(&level_watcher) == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&level_watcher) == NS_OK);
+
+    test_destroy_raw_waitable(raw);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: watcher with OUT/ERR events (Minor 4-B5)                     */
+/*  Verify NS_WAITABLE_EVENT_OUT and NS_WAITABLE_EVENT_ERR flags are   */
+/*  accepted during watcher init and produce a valid watcher.          */
+/* ------------------------------------------------------------------ */
+
+static int test_watcher_event_out_err(void)
+{
+    ns_watcher_t watcher_out, watcher_err;
+    ns_platform_waitable_t raw;
+    int rc;
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+
+    /* Watcher with EVENT_OUT flag */
+#if defined(_WIN32)
+    rc = ns_watcher_init_handle(&watcher_out, raw.handle, NS_WAITABLE_EVENT_OUT, 0);
+#else
+    rc = ns_watcher_init_fd(&watcher_out, raw.fd, NS_WAITABLE_EVENT_OUT, 0);
+#endif
+    EXPECT_OK(rc == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&watcher_out) == NS_OK);
+
+    /* Watcher with EVENT_ERR flag */
+#if defined(_WIN32)
+    rc = ns_watcher_init_handle(&watcher_err, raw.handle, NS_WAITABLE_EVENT_ERR, 0);
+#else
+    rc = ns_watcher_init_fd(&watcher_err, raw.fd, NS_WAITABLE_EVENT_ERR, 0);
+#endif
+    EXPECT_OK(rc == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&watcher_err) == NS_OK);
+
+    /* Combined flags: IN|OUT|ERR */
+    {
+        ns_watcher_t watcher_all;
+#if defined(_WIN32)
+        rc = ns_watcher_init_handle(&watcher_all, raw.handle,
+                                    NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR, 0);
+#else
+        rc = ns_watcher_init_fd(&watcher_all, raw.fd,
+                                NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR, 0);
+#endif
+        EXPECT_OK(rc == NS_OK);
+        EXPECT_OK(ns_watcher_deinit(&watcher_all) == NS_OK);
+    }
+
+    test_destroy_raw_waitable(raw);
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 }
@@ -521,6 +590,8 @@ int main(void)
     if(test_broker_error_continue() != 0) return 1;
     if(test_watcher_deinit_before_remove() != 0) return 1;
     if(test_broker_add_invalid_fd() != 0) return 1;
+    if(test_broker_edge_vs_level() != 0) return 1;
+    if(test_watcher_event_out_err() != 0) return 1;
 
     return 0;
 }

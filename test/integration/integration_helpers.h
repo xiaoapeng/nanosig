@@ -126,6 +126,21 @@ static inline void integration_verify_clean_shutdown(void)
     }
 }
 
+/**
+ * @brief No-op slot callback for use when only event delivery matters.
+ *
+ * Typically used with exit timers or barrier signals where the act of
+ * being called (or quitting the loop from the slot) is the verification.
+ *
+ * Example:
+ *   ns_signal_connect(&timer.signal, dummy_slot, loop, NULL, &conn);
+ */
+static void dummy_slot(void *user_data, const void *payload)
+{
+    (void)user_data;
+    (void)payload;
+}
+
 #ifdef __cplusplus
 }
 #endif

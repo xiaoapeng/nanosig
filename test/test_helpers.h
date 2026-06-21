@@ -111,8 +111,25 @@ static void test_signal_raw_waitable(ns_platform_waitable_t w)
 #else
     {
         uint64_t val = 1u;
-        (void)write(w.fd, &val, sizeof(val));
+        ssize_t n;
+        do {
+            n = write(w.fd, &val, sizeof(val));
+        } while(n < 0 && errno == EINTR);
+        (void)n;
     }
+#endif
+}
+
+/**
+ * @brief Check whether a raw waitable was created successfully.
+ * @return 0 if invalid, non-zero if valid.
+ */
+static inline int test_raw_waitable_is_valid(ns_platform_waitable_t w)
+{
+#if defined(_WIN32)
+    return w.handle != NULL;
+#else
+    return w.fd >= 0;
 #endif
 }
 

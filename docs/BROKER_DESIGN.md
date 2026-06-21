@@ -135,16 +135,13 @@ int ns_watcher_deinit(ns_watcher_t *watcher);
 ```c
 ns_event_broker_t *ns_broker(void);
 
-int ns_broker_add(
-    ns_event_broker_t *broker,
-    ns_watcher_t *watcher);
+int ns_broker_add(ns_watcher_t *watcher);
 
-int ns_broker_remove(
-    ns_event_broker_t *broker,
-    ns_watcher_t *watcher);
+int ns_broker_remove(ns_watcher_t *watcher);
 ```
 
-- `ns_broker()`：返回全局 broker 指针。`ns_init` 前返回 `NULL`。
+- `ns_broker()`：返回全局 broker 指针（仅供内部和测试使用）。`ns_init` 前返回 `NULL`。
+  公开 API 用户通常不需要此函数；`add` / `remove` 自动访问全局 broker。
 - `add`：注册 watcher 到 broker 的 waitset。同一 watcher 重复 add 返回
   `NS_E_EXISTS`。内部设置 `watcher->waitable.user_data = watcher`，平台
   waitset add 维护 `watcher->waitable.registered_waitset`。

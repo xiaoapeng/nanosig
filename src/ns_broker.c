@@ -219,12 +219,15 @@ static void ns_broker_run(void *arg)
     }
 }
 
-int ns_broker_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
+int ns_broker_add(ns_watcher_t *watcher)
 {
     int rc;
     int unlock_rc;
+    ns_event_broker_t *broker;
 
-    if((broker == NULL) || (watcher == NULL)) return NS_E_INVAL;
+    if(watcher == NULL) return NS_E_INVAL;
+    broker = g_broker;
+    if(broker == NULL) return NS_E_SHUTDOWN;
     if(!ns_watcher_is_initialized(watcher)) return NS_E_INVAL;
 
     rc = ns_platform_mutex_lock(broker->watcher_mutex);
@@ -249,12 +252,15 @@ int ns_broker_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
     return rc;
 }
 
-int ns_broker_remove(ns_event_broker_t *broker, ns_watcher_t *watcher)
+int ns_broker_remove(ns_watcher_t *watcher)
 {
     int rc;
     int unlock_rc;
+    ns_event_broker_t *broker;
 
-    if((broker == NULL) || (watcher == NULL)) return NS_E_INVAL;
+    if(watcher == NULL) return NS_E_INVAL;
+    broker = g_broker;
+    if(broker == NULL) return NS_E_SHUTDOWN;
     if(!ns_watcher_is_initialized(watcher)) return NS_E_INVAL;
 
     rc = ns_platform_mutex_lock(broker->watcher_mutex);

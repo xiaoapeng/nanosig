@@ -110,6 +110,26 @@ if(NANOSIG_BUILD_TESTS)
     # Previously unregistered stress test
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)
     set_tests_properties(nanosig_test_mpsc_record_ring_stress PROPERTIES TIMEOUT 1300 LABELS "stress;long-stability")
+
+    # ==========================================
+    # Integration tests — layered targets
+    # ==========================================
+    # Layer-1: Basic complex combinations (5 scenarios)
+    nanosig_add_unit_test(nanosig_test_integration_layer1 test/integration/test_layer1.c)
+    set_tests_properties(nanosig_test_integration_layer1 PROPERTIES LABELS "integration" TIMEOUT 30)
+
+    # Layer-2: Stress tests (4 scenarios)
+    nanosig_add_unit_test(nanosig_test_integration_layer2 test/integration/test_layer2.c)
+    set_tests_properties(nanosig_test_integration_layer2 PROPERTIES LABELS "integration" TIMEOUT 60)
+
+    # Layer-3: Behavior verification (6 scenarios)
+    nanosig_add_unit_test(nanosig_test_integration_layer3 test/integration/test_layer3.c)
+    set_tests_properties(nanosig_test_integration_layer3 PROPERTIES LABELS "integration" TIMEOUT 180)
+
+    # Long-stability: standalone for TIMEOUT+LABELS (1 scenario)
+    nanosig_add_unit_test(nanosig_test_integration_hive test/integration/test_hive.c)
+    set_tests_properties(nanosig_test_integration_hive PROPERTIES
+        LABELS "integration;long-stability" TIMEOUT 1500)
 endif()
 
 if(NANOSIG_BUILD_DEMOS)

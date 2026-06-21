@@ -4,7 +4,7 @@
 
 static void broker_contract_check_types(void)
 {
-    ns_event_broker_t *broker = ns_broker();
+    ns_event_broker_t *broker = NULL;
     ns_watcher_t watcher;
     ns_watcher_event_t event;
 
@@ -23,8 +23,8 @@ static void broker_contract_check_types(void)
     (void)ns_watcher_init_fd(&watcher, 0, NS_WAITABLE_EVENT_IN, 0);
     (void)ns_watcher_init_handle(&watcher, (void *)(uintptr_t)1u, NS_WAITABLE_EVENT_IN, 0);
     (void)ns_watcher_deinit(&watcher);
-    (void)ns_broker_add(broker, &watcher);
-    (void)ns_broker_remove(broker, &watcher);
+    (void)ns_broker_add(&watcher);
+    (void)ns_broker_remove(&watcher);
 }
 
 int main(void)

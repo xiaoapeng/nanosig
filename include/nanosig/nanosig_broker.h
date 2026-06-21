@@ -24,8 +24,8 @@ extern "C" {
 /**
  * @brief event broker 全局单例类型。
  *
- * broker 由 `ns_init()` 创建，由 `ns_shutdown()` 销毁。调用方通过
- * `ns_broker()` 获取指针，不直接分配或释放本类型。
+ * broker 由 `ns_init()` 创建，由 `ns_shutdown()` 销毁。调用方不需持有 broker
+ * 指针；`ns_broker_add()` 和 `ns_broker_remove()` 自动访问全局 broker。
  */
 typedef struct ns_event_broker ns_event_broker_t;
 
@@ -108,26 +108,17 @@ extern int ns_watcher_init_handle(ns_watcher_t *watcher, void *handle, uint32_t 
 extern int ns_watcher_deinit(ns_watcher_t *watcher);
 
 /**
- * @brief 获取全局 event broker。
- *
- * `ns_init()` 前和 `ns_shutdown()` 后返回 `NULL`。
- *
- * @return 全局 broker 指针，或 `NULL`。返回值在 `ns_init()` 与 `ns_shutdown()`
- * 之间恒定不变，可在任意线程安全读取。
- */
-extern ns_event_broker_t *ns_broker(void);
-
-/**
  * @brief 将 watcher 注册到 broker。
  *
  * 注册后，broker 线程等待 watcher 的 waitable；事件到达时 emit
  * `watcher->signal`，payload 为 `ns_watcher_event_t`。
  *
- * @param broker broker 指针，通常来自 `ns_broker()`。
+ * 必须在 `ns_init()` 之后、`ns_shutdown()` 之前调用。
+ *
  * @param watcher 已初始化的 watcher。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_broker_add(ns_event_broker_t *broker, ns_watcher_t *watcher);
+extern int ns_broker_add(ns_watcher_t *watcher);
 
 /**
  * @brief 从 broker 注销 watcher。
@@ -135,11 +126,10 @@ extern int ns_broker_add(ns_event_broker_t *broker, ns_watcher_t *watcher);
  * 注销不会撤销已经入队的 slot 调用；调用方仍需保证相关 `user_data`
  * 生命周期覆盖任何 in-flight emit。
  *
- * @param broker broker 指针，通常来自 `ns_broker()`。
  * @param watcher 已注册的 watcher。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_broker_remove(ns_event_broker_t *broker, ns_watcher_t *watcher);
+extern int ns_broker_remove(ns_watcher_t *watcher);
 
 #ifdef __cplusplus
 }
