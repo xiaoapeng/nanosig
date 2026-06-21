@@ -41,6 +41,7 @@ function(nanosig_add_api_compile_check name)
             -Wsign-conversion
             -Wno-psabi
             -I${PROJECT_SOURCE_DIR}/include
+            -I${CMAKE_BINARY_DIR}/include
             -I${PROJECT_SOURCE_DIR}
         )
     endif()
