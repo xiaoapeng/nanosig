@@ -13,7 +13,7 @@
 
 #define CHAOS_NUM_WATCHERS 5u
 #define CHAOS_NUM_TIMERS 3u
-#define CHAOS_RUN_DURATION_US (5u * 1000000u)  /* 5 seconds */
+#define CHAOS_RUN_DURATION_US (5u * 1000000u * integration_test_scale())  /* 5s x scale */
 #define CHAOS_OPS_PER_SECOND 20u
 
 #include <stdlib.h>

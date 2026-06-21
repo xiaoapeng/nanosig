@@ -12,7 +12,7 @@
 
 #define CKTL_NUM_TYPES 4u
 #define CKTL_SLOTS_PER_TYPE 3u
-#define CKTL_EMITS_PER_TYPE 500u
+#define CKTL_EMITS_PER_TYPE (500u * integration_test_scale())
 #define CKTL_LARGE_SIZE 1024u
 
 /* Small struct payload */

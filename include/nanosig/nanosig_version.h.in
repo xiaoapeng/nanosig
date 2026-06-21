@@ -1,0 +1,27 @@
+/**
+ * @file nanosig_version.h
+ * @brief nanosig 版本宏（由 CMake configure_file 自动生成）
+ *
+ * 不要直接编辑此文件，修改 CMakeLists.txt 中 project(nanosig VERSION ...) 后重新配置即可。
+ *
+ * @copyright Copyright (c) 2026 nanosig contributors
+ */
+
+#ifndef NANOSIG_VERSION_H
+#define NANOSIG_VERSION_H
+
+#define NANOSIG_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define NANOSIG_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define NANOSIG_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+/**
+ * @brief 版本号字符串 (semver: MAJOR.MINOR.PATCH)
+ *
+ * 使用示例:
+ * @code
+ *   printf("nanosig %s\n", NANOSIG_VERSION_STRING);
+ * @endcode
+ */
+#define NANOSIG_VERSION_STRING "@PROJECT_VERSION@"
+
+#endif /* NANOSIG_VERSION_H */

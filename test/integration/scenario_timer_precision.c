@@ -13,7 +13,7 @@
  */
 
 #define TP_NUM_TIMERS 5u
-#define TP_RUN_DURATION_US (3u * 1000000u)
+#define TP_RUN_DURATION_US (3u * 1000000u * integration_test_scale())
 
 static ns_loop_t *g_tp_loop;
 static ns_timer_t g_tp_timers[TP_NUM_TIMERS];

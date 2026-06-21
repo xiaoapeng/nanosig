@@ -18,6 +18,7 @@
 #include <nanosig/nanosig.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 #if defined(_WIN32)
@@ -139,6 +140,33 @@ static void dummy_slot(void *user_data, const void *payload)
 {
     (void)user_data;
     (void)payload;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test scale factor — runtime scaling via NANOSIG_TEST_SCALE         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Get the test scaling factor, cached from NANOSIG_TEST_SCALE env var.
+ *
+ * Returns 1 by default (CI fast path). Set e.g.:
+ *   NANOSIG_TEST_SCALE=10   for nightly runs (10x duration/counts)
+ *   NANOSIG_TEST_SCALE=100  for stress testing
+ */
+static inline unsigned int integration_test_scale(void)
+{
+    static int cached = 0;
+    static unsigned int scale = 1u;
+
+    if(!cached){
+        const char *env = getenv("NANOSIG_TEST_SCALE");
+        if(env != NULL){
+            int val = atoi(env);
+            if(val >= 1) scale = (unsigned int)val;
+        }
+        cached = 1;
+    }
+    return scale;
 }
 
 #ifdef __cplusplus

@@ -10,7 +10,7 @@
  * #included into test_layer2.c
  */
 
-#define RAND_CHAOS_RUN_US (3u * 1000000u) /* 3 seconds */
+#define RAND_CHAOS_RUN_US (3u * 1000000u * integration_test_scale()) /* 3s x scale */
 
 static ns_loop_t *g_rc_loop;
 static ns_signal_t g_rc_signal;

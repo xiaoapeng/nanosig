@@ -6,6 +6,15 @@ project(nanosig
     LANGUAGES C
 )
 
+# ── 版本头文件生成 ──────────────────────────────────────────────
+# 以 CMakeLists.txt 中 project(VERSION) 为唯一事实来源，
+# 自动生成 include/nanosig/nanosig_version.h（含 MAJOR / MINOR / PATCH / STRING）。
+configure_file(
+    ${PROJECT_SOURCE_DIR}/include/nanosig/nanosig_version.h.in
+    ${PROJECT_BINARY_DIR}/include/nanosig/nanosig_version.h
+    @ONLY
+)
+
 include(cmake/CompileWarnings.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/ApiCompileChecks.cmake)
@@ -54,6 +63,7 @@ add_library(nanosig::nanosig ALIAS nanosig)
 target_compile_features(nanosig PUBLIC c_std_11)
 target_include_directories(nanosig PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 target_include_directories(nanosig PRIVATE
@@ -114,22 +124,22 @@ if(NANOSIG_BUILD_TESTS)
     # ==========================================
     # Integration tests — layered targets
     # ==========================================
-    # Layer-1: Basic complex combinations (5 scenarios)
+    # Layer-1: Basic complex combinations (4 scenarios)
     nanosig_add_unit_test(nanosig_test_integration_layer1 test/integration/test_layer1.c)
-    set_tests_properties(nanosig_test_integration_layer1 PROPERTIES LABELS "integration" TIMEOUT 30)
+    set_tests_properties(nanosig_test_integration_layer1 PROPERTIES LABELS "integration;quick" TIMEOUT 30)
 
     # Layer-2: Stress tests (4 scenarios)
     nanosig_add_unit_test(nanosig_test_integration_layer2 test/integration/test_layer2.c)
-    set_tests_properties(nanosig_test_integration_layer2 PROPERTIES LABELS "integration" TIMEOUT 60)
+    set_tests_properties(nanosig_test_integration_layer2 PROPERTIES LABELS "integration;quick" TIMEOUT 60)
 
-    # Layer-3: Behavior verification (6 scenarios)
+    # Layer-3: Behavior verification (6 scenarios — includes marathon/idle)
     nanosig_add_unit_test(nanosig_test_integration_layer3 test/integration/test_layer3.c)
-    set_tests_properties(nanosig_test_integration_layer3 PROPERTIES LABELS "integration" TIMEOUT 180)
+    set_tests_properties(nanosig_test_integration_layer3 PROPERTIES LABELS "integration;nightly" TIMEOUT 180)
 
     # Long-stability: standalone for TIMEOUT+LABELS (1 scenario)
     nanosig_add_unit_test(nanosig_test_integration_hive test/integration/test_hive.c)
     set_tests_properties(nanosig_test_integration_hive PROPERTIES
-        LABELS "integration;long-stability" TIMEOUT 1500)
+        LABELS "integration;nightly;long-stability" TIMEOUT 1500)
 endif()
 
 if(NANOSIG_BUILD_DEMOS)

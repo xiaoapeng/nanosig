@@ -16,7 +16,7 @@
 
 #define LM_NUM_TIMERS 5u
 #define LM_NUM_WATCHERS 5u
-#define LM_PHASE_DURATION_US (3u * 1000000u) /* 3 seconds per phase */
+#define LM_PHASE_DURATION_US (3u * 1000000u * integration_test_scale()) /* 3s per phase x scale */
 #define LM_NUM_ROUNDS 3u
 
 static int scenario_lifecycle_marathon(void)

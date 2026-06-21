@@ -1,16 +1,16 @@
 /**
  * @file scenario_timer_storm.c
- * @brief 5000 timer burst within 100ms.
+ * @brief 500 timer burst within 100ms.
  * @date 2026-06-20
  *
- * Creates 5000 oneshot timers with 100us-1ms intervals,
+ * Creates 500 oneshot timers with 100us-1ms intervals,
  * all started within 100ms. Verifies all fire correctly.
  * Capacity: NS_CAPACITY_262144
  *
  * #included into test_layer2.c
  */
 
-#define STORM_NUM_TIMERS 500u  /* Reduced from 5000 for CI speed */
+#define STORM_NUM_TIMERS 500u  /* Array capacity; scaled exit via integration_test_scale */
 #define STORM_MAX_INTERVAL_US 1000u  /* 1ms */
 
 static ns_loop_t *g_storm_loop;
@@ -45,7 +45,6 @@ static int scenario_timer_storm(void)
 
     for(i = 0; i < STORM_NUM_TIMERS; i++){
         ns_time_us_t interval = (ns_time_us_t)((rand() % STORM_MAX_INTERVAL_US) + 100u);
-
         EXPECT_OK(ns_timer_create(&g_storm_timers[i], interval, 0) == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_storm_timers[i].signal, storm_slot,
                                     g_storm_loop, NULL, &g_storm_conns[i]) == NS_OK);

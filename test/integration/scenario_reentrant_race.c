@@ -11,7 +11,7 @@
  */
 
 #define RR_NUM_THREADS 8u
-#define RR_EMITS_PER_THREAD 100u
+#define RR_EMITS_PER_THREAD (100u * integration_test_scale())
 #define RR_NUM_WATCHERS 3u
 
 static ns_signal_t g_rr_signal;

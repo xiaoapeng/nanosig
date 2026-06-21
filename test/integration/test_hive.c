@@ -28,7 +28,7 @@
 
 #define NUM_WATCHERS   20u
 #define NUM_TIMERS    200u
-#define RUN_DURATION_US (120u * 1000000u)  /* 120 seconds */
+#define RUN_DURATION_US (120u * 1000000u * integration_test_scale())  /* 120s x scale */
 #define REPORT_INTERVAL_US (30u * 1000000u) /* every 30 seconds */
 
 /* ------------------------------------------------------------------ */

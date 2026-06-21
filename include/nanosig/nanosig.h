@@ -12,14 +12,11 @@
 #include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_safety.h>
+#include <nanosig/nanosig_version.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define NANOSIG_VERSION_MAJOR 0
-#define NANOSIG_VERSION_MINOR 1
-#define NANOSIG_VERSION_PATCH 0
 
 /**
  * @brief 初始化 nanosig 全局状态。

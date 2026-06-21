@@ -8,9 +8,11 @@
  * Capacity: NS_CAPACITY_1024 (no emit activity expected).
  *
  * #included into test_layer3.c
+ *
+ * Duration scaled by NANOSIG_TEST_SCALE env var.
  */
 
-#define IDLE_DURATION_US (3u * 1000000u) /* 3 seconds for CI speed */
+#define IDLE_DURATION_US (3u * 1000000u * integration_test_scale()) /* 3s × scale */
 
 static ns_loop_t *g_idle_loop;
 
@@ -35,7 +37,6 @@ static int scenario_idle(void)
     g_idle_loop = integration_create_loop(NS_CAPACITY_1024, "idle");
     EXPECT_OK(g_idle_loop != NULL);
 
-    /* Create a 3-second oneshot timer to auto-exit the loop */
     EXPECT_OK(ns_timer_create(&exit_timer, IDLE_DURATION_US, 0) == NS_OK);
     EXPECT_OK(ns_signal_connect(&exit_timer.signal, idle_exit_slot, g_idle_loop, NULL, &exit_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&exit_timer) == NS_OK);
