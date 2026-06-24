@@ -20,6 +20,7 @@
 #include <sys/event.h>
 #include <unistd.h>
 #else
+#include <errno.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 #endif
@@ -102,6 +103,9 @@ static void test_destroy_raw_waitable(ns_platform_waitable_t w)
 #endif
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void test_signal_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32

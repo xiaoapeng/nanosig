@@ -34,7 +34,7 @@ static void rr_slot(void *user_data, const void *payload)
     ns_atomic_fetch_add_explicit(&g_rr_count, 1, ns_memory_order_relaxed);
 
     /* Random operations inside slot */
-    i = (size_t)(rand() % RR_NUM_WATCHERS);
+    i = (size_t)((unsigned int)rand() % RR_NUM_WATCHERS);
     switch(rand() % 3){
     case 0:
         (void)ns_broker_add(&g_rr_watchers[i]);
@@ -54,12 +54,12 @@ static DWORD WINAPI rr_worker_main(LPVOID arg)
 static void *rr_worker_main(void *arg)
 #endif
 {
-    int i;
+    unsigned int i;
     (void)arg;
 
     ns_atomic_fetch_add_explicit(&g_rr_threads_ready, 1, ns_memory_order_release);
 
-    for(i = 0; i < RR_EMITS_PER_THREAD; i++){
+    for(i = 0u; i < RR_EMITS_PER_THREAD; i++){
         (void)ns_signal_emit_raw(&g_rr_signal, NULL, 0u);
     }
 

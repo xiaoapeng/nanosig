@@ -446,9 +446,11 @@ static int test_watcher_deinit_before_remove(void)
     EXPECT_OK(ns_broker_add(&watcher) == NS_OK);
 
     /* Deinit before remove — the operation should not crash.
-     * Remove after deinit may or may not succeed depending on platform. */
-    (void)ns_watcher_deinit(&watcher);
-    (void)ns_broker_remove(&watcher);
+     * ns_watcher_deinit returns NS_E_EXISTS because the watcher is still
+     * linked in the broker, so we must remove first, then deinit. */
+    EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_EXISTS);
+    EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
+    EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     test_destroy_raw_waitable(raw);

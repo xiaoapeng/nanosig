@@ -509,3 +509,31 @@
 nanosig v1 的行为契约测试覆盖度总体为 **良好（约 86%）**。P0-P4 模块的测试质量高，边界和负面路径覆盖好。P5-P6 的 signal/slot 和 broker/timer 测试覆盖了所有主要 happy path 和大部分边界，但存在 3 个 Critical 缺口（disconnect/broker_remove 不撤回、RELOAD_FROM_NOW timer attr、broker 错误容错）。建议在 P9.8 中优先补上这几个关键不变量测试。
 
 **未覆盖承诺：6/139 (4.3%)；部分覆盖：14/139 (10.1%)；已覆盖：119/139 (85.6%)**。
+
+---
+
+## P11.2 补丁记录（2026-06-24）
+
+以下 3 项行为契约变更来自 P11 Phase 2 集成测试验证阶段的 bug 修复。
+
+### B1. timerfd sentinel 过滤修复（Critical → 已关闭）
+
+- **位置**：`platform/linux/port.c:481-493`（`ns_platform_waitset_wait`）
+- **原问题**：timerfd sentinel（`0x1`）仅在 `timer_armed == 1` 时被过滤。broker 以 `INFINITE` 调用 waitset_wait 时 `timer_armed = 0`，sentinel 泄漏为合法 `waitable` 指针 → `ns_broker_emit_completion` 解引用 `0x9` 崩溃。
+- **修复**：sentinel 始终过滤；非 armed 路径 drain timerfd（`TFD_NONBLOCK` read），防止 epoll 重复报告。
+- **影响**：timer 测试 + 全部 4 个集成测试（layer1/2/3/hive）从 SEGFAULT 恢复为 PASS。
+- **契约更新**：waitset 行为契约"timerfd sentinel 在有限超时路径作为到期标记，在无限超时路径作为无害残余被 drain"已实现并验证。
+
+### B2. `test_watcher_deinit_before_remove` 泄漏修复（Major → 已关闭）
+
+- **位置**：`test/unit/test_broker.c:448-451`
+- **原问题**：测试先调 `ns_watcher_deinit`（返回 `NS_E_EXISTS`，因 watcher 仍 linked）再调 `ns_broker_remove`，signal mutex 从未释放 → LeakSanitizer 报告 40 字节泄漏。
+- **修复**：验证 `deinit → NS_E_EXISTS`，再 `remove → OK`，再 `deinit → OK`。资源正确清理。
+- **契约更新**：对应行为契约审计 §缺口表第 11 项（line 436/499）已关闭。测试现在验证文档契约："deinit 前必须先 remove"。
+
+### B3. level_triggered 测试语义修正（Minor → 已关闭）
+
+- **位置**：`test/unit/test_platform_backend.c:849-870`
+- **原问题**：测试期望 level-triggered epoll 下 eventfd 被 waitset 自动 drain（第二次 wait 返回 `cnt == 0`）。但 waitset 设计原则是"只报告就绪，不消费事件"。
+- **修复**：测试期望改为 `cnt >= 1u`（电平触发：eventfd 未 drain 时 epoll 仍报告 ready）。注释同步更新。
+- **契约更新**：对应行为契约审计 §缺口表第 15 项（line 446）的 level_triggered 语义已明确：waitset 不负责 drain，调用方自行消费。

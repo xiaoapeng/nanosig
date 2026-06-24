@@ -38,7 +38,7 @@ extern "C" {
 
 #define INTEGRATION_PHASE(fmt, ...) \
     do { \
-        fprintf(stdout, "[PHASE] " fmt "\n", ##__VA_ARGS__); \
+        fprintf(stdout, "[PHASE] " fmt "\n", ##__VA_ARGS__); (void)0; \
         fflush(stdout); \
     } while(0)
 
@@ -136,6 +136,9 @@ static inline void integration_verify_clean_shutdown(void)
  * Example:
  *   ns_signal_connect(&timer.signal, dummy_slot, loop, NULL, &conn);
  */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void dummy_slot(void *user_data, const void *payload)
 {
     (void)user_data;

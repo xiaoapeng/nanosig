@@ -21,9 +21,9 @@
 
 static int scenario_lifecycle_marathon(void)
 {
-    int round, i;
+    unsigned int round, i;
 
-    for(round = 0; round < LM_NUM_ROUNDS; round++){
+    for(round = 0u; round < LM_NUM_ROUNDS; round++){
         ns_loop_t *loop = NULL;
         ns_timer_t timers[LM_NUM_TIMERS];
         ns_connection_t timer_conns[LM_NUM_TIMERS];
@@ -32,11 +32,8 @@ static int scenario_lifecycle_marathon(void)
         ns_platform_waitable_t raw[LM_NUM_WATCHERS];
         ns_signal_t signal;
         ns_connection_t sig_conn;
-        ns_timer_t phase_timer;
-        ns_connection_t phase_conn;
-        int rc;
 
-        INTEGRATION_PHASE("marathon: round %d/3 start", round + 1);
+        INTEGRATION_PHASE("marathon: round %u/3 start", round + 1u);
         EXPECT_OK(ns_init() == NS_OK);
 
         loop = integration_create_loop(NS_CAPACITY_16384, "marathon");
@@ -47,8 +44,8 @@ static int scenario_lifecycle_marathon(void)
         EXPECT_OK(ns_signal_connect(&signal, dummy_slot, loop, NULL, &sig_conn) == NS_OK);
 
         /* Phase 1: Create timers */
-        INTEGRATION_PHASE("marathon: round %d phase 1 — create %d timers", round + 1, LM_NUM_TIMERS);
-        for(i = 0; i < LM_NUM_TIMERS; i++){
+        INTEGRATION_PHASE("marathon: round %u phase 1 — create %u timers", round + 1u, LM_NUM_TIMERS);
+        for(i = 0u; i < LM_NUM_TIMERS; i++){
             EXPECT_OK(ns_timer_create(&timers[i], 100000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
             EXPECT_OK(ns_signal_connect(&timers[i].signal, dummy_slot, loop, NULL, &timer_conns[i]) == NS_OK);
             EXPECT_OK(ns_timer_start(&timers[i]) == NS_OK);
@@ -60,8 +57,8 @@ static int scenario_lifecycle_marathon(void)
 #endif
 
         /* Phase 2: Create watchers */
-        INTEGRATION_PHASE("marathon: round %d phase 2 — create %d watchers", round + 1, LM_NUM_WATCHERS);
-        for(i = 0; i < LM_NUM_WATCHERS; i++){
+        INTEGRATION_PHASE("marathon: round %u phase 2 — create %u watchers", round + 1u, LM_NUM_WATCHERS);
+        for(i = 0u; i < LM_NUM_WATCHERS; i++){
             raw[i] = test_create_raw_waitable();
             EXPECT_OK(test_raw_waitable_is_valid(raw[i]));
 #if defined(_WIN32)
@@ -79,12 +76,12 @@ static int scenario_lifecycle_marathon(void)
 #endif
 
         /* Phase 3: Mixed operations */
-        INTEGRATION_PHASE("marathon: round %d phase 3 — mixed ops", round + 1);
-        for(i = 0; i < LM_NUM_TIMERS; i++){
+        INTEGRATION_PHASE("marathon: round %u phase 3 — mixed ops", round + 1u);
+        for(i = 0u; i < LM_NUM_TIMERS; i++){
             (void)ns_timer_cancel(&timers[i]);
             (void)ns_timer_start(&timers[i]);
         }
-        for(i = 0; i < LM_NUM_WATCHERS; i++){
+        for(i = 0u; i < LM_NUM_WATCHERS; i++){
             (void)ns_broker_remove(&watchers[i]);
             (void)ns_broker_add(&watchers[i]);
         }
@@ -95,29 +92,29 @@ static int scenario_lifecycle_marathon(void)
 #endif
 
         /* Phase 4: Teardown */
-        INTEGRATION_PHASE("marathon: round %d phase 4 — shutdown", round + 1);
+        INTEGRATION_PHASE("marathon: round %u phase 4 — shutdown", round + 1u);
         EXPECT_OK(ns_loop_stop(loop) == NS_OK);
 
         EXPECT_OK(ns_signal_disconnect(&sig_conn) == NS_OK);
         EXPECT_OK(ns_signal_deinit_raw(&signal) == NS_OK);
 
-        for(i = 0; i < LM_NUM_WATCHERS; i++){
+        for(i = 0u; i < LM_NUM_WATCHERS; i++){
             (void)ns_broker_remove(&watchers[i]);
             EXPECT_OK(ns_signal_disconnect(&watcher_conns[i]) == NS_OK);
             EXPECT_OK(ns_watcher_deinit(&watchers[i]) == NS_OK);
             test_destroy_raw_waitable(raw[i]);
         }
-        for(i = 0; i < LM_NUM_TIMERS; i++){
+        for(i = 0u; i < LM_NUM_TIMERS; i++){
             EXPECT_OK(ns_signal_disconnect(&timer_conns[i]) == NS_OK);
             EXPECT_OK(ns_timer_destroy(&timers[i]) == NS_OK);
         }
         EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
         integration_verify_clean_shutdown();
-        INTEGRATION_PASS("marathon: round %d/3 complete", round + 1);
+        INTEGRATION_PASS("marathon: round %u/3 complete", round + 1u);
     }
 
-    INTEGRATION_PASS("marathon: all %d rounds completed without leak", LM_NUM_ROUNDS);
+    INTEGRATION_PASS("marathon: all %u rounds completed without leak", LM_NUM_ROUNDS);
     return 0;
 }
 

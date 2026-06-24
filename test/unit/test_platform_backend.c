@@ -846,7 +846,7 @@ static int test_waitset_edge_triggered(void)
     return 0;
 }
 
-/** level_triggered：signal → wait → 再 wait 不触发（底层事件已消费） */
+/** level_triggered：signal → wait → 再 wait 仍触发（底层事件未消费） */
 static int test_waitset_level_triggered(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -864,10 +864,10 @@ static int test_waitset_level_triggered(void)
     if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
     if(expect_true(cnt == 1u) != 0) return 1;
 
-    /* 再 wait → 不触发（eventfd 已 drain） */
-    cnt = 99u;
+    /* 再 wait → 仍触发（电平触发：eventfd 未 drain，epoll 仍报告 ready） */
+    cnt = 0u;
     if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 0u) != 0) return 1;
+    if(expect_true(cnt >= 1u) != 0) return 1;
 
     if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
     test_destroy_raw_waitable(w);

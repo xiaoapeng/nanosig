@@ -37,12 +37,12 @@ static DWORD WINAPI ss_worker_main(LPVOID arg)
 static void *ss_worker_main(void *arg)
 #endif
 {
-    int i;
+    unsigned int i;
     (void)arg;
 
     ns_atomic_fetch_add_explicit(&g_ss_threads_ready, 1, ns_memory_order_release);
 
-    for(i = 0; i < SIGSTORM_EMITS_PER_THREAD; i++){
+    for(i = 0u; i < SIGSTORM_EMITS_PER_THREAD; i++){
         (void)ns_signal_emit_raw(&g_ss_signal, NULL, 0u);
     }
 
@@ -129,11 +129,11 @@ static int scenario_signal_storm(void)
 #endif
 
     /* Verify counts */
-    INTEGRATION_PHASE("signal_storm: verifying %zu slot counts",
+    INTEGRATION_PHASE("signal_storm: verifying %u slot counts",
                       SIGSTORM_SLOTS_PER_LOOP * 2u);
     for(i = 0u; i < SIGSTORM_SLOTS_PER_LOOP * 2u; i++){
         int cnt = ns_atomic_load_explicit(&g_ss_counts[i], ns_memory_order_acquire);
-        if(cnt != SIGSTORM_EXPECTED_PER_SLOT){
+        if(cnt != (int)SIGSTORM_EXPECTED_PER_SLOT){
             INTEGRATION_STATS("signal_storm: slot[%zu] = %d (expected %d)",
                               i, cnt, SIGSTORM_EXPECTED_PER_SLOT);
             all_ok = 0;
@@ -155,7 +155,7 @@ static int scenario_signal_storm(void)
 
     integration_verify_clean_shutdown();
     if(all_ok){
-        INTEGRATION_PASS("signal_storm: all %zu slots received %d emits",
+        INTEGRATION_PASS("signal_storm: all %u slots received %u emits",
                          SIGSTORM_SLOTS_PER_LOOP * 2u, SIGSTORM_EXPECTED_PER_SLOT);
     }
     return all_ok ? 0 : 1;

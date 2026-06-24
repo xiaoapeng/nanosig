@@ -383,3 +383,21 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
   风格对齐。
 
 整体 v1 资源契约可被谨慎使用方接受；建议在下一次小版本迭代中处理上述 6 项 Major 文档/防御加固。
+
+---
+
+## P11.2 补丁记录（2026-06-24）
+
+### R1. timerfd 资源管理补丁
+
+- **位置**：`platform/linux/port.c:487-491`
+- **变更**：非 armed 路径（`INFINITE`/`0` timeout）下，epoll 报告 timerfd sentinel 时增加 `read()` drain。timerfd 以 `TFD_NONBLOCK` 创建，read 不阻塞。
+- **资源影响**：timerfd 创建/销毁路径不变（`waitset_create` 时创建，`waitset_destroy` 时关闭）。新增的 drain 路径不创建或销毁任何资源，仅消费内核侧的 timerfd 计数器。
+- **结论**：资源生命周期审计结论不受影响。
+
+### R2. broker 测试资源清理修正
+
+- **位置**：`test/unit/test_broker.c:448-453`
+- **变更**：`test_watcher_deinit_before_remove` 从"先 deinit 后 remove"改为"验证 deinit 返回 NS_E_EXISTS → remove → deinit"。
+- **资源影响**：signal mutex 现在被正确释放（通过第二次成功的 deinit）。消除了 LeakSanitizer 报告的 40 字节泄漏。
+- **结论**：验证了 `ns_watcher_deinit` 的资源清理路径在正确调用顺序下工作正常。

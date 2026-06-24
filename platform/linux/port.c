@@ -481,8 +481,17 @@ int ns_platform_waitset_wait(
         for(i = 0; i < nfds && (size_t)*out_count < max_completions; i++){
             ns_platform_waitable_t *wp = (ns_platform_waitable_t *)events[i].data.ptr;
 
-            /* timerfd sentinel → timeout，不报告 completion */
-            if(timer_armed && wp == NS_WAITSET_TIMER_SENTINEL) return NS_OK;
+            /* timerfd sentinel → 不报告 completion */
+            if(wp == NS_WAITSET_TIMER_SENTINEL){
+                if(timer_armed) return NS_OK; /* 有限超时 → 到期 */
+                /* 非 armed 路径（INFINITE/0）：残余 readiness，drain timerfd */
+                {
+                    uint64_t dummy;
+                    ssize_t rd = read(waitset->timer_fd, &dummy, sizeof(dummy));
+                    (void)rd;
+                }
+                continue;
+            }
 
             completions[*out_count].waitable = wp;
             completions[*out_count].triggered_events = ns_waitset_from_epoll_events(events[i].events);

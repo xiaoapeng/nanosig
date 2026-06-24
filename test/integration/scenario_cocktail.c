@@ -29,7 +29,7 @@ typedef struct {
     uint8_t data[CKTL_LARGE_SIZE - 8u];
 } cktl_large_t;
 
-#define CKTL_MAGIC 0xDEADBEEF
+#define CKTL_MAGIC ((int32_t)0xDEADBEEF)
 
 static const size_t g_cktl_payload_sizes[CKTL_NUM_TYPES] = 
     {0u, sizeof(int32_t), sizeof(cktl_small_t), sizeof(cktl_large_t)};

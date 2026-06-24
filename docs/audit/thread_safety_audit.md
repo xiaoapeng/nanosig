@@ -157,3 +157,14 @@ v1 线程安全契约**整体成立**：
 - 在 README / 共识计划追加"v1 公开 API 并发类速查表"（可由本审计 §摘要 直接抽取）。
 
 结论：v1 不存在会误导调用方的 Critical 级问题；Major 级问题全部为文档缺失，可在 v1.0 之前用最低成本补齐。
+
+---
+
+## P11.2 补丁记录（2026-06-24）
+
+### T1. timerfd sentinel 过滤 — broker 线程安全补丁
+
+- **位置**：`platform/linux/port.c:481-493`
+- **变更**：`ns_platform_waitset_wait` 中 timerfd sentinel 过滤从 `timer_armed && wp == SENTINEL` 改为 `wp == SENTINEL`（始终过滤）。非 armed 路径增加 `read()` drain timerfd。
+- **线程安全影响**：无新增并发约束。sentinel 过滤和 timerfd drain 都在 broker 线程内部执行，不涉及跨线程共享状态。broker 线程安全模型不变。
+- **结论**：线程安全审计结论不受影响，无需修订。
