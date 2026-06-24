@@ -122,7 +122,7 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_signal_init_raw(&g_rc_signal, 0u, 0u, "rc_sig") == NS_OK);
     EXPECT_OK(ns_signal_connect(&g_rc_signal, rc_dummy_slot, g_rc_loop, NULL, &g_rc_conn) == NS_OK);
 
-    EXPECT_OK(ns_timer_create(&g_rc_timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
+    EXPECT_OK(ns_timer_init(&g_rc_timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
     EXPECT_OK(ns_signal_connect(&g_rc_timer.signal, rc_dummy_slot, g_rc_loop, NULL, &g_rc_timer_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&g_rc_timer) == NS_OK);
 
@@ -156,7 +156,7 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_loop_stop(g_rc_loop) == NS_OK);
 
     EXPECT_OK(ns_signal_disconnect(&g_rc_timer_conn) == NS_OK);
-    EXPECT_OK(ns_timer_destroy(&g_rc_timer) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&g_rc_timer) == NS_OK);
 
     (void)ns_broker_remove(&g_rc_watcher);
     EXPECT_OK(ns_signal_disconnect(&g_rc_wconn) == NS_OK);
@@ -166,7 +166,7 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_signal_disconnect(&g_rc_conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&g_rc_signal) == NS_OK);
 
-    EXPECT_OK(ns_loop_destroy(g_rc_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_rc_loop) == NS_OK);
     g_rc_loop = NULL;
 
     integration_verify_clean_shutdown();

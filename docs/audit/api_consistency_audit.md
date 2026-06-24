@@ -111,9 +111,9 @@
 
 - `nanosig.h`: `extern int ns_init(void)`, `ns_shutdown`, `ns_is_initialized`
 - `nanosig_signal.h`: `extern int ns_signal_init_raw`, `ns_signal_connect`, `ns_signal_disconnect`, `ns_signal_disconnect_all`, `ns_signal_emit_raw`, `ns_signal_deinit_raw`
-- `nanosig_loop.h`: `extern int ns_loop_create`, `ns_loop_destroy`, `ns_loop_run`, `ns_loop_quit`, `ns_loop_start`, `ns_loop_stop`
+- `nanosig_loop.h`: `extern int ns_loop_init`, `ns_loop_deinit`, `ns_loop_run`, `ns_loop_quit`, `ns_loop_start`, `ns_loop_stop`
 - `nanosig_broker.h`: `extern int ns_watcher_init_fd`, `ns_watcher_init_handle`, `ns_watcher_deinit`, `extern ns_event_broker_t *ns_broker`, `extern int ns_broker_add`, `ns_broker_remove`
-- `nanosig_timer.h`: `extern int ns_timer_create`, `ns_timer_start`, `ns_timer_cancel`, `ns_timer_restart`, `ns_timer_destroy`
+- `nanosig_timer.h`: `extern int ns_timer_init`, `ns_timer_start`, `ns_timer_cancel`, `ns_timer_restart`, `ns_timer_deinit`
 - `nanosig_rbtree.h`: 17 个 `extern` 函数
 - `nanosig_ringbuf.h`: 13 个 `extern` 函数
 - `nanosig_hashtable.h`: 7 个 `extern` 函数
@@ -148,7 +148,7 @@
 | --- | --- | --- | --- |
 | `NS_OK` | 成功 | 全部函数 | = 0 |
 | `NS_E_QUEUE_FULL` | 队列满 | `ns_mpsc_record_ring_try_push`, `ns_mpsc_record_ring_try_pushv` | = -1 |
-| `NS_E_NOMEM` | 内存不足 | `ns_signal_init_raw`, `ns_loop_create` | = -2 |
+| `NS_E_NOMEM` | 内存不足 | `ns_signal_init_raw`, `ns_loop_init` | = -2 |
 | `NS_E_INVAL` | 参数无效 | 几乎所有函数 | = -3 |
 | `NS_E_TOO_MANY_HANDLES` | 句柄数超限 | Windows waitset | = -4 |
 | `NS_E_SHUTDOWN` | 系统已关闭 | 全局相关函数 | = -5 |
@@ -199,8 +199,8 @@
 
 | 函数 | 参数顺序 | 一致性 |
 | --- | --- | --- |
-| `ns_loop_create(out_loop, config)` | 输出指针在前 | PASS |
-| `ns_loop_destroy(loop)` | 单一参数 | PASS |
+| `ns_loop_init(out_loop, config)` | 输出指针在前 | PASS |
+| `ns_loop_deinit(loop)` | 单一参数 | PASS |
 | `ns_loop_run(loop)` | 单一参数 | PASS |
 | `ns_loop_quit(loop)` | 单一参数 | PASS |
 | `ns_loop_start(loop)` | 单一参数 | PASS |
@@ -210,8 +210,8 @@
 
 | 函数 | 参数顺序 | 一致性 |
 | --- | --- | --- |
-| `ns_timer_create(timer, interval_us, attr)` | 对象先行 | PASS |
-| `ns_timer_start(timer)` ~ `ns_timer_destroy(timer)` | 单一参数 | PASS |
+| `ns_timer_init(timer, interval_us, attr)` | 对象先行 | PASS |
+| `ns_timer_start(timer)` ~ `ns_timer_deinit(timer)` | 单一参数 | PASS |
 
 ### 4.5 Broker API
 
@@ -294,7 +294,7 @@
 | --- | --- |
 | `nanosig.h` | `ns_init`(1), `ns_shutdown`(4) |
 | `nanosig_signal.h` | `ns_signal_init`, `ns_signal_init_raw`, `ns_signal_connect`, `ns_signal_disconnect`, `ns_signal_disconnect_all`, `ns_signal_emit_raw`, `ns_signal_deinit_raw` |
-| `nanosig_loop.h` | `ns_loop_create`, `ns_loop_destroy` |
+| `nanosig_loop.h` | `ns_loop_init`, `ns_loop_deinit` |
 | `nanosig_timer.h` | 无 `@pre` |
 | `nanosig_broker.h` | 无 `@pre` |
 | `nanosig_rbtree.h` | 无 `@pre` |
@@ -330,8 +330,8 @@
 | 对象 | 初始化 | 销毁 | 性质 |
 | --- | --- | --- | --- |
 | `ns_signal_t` | `ns_signal_init_raw` / `ns_signal_init`（宏） | `ns_signal_deinit_raw` / `ns_signal_deinit`（宏） | 调用方拥有存储，alloc mutex |
-| `ns_loop_t` | `ns_loop_create` | `ns_loop_destroy` | 不透明句柄，堆分配 |
-| `ns_timer_t` | `ns_timer_create` | `ns_timer_destroy` | 调用方拥有存储，alloc mutex（内嵌 signal） |
+| `ns_loop_t` | `ns_loop_init` | `ns_loop_deinit` | 不透明句柄，堆分配 |
+| `ns_timer_t` | `ns_timer_init` | `ns_timer_deinit` | 调用方拥有存储，alloc mutex（内嵌 signal） |
 | `ns_watcher_t` | `ns_watcher_init_fd` / `ns_watcher_init_handle` | `ns_watcher_deinit` | 调用方拥有存储，alloc mutex（内嵌 signal） |
 | `ns_ringbuf_t` | `ns_ringbuf_init` | (无，调用方管理存储) | 纯初始化，无 alloc |
 | `ns_hashtable_t` | `ns_hashtable_init` | (无，调用方管理存储) | 纯初始化，无 alloc |
@@ -340,7 +340,7 @@
 
 | 问题 | 严重度 | 说明 |
 | --- | --- | --- |
-| timer 和 signal 都是调用方拥有存储且都分配 mutex，但 timer 用 `_create`/`_destroy`，signal 用 `_init`/`_deinit` | Info | `ns_timer_create` 覆盖 init+start 准备状态，语义上比 `ns_signal_init_raw` 更重；但两者基础模式相同。建议在 API 设计文档中明确区分规则。 |
+| timer 和 signal 都是调用方拥有存储且都分配 mutex，但 timer 用 `_create`/`_destroy`，signal 用 `_init`/`_deinit` | Info | `ns_timer_init` 覆盖 init+start 准备状态，语义上比 `ns_signal_init_raw` 更重；但两者基础模式相同。建议在 API 设计文档中明确区分规则。 |
 | watcher 使用 `ns_watcher_init_fd` / `ns_watcher_init_handle` 而非 `ns_watcher_create_fd`，但使用 `ns_watcher_deinit` 而非 `destroy` | Info | init 前缀一致（与 signal 对齐），`deinit` 与 init 对称。合理但值得注意。 |
 
 ### 6.4 公开头中无 `__safety` 注解
@@ -388,11 +388,11 @@
 
 ### Info（5）
 
-1. `ns_timer_create`/`ns_timer_destroy` vs `ns_signal_init_raw`/`ns_signal_deinit_raw` 命名模式不一致：两者都是调用方拥有存储 + 内部 alloc mutex，但一对用 create/destroy，另一对用 init/deinit。
+1. `ns_timer_init`/`ns_timer_deinit` vs `ns_signal_init_raw`/`ns_signal_deinit_raw` 命名模式不一致：两者都是调用方拥有存储 + 内部 alloc mutex，但一对用 create/destroy，另一对用 init/deinit。
 
 2. `ns_watcher_init_fd`/`ns_watcher_init_handle` 使用 `init_*` 而非 `create_*` 做前置动作，但对应的析构是 `deinit`（而非 `destroy`）。内部一致但与其他模块比对有差异。
 
-3. 公开头中未使用 `@warning` / `@note` 标签。建议在 `ns_signal_emit_raw`（emit 路径零分配承诺）、`ns_loop_destroy`（销毁前需断开连接等约束）等场合加入 `@warning` 提升可见性。
+3. 公开头中未使用 `@warning` / `@note` 标签。建议在 `ns_signal_emit_raw`（emit 路径零分配承诺）、`ns_loop_deinit`（销毁前需断开连接等约束）等场合加入 `@warning` 提升可见性。
 
 4. `nanosig_ringbuf.h` 的 `ns_ringbuf_write` / `ns_ringbuf_read` 与 POSIX 系统调用同名，但 C 链接层无冲突。建议在文档中注明。
 

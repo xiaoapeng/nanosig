@@ -126,9 +126,9 @@ static int setup_timers(void)
         /* Random interval between 1ms and 5000ms */
         ns_time_us_t interval_us = (ns_time_us_t)((rand() % 5000) + 1) * 1000u;
 
-        rc = ns_timer_create(&g_timers[i], interval_us, NS_TIMER_ATTR_REPEAT);
+        rc = ns_timer_init(&g_timers[i], interval_us, NS_TIMER_ATTR_REPEAT);
         if(rc != NS_OK){
-            INTEGRATION_PHASE("hive: ns_timer_create %zu failed (rc=%d)", i, rc);
+            INTEGRATION_PHASE("hive: ns_timer_init %zu failed (rc=%d)", i, rc);
             return -1;
         }
         rc = ns_signal_connect(&g_timers[i].signal, hive_timer_slot,
@@ -164,12 +164,12 @@ static int teardown_all(void)
     /* Cancel and destroy timers */
     for(i = 0u; i < NUM_TIMERS; i++){
         (void)ns_signal_disconnect(&g_timer_conns[i]);
-        (void)ns_timer_destroy(&g_timers[i]);
+        (void)ns_timer_deinit(&g_timers[i]);
     }
 
     if(g_loop != NULL){
         (void)ns_loop_stop(g_loop);
-        (void)ns_loop_destroy(g_loop);
+        (void)ns_loop_deinit(g_loop);
         g_loop = NULL;
     }
 
@@ -202,7 +202,7 @@ int main(void)
     EXPECT_OK(ns_loop_start(g_loop) == NS_OK);
 
     /* Create a 120s oneshot timer to auto-exit the loop */
-    EXPECT_OK(ns_timer_create(&exit_timer, RUN_DURATION_US, 0) == NS_OK);
+    EXPECT_OK(ns_timer_init(&exit_timer, RUN_DURATION_US, 0) == NS_OK);
     EXPECT_OK(ns_signal_connect(&exit_timer.signal, hive_timer_slot,
                                 g_loop, NULL, &exit_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&exit_timer) == NS_OK);
@@ -254,7 +254,7 @@ int main(void)
 
     /* Cleanup exit timer */
     (void)ns_signal_disconnect(&exit_conn);
-    (void)ns_timer_destroy(&exit_timer);
+    (void)ns_timer_deinit(&exit_timer);
 
     EXPECT_OK(teardown_all() == 0);
     INTEGRATION_PASS("hive: ALL PASSED");

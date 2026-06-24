@@ -95,7 +95,7 @@ static int scenario_reentrant_race(void)
     EXPECT_OK(ns_signal_init_raw(&g_rr_signal, 0u, 0u, "rr_sig") == NS_OK);
     EXPECT_OK(ns_signal_connect(&g_rr_signal, rr_slot, g_rr_loop, NULL, &g_rr_conn) == NS_OK);
 
-    EXPECT_OK(ns_timer_create(&g_rr_timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
+    EXPECT_OK(ns_timer_init(&g_rr_timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
     EXPECT_OK(ns_signal_connect(&g_rr_timer.signal, rr_slot, g_rr_loop, NULL, &g_rr_timer_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&g_rr_timer) == NS_OK);
 
@@ -148,7 +148,7 @@ static int scenario_reentrant_race(void)
     EXPECT_OK(ns_loop_stop(g_rr_loop) == NS_OK);
 
     EXPECT_OK(ns_signal_disconnect(&g_rr_timer_conn) == NS_OK);
-    EXPECT_OK(ns_timer_destroy(&g_rr_timer) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&g_rr_timer) == NS_OK);
 
     for(i = 0u; i < RR_NUM_WATCHERS; i++){
         (void)ns_broker_remove(&g_rr_watchers[i]);
@@ -160,7 +160,7 @@ static int scenario_reentrant_race(void)
     EXPECT_OK(ns_signal_disconnect(&g_rr_conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&g_rr_signal) == NS_OK);
 
-    EXPECT_OK(ns_loop_destroy(g_rr_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_rr_loop) == NS_OK);
     g_rr_loop = NULL;
 
     integration_verify_clean_shutdown();

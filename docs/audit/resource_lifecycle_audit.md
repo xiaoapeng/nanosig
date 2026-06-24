@@ -10,9 +10,9 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 
 - **资源对总数**：5 类资源 ×（create / init / add ↔ destroy / deinit / remove）
   - 全局：`ns_init` ↔ `ns_shutdown`（单例）
-  - loop：`ns_loop_create` ↔ `ns_loop_destroy`
+  - loop：`ns_loop_init` ↔ `ns_loop_deinit`
   - signal：`ns_signal_init[_raw]` ↔ `ns_signal_deinit[_raw]`（含 `connect` ↔ `disconnect`、`disconnect_all`）
-  - timer：`ns_timer_create` ↔ `ns_timer_destroy`
+  - timer：`ns_timer_init` ↔ `ns_timer_deinit`
   - watcher：`ns_watcher_init_fd / _handle` ↔ `ns_watcher_deinit` + broker：`ns_broker_add` ↔ `ns_broker_remove`
 - **资源对象统计**：
   - 调用方自持对象：4 类（`ns_loop_t` / `ns_signal_t` / `ns_timer_t` / `ns_watcher_t`）
@@ -31,10 +31,10 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 | 资源 | create / init | destroy / deinit | 所有权 | 重复 init 行为 | 重复 destroy 行为 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 全局 runtime | `ns_init()` | `ns_shutdown()` | 库（`g_ns_initialized` 标志 + `ns_event_broker_t` 单例 + 平台层） | 返回 `NS_E_EXISTS`（`src/nanosig.c:78`） | 幂等：未初始化时直接返回 `NS_OK`（`src/nanosig.c:97`）；注意：调用方已 destroy loop / timer / watcher 后再调，库不再内部检查（`include/nanosig/nanosig.h:43-46`） | init 失败路径：先创建 platform，失败回滚；broker 失败时回滚 platform。shutdown 仅在已 init 时生效，未 init 直接返回 OK。 |
-| loop | `ns_loop_create(out_loop, config)` | `ns_loop_destroy(loop)` | 调用方（`ns_loop_t` 由 `ns_platform_alloc` 分配，库仅做生命周期） | 无显式检测；若对已创建 loop 再次 create，行为由调用方控制（不在本次审计范围） | 拒绝销毁：loop 仍 `running` 返回 `NS_E_INVAL`，存在 `async_thread` 返回 `NS_E_BUSY`（`src/nanosig.c:164-166`） | 分配合并：`sizeof(*loop)` 对齐 + `queue_byte_capacity` 一次性 `ns_platform_alloc`（`src/nanosig.c:130-133`）；销毁先 wakeup_destroy 再 free 整体。 |
+| loop | `ns_loop_init(out_loop, config)` | `ns_loop_deinit(loop)` | 调用方（`ns_loop_t` 由 `ns_platform_alloc` 分配，库仅做生命周期） | 无显式检测；若对已创建 loop 再次 create，行为由调用方控制（不在本次审计范围） | 拒绝销毁：loop 仍 `running` 返回 `NS_E_INVAL`，存在 `async_thread` 返回 `NS_E_BUSY`（`src/nanosig.c:164-166`） | 分配合并：`sizeof(*loop)` 对齐 + `queue_byte_capacity` 一次性 `ns_platform_alloc`（`src/nanosig.c:130-133`）；销毁先 wakeup_destroy 再 free 整体。 |
 | signal | `ns_signal_init(signal, type)` 宏 ↔ `ns_signal_init_raw(signal, payload_size, slot_capacity, debug_name)` | `ns_signal_deinit(signal)` 宏 ↔ `ns_signal_deinit_raw(signal)` | 调用方 | 宏展开为 `_raw`；`init_raw` 不检测"已初始化"；重复 init 行为未文档化（现状：会再创建新 mutex，旧 mutex 句柄泄漏——见"关键发现"） | `deinit_raw` 在 `mutex == NULL` 时直接返回 `NS_OK`（`src/nanosig.c:312`），符合"已 deinit 后再 deinit 幂等"；未 init 时 `mutex` 为 `NULL` 走幂等分支 | 内部状态：`payload_size` / `slot_capacity` / `slot_list` / `mutex`。`init_raw` 失败回滚：不创建 mutex 时 `mutex` 保持 `NULL`，无泄漏。`deinit_raw` 不释放 `slot_list` 中 connection 节点（已 `ns_list_init`），由调用方保证 disconnect 在前。 |
 | signal connection | `ns_signal_connect` | `ns_signal_disconnect` / `ns_signal_disconnect_all` | 调用方（`ns_connection_t` 栈/堆由调用方自持） | 不允许重复 connect 同一 connection：未检测，但 `signal_node` 已自环，重复 push 不会自检（依赖调用方约束） | disconnect 幂等：二次调用 `ns_list_remove_init` 已自环后再次 `remove_init` 不报错（无显式 guard） | `disconnect` 不释放 connection 内存（`include/nanosig/nanosig_signal.h:248` 明确 "断开连接后可安全释放 connection"）。 |
-| timer | `ns_timer_create(timer, interval_us, attr)` | `ns_timer_destroy(timer)` | 调用方（`ns_timer_t` 自持） | 重复 init：未显式 guard；现存 timer 已 `start` 状态下再次 `create` 会清零 `expire_us` / `attr`，旧 rbtree 节点不会移除（隐患——见"关键发现"） | `destroy` 内部先 `ns_timer_cancel`（`src/ns_timer.c:379`），所以即使未 start 也不会误删；deinit signal 释放 mutex | 内部状态：`signal` / `rb_node` / `interval_us` / `expire_us` / `attr`。`create` 失败路径：mutex 创建失败时已 `ns_signal_init_raw` 成功——见"关键发现"是否成立（实际：`init_raw` 内先置 `mutex=NULL`，创建失败时 mutex 仍为 `NULL` 不算泄漏）。 |
+| timer | `ns_timer_init(timer, interval_us, attr)` | `ns_timer_deinit(timer)` | 调用方（`ns_timer_t` 自持） | 重复 init：未显式 guard；现存 timer 已 `start` 状态下再次 `create` 会清零 `expire_us` / `attr`，旧 rbtree 节点不会移除（隐患——见"关键发现"） | `destroy` 内部先 `ns_timer_cancel`（`src/ns_timer.c:379`），所以即使未 start 也不会误删；deinit signal 释放 mutex | 内部状态：`signal` / `rb_node` / `interval_us` / `expire_us` / `attr`。`create` 失败路径：mutex 创建失败时已 `ns_signal_init_raw` 成功——见"关键发现"是否成立（实际：`init_raw` 内先置 `mutex=NULL`，创建失败时 mutex 仍为 `NULL` 不算泄漏）。 |
 | watcher | `ns_watcher_init_fd(w, fd, ev, edge)` / `ns_watcher_init_handle(w, h, ev, edge)` | `ns_watcher_deinit(w)` | 调用方（`ns_watcher_t` 自持） | 重复 init 会通过 `ns_watcher_reset_empty` 重置 `signal.mutex=NULL` 释放旧 mutex 句柄吗？实际：仅置字段为 `NULL`（`src/ns_broker.c:58-67`），**不销毁旧 mutex**——见"关键发现"。 | `deinit` 拒绝：未 init 返回 `NS_E_INVAL`，已 link 到 broker 返回 `NS_E_EXISTS`（`src/ns_broker.c:131-133`） | `init_fd` / `init_handle` 区分 fd-vs-handle 模式；二者 `reset_empty` 后再调 `init_common`。 |
 | broker 节点 | `ns_broker_add(broker, watcher)` | `ns_broker_remove(broker, watcher)` | broker 拥有 `watcher_head` 链表与 `waitset` 注册 | 重复 add：检测 `broker_node` 已 link 则返回 `NS_E_EXISTS`（`src/ns_broker.c:220-223`） | 重复 remove：未 link 则返回 `NS_E_INVAL`（`src/ns_broker.c:250-253`）；成功后 `waitable.user_data = NULL` + `ns_list_remove_init` | broker `add` 后通过 `ns_broker_notify` 唤醒 broker 线程（`src/ns_broker.c:235`），`remove` 同理（`:263`）。 |
 
@@ -52,7 +52,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 `ns_shutdown()` 失败路径：不失败；状态已清零后 broker / platform 关闭由各自内部处理。
 `ns_is_initialized()`：仅参数校验，无失败路径。
 
-### `ns_loop_create()`（`src/nanosig.c:114`）
+### `ns_loop_init()`（`src/nanosig.c:114`）
 
 | 失败点 | 已成功动作 | 清理动作 | 完整性 |
 | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 
 注：标签只有单个 `out_free`，因为 ring 与 wakeup 共享同一块 alloc 内存。这是有意为之。
 
-### `ns_loop_destroy()`（`src/nanosig.c:160`）
+### `ns_loop_deinit()`（`src/nanosig.c:160`）
 
 | 失败点 | 清理动作 | 完整性 |
 | --- | --- | --- |
@@ -102,7 +102,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 
 遍历清空 `slot_list`；每节点 `ns_list_init(node)` 复位自环。无堆分配，无回滚问题。OK。
 
-### `ns_timer_create()`（`src/ns_timer.c:268`）
+### `ns_timer_init()`（`src/ns_timer.c:268`）
 
 | 失败点 | 已成功动作 | 清理动作 | 完整性 |
 | --- | --- | --- | --- |
@@ -112,7 +112,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 
 成功路径：写 `interval_us` / `expire_us` / `attr` 并 `ns_rbtree_node_init(&rb_node)`。无堆分配。
 
-### `ns_timer_destroy()`（`src/ns_timer.c:372`）
+### `ns_timer_deinit()`（`src/ns_timer.c:372`）
 
 先 `ns_timer_cancel(timer)`，再 `ns_signal_deinit_raw(&timer->signal)`，最后 `ns_rbtree_node_init`。
 `cancel` 本身幂等（`is_running` 检测），`deinit_raw` 幂等（`mutex == NULL` 时 `NS_OK`）。OK。
@@ -186,13 +186,13 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
   broker 已 fire 但 loop 未 dispatch 的窗口期；调用方须保证 `user_data` 长于所有可能已派发到 loop 的 slot。
   文档未明示，建议补充。
 
-### 3. `ns_loop_destroy` 在 loop 还在被 emit 时是否安全？
+### 3. `ns_loop_deinit` 在 loop 还在被 emit 时是否安全？
 
-- **实现**：`ns_loop_destroy` 拒 `running != 0`（`NS_E_INVAL`），但 `emit` 不经过 `running` 标志——`ns_signal_emit_raw` 直接
+- **实现**：`ns_loop_deinit` 拒 `running != 0`（`NS_E_INVAL`），但 `emit` 不经过 `running` 标志——`ns_signal_emit_raw` 直接
   `ns_mpsc_record_ring_try_pushv(&conn->target_loop->queue, ...)`（`src/nanosig.c:406`）。
-- 场景：loop 在 `ns_loop_run` 之外的线程 quit（`ns_loop_quit` 跨线程），另一线程同时 `ns_loop_destroy`。
+- 场景：loop 在 `ns_loop_run` 之外的线程 quit（`ns_loop_quit` 跨线程），另一线程同时 `ns_loop_deinit`。
   - `running` 标志在 `ns_loop_run_impl` 退出时才清零（`src/nanosig.c:223`）。
-  - `ns_loop_destroy` 在 `running != 0` 时返回 `NS_E_INVAL`，保护正在运行的 loop 内存不被释放。
+  - `ns_loop_deinit` 在 `running != 0` 时返回 `NS_E_INVAL`，保护正在运行的 loop 内存不被释放。
   - 但若 loop 跨线程 quit 后 `running` 尚未清零（`ns_loop_run_impl` 内部释放之前存在小窗口），`destroy` 短暂拒绝；运行线程回到 `out` 标签前清零。
 - **结论**：跨线程 quit 路径受 `running` 原子保护，**基本安全**。`emit` 仅写入 ring，不触碰 loop 内存生命周期。
 - **文档**：`include/nanosig/nanosig_loop.h:72-74` 提到"调用前必须确保该 loop 不再运行"，但**未明示**跨线程 quit 后 destroy 须
@@ -203,33 +203,33 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
 - **实现**：`ns_broker_global_shutdown`（`src/ns_broker.c:344`）：
   1. quit + join broker 线程
   2. `g_broker = NULL`
-  3. `ns_timer_mgr_global_shutdown`（清空 rbtree，**不**调用 `ns_timer_destroy`——timer 句柄由调用方负责）
+  3. `ns_timer_mgr_global_shutdown`（清空 rbtree，**不**调用 `ns_timer_deinit`——timer 句柄由调用方负责）
   4. `ns_broker_remove_all_watchers`（遍历清空 `watcher_head`，从 waitset 注销、`user_data = NULL`、broker_node 重新初始化）
   5. waitset 清理 / wakeup destroy / mutex destroy / free broker
 - **共识计划要求**（`docs/共识计划.md:122`）："shutdown 必须清理 waitset 中残留 watcher"——已实现（步骤 4）。
-- **残留 timer**：`ns_timer_mgr_global_shutdown` 只清 rbtree 节点，不调 `ns_timer_destroy`。若调用方
-  在 `ns_shutdown` 前未 `ns_timer_destroy`，则：
+- **残留 timer**：`ns_timer_mgr_global_shutdown` 只清 rbtree 节点，不调 `ns_timer_deinit`。若调用方
+  在 `ns_shutdown` 前未 `ns_timer_deinit`，则：
   - timer 内嵌的 `ns_signal_t` mutex 不会销毁（**泄漏**）；
   - timer 句柄本身（栈/堆）由调用方负责，库不感知。
 - **结论**：watcher 残留清理完整；timer 残留 **未释放 signal mutex**（Major）。需在 timer.c
   文档或 shutdown 路径补强。
 
-### 5. `ns_loop_destroy` 跨线程 quit 的可见性
+### 5. `ns_loop_deinit` 跨线程 quit 的可见性
 
 - `ns_loop_quit` 仅做 `quit_requested = 1` + `wakeup_signal`（`src/nanosig.c:241-242`），不触碰 `running`。
-- 跨线程 quit 后调用方立即 `ns_loop_destroy`：因 `running` 未归零返回 `NS_E_INVAL`，调用方需重试或 join。
+- 跨线程 quit 后调用方立即 `ns_loop_deinit`：因 `running` 未归零返回 `NS_E_INVAL`，调用方需重试或 join。
 - **结论**：`ns_loop_quit` 文档已说"可由拥有该 loop 的线程调用，也可由跨线程控制路径调用"（`include/nanosig/nanosig_loop.h:99`），
   但未说明调用方须等待 `ns_loop_run` 返回后再 destroy。**Major** 文档缺失。
 
-### 6. `ns_timer_destroy` 在 timer `start` 状态被另一线程 fire 时是否安全？
+### 6. `ns_timer_deinit` 在 timer `start` 状态被另一线程 fire 时是否安全？
 
-- **实现**：`ns_timer_destroy` 先 `ns_timer_cancel`（`src/ns_timer.c:379`）。
+- **实现**：`ns_timer_deinit` 先 `ns_timer_cancel`（`src/ns_timer.c:379`）。
   - `cancel` 加 `g_timer_mgr.mutex` 后从 rbtree 移除并 `should_notify` 唤醒 broker。
   - `ns_signal_deinit_raw` 释放 timer->signal mutex。
   - broker 线程可能正在 `ns_timer_mgr_fire_expired`（`src/ns_timer.c:216`），它也加同一 mutex。
 - 互斥保证：cancel 与 fire 互斥，fire 之后 cancel 才执行，cancel 后 deinit 销毁 mutex——broker 线程
   `fire_expired` 不会在 cancel 之后再 push emit（`signal_emit_raw` 仍调用，但 signal mutex 已 destroy？）。
-- 风险点：`ns_timer_destroy` 在 broker 线程 **已经** `ns_signal_emit_raw(&timer->signal, ...)` 之后才执行。
+- 风险点：`ns_timer_deinit` 在 broker 线程 **已经** `ns_signal_emit_raw(&timer->signal, ...)` 之后才执行。
   - 此时 fire_expired 已读 `timer->signal`、已退出 mutex，push 到 loop queue 完成。
   - 随后 `destroy` 销毁 `timer->signal.mutex`——但 broker 线程不再访问 timer->signal（emit 已完成）。
   - `slot_fn` + `user_data` 在 loop 端派发，由调用方保证 `user_data` 生命周期。
@@ -298,7 +298,7 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
 
 - **位置**：`src/ns_broker.c:344-367` + `src/ns_timer.c:163-183`
 - **问题**：`ns_broker_global_shutdown` 调用 `ns_timer_mgr_global_shutdown`，后者仅清 rbtree 与 mutex，
-  **不**调用各 timer 的 `ns_signal_deinit_raw`。若调用方在 `ns_shutdown` 前未逐个 `ns_timer_destroy`，
+  **不**调用各 timer 的 `ns_signal_deinit_raw`。若调用方在 `ns_shutdown` 前未逐个 `ns_timer_deinit`，
   timer 句柄上的 signal mutex 句柄泄漏。
 - **证据**：
   ```c
@@ -316,20 +316,20 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
   重新初始化 `broker_node`，但不调 `ns_watcher_deinit`——同样**不**释放 watcher->signal mutex。
   不过 `ns_shutdown` 文档已声明调用方须先 `ns_broker_remove()`（`include/nanosig/nanosig.h:46`），
   所以残留 watcher 仅在"调用方违规"时发生，库的兜底清理已满足 `docs/共识计划.md:122` "shutdown 必须清理
-  waitset 中残留 watcher"的要求。timer 路径同理，但 `ns_shutdown` 文档（`:45`）要求先 `ns_timer_destroy`，
-  而 `ns_timer_mgr_global_shutdown` 兜底只清 rbtree，**不调 `ns_timer_destroy`**——所以违规时确实泄漏。
+  waitset 中残留 watcher"的要求。timer 路径同理，但 `ns_shutdown` 文档（`:45`）要求先 `ns_timer_deinit`，
+  而 `ns_timer_mgr_global_shutdown` 兜底只清 rbtree，**不调 `ns_timer_deinit`**——所以违规时确实泄漏。
 - **严重度**：Major（违反调用方契约时库的兜底不完整）。
 - **建议修复**：`ns_timer_mgr_global_shutdown` 在清 rbtree 时对每个 timer 调
   `ns_signal_deinit_raw(&timer->signal)` 并 `ns_rbtree_node_init`；或文档强化"未 destroy 的 timer
   残留 signal mutex 句柄将由库释放"。
 
-### F4. `ns_loop_destroy` 跨线程 quit 文档缺失（Major）
+### F4. `ns_loop_deinit` 跨线程 quit 文档缺失（Major）
 
 - **位置**：`include/nanosig/nanosig_loop.h:72-81` + `src/nanosig.c:160-173`
-- **问题**：`ns_loop_quit` 可跨线程调用（`:99` 已文档），但 `ns_loop_destroy` 在 `running != 0` 时
+- **问题**：`ns_loop_quit` 可跨线程调用（`:99` 已文档），但 `ns_loop_deinit` 在 `running != 0` 时
   返回 `NS_E_INVAL`（`src/nanosig.c:166`）。跨线程 quit 后调用方立即 destroy 会被短暂拒绝——文档
   未明示调用方应等待 `ns_loop_run` 实际返回（即 `running` 归零）后再 destroy。
-- **建议修复**：在 `ns_loop_destroy` 文档段添加"跨线程 quit 后，调用方须等待 `ns_loop_run` 返回
+- **建议修复**：在 `ns_loop_deinit` 文档段添加"跨线程 quit 后，调用方须等待 `ns_loop_run` 返回
   （或 `ns_loop_stop` 返回）再调用本函数"。
 - **严重度**：Major（文档不一致，调用方易踩坑）。
 
@@ -343,10 +343,10 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
   在目标 loop 派发完成（且 `user_data` 生命周期长于该派发），方可释放 `user_data`"。
 - **严重度**：Major（文档与实现不一致的风险点）。
 
-### F6. `ns_timer_create` 重复 init 行为未文档化（Info 倾向，但影响轻微）
+### F6. `ns_timer_init` 重复 init 行为未文档化（Info 倾向，但影响轻微）
 
 - **位置**：`src/ns_timer.c:268-287`
-- **问题**：与 F1 / F2 同构；重复 `ns_timer_create` 会覆写字段、未释放旧 signal mutex；但 rbtree 节点
+- **问题**：与 F1 / F2 同构；重复 `ns_timer_init` 会覆写字段、未释放旧 signal mutex；但 rbtree 节点
   `ns_rbtree_node_init` 不会破坏旧 link（已自环），旧 timer 若在 run 状态，新 `create` 后 `start` 会
   重复入树（`ns_timer_start` 检测 `is_running` 返回 `NS_E_EXISTS`）。
 - **严重度**：Major（与 F1/F2 一致模式，统一处理）。
@@ -375,7 +375,7 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
 - **F1 / F2 / F6**（重复 init 句柄泄漏）：建议在 init 入口加 `NS_E_EXISTS` 守卫或显式要求先 deinit。
 - **F3**（shutdown 残留 timer mutex 泄漏）：建议在 `ns_timer_mgr_global_shutdown` 遍历 rbtree 时
   释放每个 timer 的 signal mutex。
-- **F4**（跨线程 destroy 时序）：建议在 `ns_loop_destroy` 文档补充"等待 `ns_loop_run` 返回后再调用"。
+- **F4**（跨线程 destroy 时序）：建议在 `ns_loop_deinit` 文档补充"等待 `ns_loop_run` 返回后再调用"。
 - **F5**（in-flight slot user_data 生命周期）：建议在 `ns_watcher_deinit` / `ns_signal_deinit` 文档中
   补充调用方生命周期约束。
 - **文档一致性**：建议 `include/nanosig/*.h` 头中所有 "create / init" 文档段补充"重复 init 行为"说明

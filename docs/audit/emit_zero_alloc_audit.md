@@ -160,7 +160,7 @@ ns_signal_emit(signal_name, payload_ptr)
 | platform/windows/port.c:150 | `ns_platform_alloc` | `ns_platform_mutex_create` | **否** | 同上 |
 | platform/windows/port.c:221 | `ns_platform_alloc` | `ns_platform_thread_create` | **否** | 同上 |
 | platform/windows/port.c:272 | `ns_platform_alloc` | `ns_platform_waitset_create` | **否** | 同上 |
-| src/nanosig.c:132 | `ns_platform_alloc` | `ns_loop_create` | **否** | 仅 loop 创建时调用 |
+| src/nanosig.c:132 | `ns_platform_alloc` | `ns_loop_init` | **否** | 仅 loop 创建时调用 |
 | src/ns_broker.c:291 | `ns_platform_alloc` | `ns_event_broker_create` | **否** | 仅 broker 创建时调用 |
 
 ## 满队 / 边界行为
@@ -238,7 +238,7 @@ MPSC try_pushv 的 write_parts 不申请临时 buffer，直接逐段 memcpy 到 
 
 | 路径 | 分配内容 |
 | --- | --- |
-| `ns_loop_create` | loop 结构体（含 queue storage） |
+| `ns_loop_init` | loop 结构体（含 queue storage） |
 | `ns_platform_mutex_create` | mutex 句柄 |
 | `ns_platform_wakeup_create` | wakeup 句柄（eventfd / kq 包装） |
 | `ns_platform_thread_create` | thread 句柄 |

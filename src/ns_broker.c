@@ -35,11 +35,7 @@ static ns_event_broker_t *g_broker = NULL;
 
 static int ns_broker_runtime_ready(void)
 {
-    int initialized = 0;
-    int rc = ns_is_initialized(&initialized);
-
-    if(rc != NS_OK) return rc;
-    return initialized ? NS_OK : NS_E_SHUTDOWN;
+    return ns_is_initialized() ? NS_OK : NS_E_SHUTDOWN;
 }
 
 static int ns_watcher_events_are_valid(uint32_t events)

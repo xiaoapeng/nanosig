@@ -38,7 +38,7 @@ Guidance for source directory `demos/`, which contains API review demos. They ar
 - Use `ns_signal_connect_typed(...)` / `ns_signal_emit(...)` for both payload and no-payload signals; no-payload emit passes `NS_NO_PAYLOAD`.
 - Use `_to` connect macros only when the example is intentionally showing an explicit `ns_loop_t *` target.
 - Do not instantiate or copy `ns_no_payload_t`; it is a type marker only and maps to a 0-byte payload.
-- Timer demos use caller-owned `ns_timer_t`, connect slots to `timer.signal`, use `uint64_t` microsecond intervals, and pass `NS_TIMER_ATTR_*` bitmaps to `ns_timer_create`. Do not add `timer_started` / `timer_created` flags; route cleanup labels so failed create skips timer teardown, and call `ns_timer_cancel` directly after successful create when a cleanup path needs it.
+- Timer demos use caller-owned `ns_timer_t`, connect slots to `timer.signal`, use `uint64_t` microsecond intervals, and pass `NS_TIMER_ATTR_*` bitmaps to `ns_timer_init`. Do not add `timer_started` / `timer_created` flags; route cleanup labels so failed create skips timer teardown, and call `ns_timer_cancel` directly after successful create when a cleanup path needs it.
 
 ## Dependencies
 

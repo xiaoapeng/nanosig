@@ -100,11 +100,11 @@ struct ns_connection {
 
 每个 `ns_timer_t` 内嵌无 payload 的 `ns_signal_t`，到期时触发。
 
-- `ns_timer_create`：初始化 timer + 内嵌 signal（不启动）。
+- `ns_timer_init`：初始化 timer + 内嵌 signal（不启动）。
 - `ns_timer_start`：注册到全局 `ns_timer_mgr_t` 的 rbtree（按 deadline 排序）。
 - `ns_timer_mgr` 是独立模块，通过回调 `ns_timer_notify_fn` 通知 broker 重新计算超时。
 - `ns_timer_cancel`：从 rbtree 移除。
-- `ns_timer_destroy`：清理内嵌 signal。
+- `ns_timer_deinit`：清理内嵌 signal。
 
 ### 2.5 `ns_watcher_t` — 事件监视器
 
@@ -203,9 +203,9 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `ns_broker_add/remove` | MPM-safe | broker internal lock |
 | `ns_loop_run` | 单线程 | 调用方线程绑定 |
 | `ns_loop_quit` | MPM-safe | atomic store release |
-| `ns_loop_create/destroy` | 需序列化 | 调用方保证 |
+| `ns_loop_init/destroy` | 需序列化 | 调用方保证 |
 | `ns_signal_init_raw/deinit_raw` | 需序列化 | 调用方保证 |
-| `ns_timer_create/destroy` | 需序列化 | 调用方保证 |
+| `ns_timer_init/destroy` | 需序列化 | 调用方保证 |
 | `ns_watcher_init_*/deinit` | 需序列化 | 调用方保证 |
 | `ns_init/ns_shutdown` | 需序列化 | 调用方保证 |
 | DS 函数（list/rbtree/hashtable/ringbuf）| 单线程 | 外部同步 |
@@ -220,13 +220,13 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 
 | 类型 | 存储所有者 | 分配方式 | 销毁方式 |
 |------|-----------|---------|---------|
-| `ns_loop_t` | 调用方 | `ns_loop_create`（`ns_platform_alloc`） | `ns_loop_destroy` |
+| `ns_loop_t` | 调用方 | `ns_loop_init`（`ns_platform_alloc`） | `ns_loop_deinit` |
 | `ns_signal_t` | 调用方 | 静态/栈/堆；`ns_signal_init` 只分配 mutex | `ns_signal_deinit` |
 | `ns_connection_t` | 调用方 | 调用方完全拥有存储 | 调用方自由处置 |
-| `ns_timer_t` | 调用方 | 静态/栈/堆；`ns_timer_create` 只 init + mutex | `ns_timer_destroy` |
+| `ns_timer_t` | 调用方 | 静态/栈/堆；`ns_timer_init` 只 init + mutex | `ns_timer_deinit` |
 | `ns_watcher_t` | 调用方 | 静态/栈/堆；`ns_watcher_init` 只 init + mutex | `ns_watcher_deinit` |
 | `ns_event_broker_t` | 库 | `ns_init` 时 `ns_platform_alloc` | `ns_shutdown` 时释放 |
-| MPSC record ring | `ns_loop_t` 内联 | 内嵌在 `ns_loop_create` 的分配块中 | `ns_loop_destroy` 隐式 |
+| MPSC record ring | `ns_loop_t` 内联 | 内嵌在 `ns_loop_init` 的分配块中 | `ns_loop_deinit` 隐式 |
 
 **emit 路径零分配**：从 `ns_signal_emit_raw` 到 MPSC `try_pushv` 返回的整条调用链上，不调用任何 `ns_platform_alloc` 或标准库 `malloc` / `calloc` / `realloc`。
 

@@ -76,7 +76,7 @@ static int scenario_watchdog(void)
     }
 
     /* Create watchdog timer */
-    EXPECT_OK(ns_timer_create(&g_wd_timer, WATCHDOG_INTERVAL_US, NS_TIMER_ATTR_REPEAT) == NS_OK);
+    EXPECT_OK(ns_timer_init(&g_wd_timer, WATCHDOG_INTERVAL_US, NS_TIMER_ATTR_REPEAT) == NS_OK);
     EXPECT_OK(ns_signal_connect(&g_wd_timer.signal, wd_timer_slot,
                                 g_wd_loop, NULL, &g_wd_timer_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&g_wd_timer) == NS_OK);
@@ -102,7 +102,7 @@ static int scenario_watchdog(void)
 
     /* Cleanup */
     EXPECT_OK(ns_signal_disconnect(&g_wd_timer_conn) == NS_OK);
-    EXPECT_OK(ns_timer_destroy(&g_wd_timer) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&g_wd_timer) == NS_OK);
 
     for(i = 0u; i < WATCHDOG_NUM_WATCHERS; i++){
         EXPECT_OK(ns_broker_remove(&g_wd_watchers[i]) == NS_OK);
@@ -111,7 +111,7 @@ static int scenario_watchdog(void)
         test_destroy_raw_waitable(g_wd_raw[i]);
     }
 
-    EXPECT_OK(ns_loop_destroy(g_wd_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_wd_loop) == NS_OK);
     g_wd_loop = NULL;
 
     integration_verify_clean_shutdown();

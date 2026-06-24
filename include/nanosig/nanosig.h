@@ -37,9 +37,9 @@ extern int ns_init(void);
  * 应用在确定不再使用 nanosig 后调用本函数，释放全局资源。调用方应先完成
  * 业务侧 loop、signal、timer 和 watcher 的清理。
  *
- * @pre 调用前必须已销毁所有 loop（`ns_loop_destroy()`）。库不再内部检查，
+ * @pre 调用前必须已销毁所有 loop（`ns_loop_deinit()`）。库不再内部检查，
  *      违反此约束将导致平台状态未定义。
- * @pre 调用前必须已销毁所有 timer（`ns_timer_destroy()`）。
+ * @pre 调用前必须已销毁所有 timer（`ns_timer_deinit()`）。
  * @pre 调用前必须已注销所有 watcher（`ns_broker_remove()`）。
  * @pre 本函数不得与 `ns_init()` 或自身并发调用。调用方应保证在程序生命
  *      周期的单一线程中顺序调用 `ns_init()` 和 `ns_shutdown()`。
@@ -51,10 +51,9 @@ extern int ns_shutdown(void);
 /**
  * @brief 查询 nanosig 当前是否已经初始化。
  *
- * @param out_initialized 输出参数；非零表示已初始化，零表示未初始化。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ * @return 1 表示已初始化，0 表示未初始化。
  */
-extern int ns_is_initialized(int *out_initialized);
+extern int ns_is_initialized(void);
 
 #ifdef __cplusplus
 }

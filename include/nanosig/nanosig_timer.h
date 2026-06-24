@@ -76,7 +76,7 @@ NS_STATIC_ASSERT(ns_offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must 
  * @param attr `NS_TIMER_ATTR_*` 位图。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
+extern int ns_timer_init(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
 
 /**
  * @brief 启动 timer。
@@ -92,7 +92,7 @@ extern int ns_timer_start(ns_timer_t *timer);
 /**
  * @brief 取消 timer。
  *
- * 对任何已由 `ns_timer_create` 成功初始化的 timer 都可以调用本函数；如果 timer
+ * 对任何已由 `ns_timer_init` 成功初始化的 timer 都可以调用本函数；如果 timer
  * 当前未运行，则保持停止状态并返回成功。取消不保证已经入队的 slot 调用被撤销。
  *
  * @param timer 要取消的 timer 句柄。
@@ -121,7 +121,7 @@ extern int ns_timer_restart(ns_timer_t *timer);
  * @param timer 要销毁的 timer 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_timer_destroy(ns_timer_t *timer);
+extern int ns_timer_deinit(ns_timer_t *timer);
 
 #ifdef __cplusplus
 }

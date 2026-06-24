@@ -142,7 +142,7 @@ static int scenario_cocktail(void)
 
     for(i = 0u; i < 3u; i++){
         EXPECT_OK(ns_loop_stop(g_cktl_loops[i]) == NS_OK);
-        EXPECT_OK(ns_loop_destroy(g_cktl_loops[i]) == NS_OK);
+        EXPECT_OK(ns_loop_deinit(g_cktl_loops[i]) == NS_OK);
         g_cktl_loops[i] = NULL;
     }
 

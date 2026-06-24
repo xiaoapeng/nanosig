@@ -47,7 +47,7 @@ static int scenario_cascade(void)
     EXPECT_OK(g_cascade_loop != NULL);
 
     for(i = 0; i < CASCADE_DEPTH; i++){
-        EXPECT_OK(ns_timer_create(&g_cascade_timers[i], 10000u, 0) == NS_OK);
+        EXPECT_OK(ns_timer_init(&g_cascade_timers[i], 10000u, 0) == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_cascade_timers[i].signal, cascade_slot,
                                     g_cascade_loop, (void *)(intptr_t)i,
                                     &g_cascade_conns[i]) == NS_OK);
@@ -67,9 +67,9 @@ static int scenario_cascade(void)
 
     for(i = CASCADE_DEPTH - 1; i >= 0; i--){
         EXPECT_OK(ns_signal_disconnect(&g_cascade_conns[i]) == NS_OK);
-        EXPECT_OK(ns_timer_destroy(&g_cascade_timers[i]) == NS_OK);
+        EXPECT_OK(ns_timer_deinit(&g_cascade_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_destroy(g_cascade_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_cascade_loop) == NS_OK);
     g_cascade_loop = NULL;
 
     integration_verify_clean_shutdown();

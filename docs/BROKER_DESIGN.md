@@ -316,8 +316,8 @@ ns_shutdown()
 - `ns_broker_remove` 应在 `ns_shutdown` 之前调用。若仍有 watcher 残留，
   `ns_shutdown` 的 broker 销毁路径必须至少把这些 watcher 从 waitset
   注销、清除 waitable 注册状态并把 `broker_node` 重新初始化。
-- `ns_timer_destroy` 必须在 `ns_shutdown` 之前调用。
-- `ns_loop_destroy` 必须在 `ns_shutdown` 之前调用（现有逻辑）。
+- `ns_timer_deinit` 必须在 `ns_shutdown` 之前调用。
+- `ns_loop_deinit` 必须在 `ns_shutdown` 之前调用（现有逻辑）。
 
 ### 竞态：remove 时已入队的 emit
 

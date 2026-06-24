@@ -37,7 +37,7 @@ static int scenario_idle(void)
     g_idle_loop = integration_create_loop(NS_CAPACITY_1024, "idle");
     EXPECT_OK(g_idle_loop != NULL);
 
-    EXPECT_OK(ns_timer_create(&exit_timer, IDLE_DURATION_US, 0) == NS_OK);
+    EXPECT_OK(ns_timer_init(&exit_timer, IDLE_DURATION_US, 0) == NS_OK);
     EXPECT_OK(ns_signal_connect(&exit_timer.signal, idle_exit_slot, g_idle_loop, NULL, &exit_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&exit_timer) == NS_OK);
 
@@ -47,8 +47,8 @@ static int scenario_idle(void)
 
     INTEGRATION_PHASE("idle: loop exited, cleaning up");
     EXPECT_OK(ns_signal_disconnect(&exit_conn) == NS_OK);
-    EXPECT_OK(ns_timer_destroy(&exit_timer) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_idle_loop) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&exit_timer) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_idle_loop) == NS_OK);
     g_idle_loop = NULL;
 
     integration_verify_clean_shutdown();

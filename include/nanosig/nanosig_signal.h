@@ -344,11 +344,11 @@ extern int ns_signal_deinit_raw(ns_signal_t *signal);
  *      `ns_signal_init_raw()`、`ns_signal_connect()`、`ns_signal_disconnect()`
  *      或 `ns_signal_emit_raw()` 在同一个 signal 对象上并发调用。
  *
- * @param signal 要清理的 signal 对象。
+ * @param signal 要清理的 signal 对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 #define ns_signal_deinit(signal) \
-    ns_signal_deinit_raw(&(signal))
+    ns_signal_deinit_raw(signal)
 
 #ifdef __cplusplus
 }

@@ -148,8 +148,8 @@ static int scenario_signal_storm(void)
 
     EXPECT_OK(ns_loop_stop(g_ss_loop_a) == NS_OK);
     EXPECT_OK(ns_loop_stop(g_ss_loop_b) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_ss_loop_a) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_ss_loop_b) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_ss_loop_a) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_ss_loop_b) == NS_OK);
     g_ss_loop_a = NULL;
     g_ss_loop_b = NULL;
 

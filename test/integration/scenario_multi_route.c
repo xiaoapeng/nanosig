@@ -171,7 +171,7 @@ static int scenario_multi_route(void)
         EXPECT_OK(ns_signal_deinit_raw(&g_mr_signal_chain[i]) == NS_OK);
     }
     for(i = 0u; i < MR_NUM_LOOPS; i++){
-        EXPECT_OK(ns_loop_destroy(g_mr_loops[i]) == NS_OK);
+        EXPECT_OK(ns_loop_deinit(g_mr_loops[i]) == NS_OK);
         g_mr_loops[i] = NULL;
     }
 

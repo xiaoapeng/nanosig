@@ -58,7 +58,7 @@ static void broker_loop_worker(broker_loop_ctx_t *ctx)
 {
     int rc;
 
-    rc = ns_loop_create(&ctx->loop, NULL);
+    rc = ns_loop_init(&ctx->loop, NULL);
     if(rc != NS_OK){
         ns_atomic_store_explicit(&ctx->thread_rc, rc, ns_memory_order_release);
         ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
@@ -68,7 +68,7 @@ static void broker_loop_worker(broker_loop_ctx_t *ctx)
     ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
     rc = ns_loop_run(ctx->loop);
     ns_atomic_store_explicit(&ctx->thread_rc, rc, ns_memory_order_release);
-    (void)ns_loop_destroy(ctx->loop);
+    (void)ns_loop_deinit(ctx->loop);
 }
 
 #if defined(_WIN32)
@@ -349,7 +349,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     /* no "worker_started" flag — cleanup is sequential on fail */
 
     /* Create the test loop — NOT started, so its ring accumulates */
-    EXPECT_OK(ns_loop_create(&test_loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_init(&test_loop, NULL) == NS_OK);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -400,7 +400,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     EXPECT_OK(ns_signal_disconnect(&conn_test) == NS_OK);
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     test_destroy_raw_waitable(raw);
-    EXPECT_OK(ns_loop_destroy(test_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(test_loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 }

@@ -97,7 +97,7 @@
 
 | 承诺 | 类别 | 测试 / 代码证据 | 覆盖度 |
 | --- | --- | --- | --- |
-| `ns_loop_create/destroy/run/quit` | P4 产物 | `test_loop.c` 的 `test_invalid_args_and_lifecycle`, `test_same_thread_binding`, `test_cross_thread_quit_and_ownership` | 已覆盖 |
+| `ns_loop_init/destroy/run/quit` | P4 产物 | `test_loop.c` 的 `test_invalid_args_and_lifecycle`, `test_same_thread_binding`, `test_cross_thread_quit_and_ownership` | 已覆盖 |
 | loop 不绑定线程 | P4 目标 | `test_cross_thread_quit_and_ownership` 验证跨线程 quit | 已覆盖 |
 | 已移除 `ns_loop_current` 和 loop manager 注册表 | P4 目标 | `include/nanosig/nanosig_loop.h` 中无这些声明 | 已覆盖 |
 | `test/unit/test_loop.c` | P4 产物 | 9 个运行时测试 + async API 测试 | 已覆盖 |
@@ -130,7 +130,7 @@
 | `ns_timer_mgr_t` 独立模块 | P6 目标 | `src/ns_timer.c`, `src/ns_timer_mgr.h` 独立存在 | 已覆盖 |
 | rbtree 按 remaining time 排序 | P6 目标 | `src/ns_timer.c` 中 comparator 实现 | 已覆盖 |
 | timer_mgr 通过回调解耦 | P6 目标 | `ns_timer_notify_fn` 回调设计 | 已覆盖 |
-| `ns_timer_create/start/cancel/restart/destroy` | P6 目标 | `test_timer.c` 中 `test_start_cancel_and_restart_semantics` | 已覆盖 |
+| `ns_timer_init/start/cancel/restart/destroy` | P6 目标 | `test_timer.c` 中 `test_start_cancel_and_restart_semantics` | 已覆盖 |
 | repeat / reload-from-now 语义 | P6 目标 | `test_repeat_timer_rearms_after_fire` 覆盖 repeat | **部分覆盖**（RELOAD_FROM_NOW 未测试） |
 | `ns_event_broker_t` 全局单例 | P6 目标 | `test_broker_lifecycle` 验证 broker NULL/非空/NULL 状态 | 已覆盖 |
 | broker 拥有 thread + waitset + watcher 链表 + timer_mgr | P6 目标 | 代码结构验证 | 已覆盖 |
@@ -150,7 +150,7 @@
 | --- | --- | --- |
 | `ns_loop_t` 名锁定 | `include/nanosig/nanosig_loop.h` 定义 | 已覆盖 |
 | loop 不绑定线程 | `test_cross_thread_quit_and_ownership` | 已覆盖 |
-| `ns_loop_create` 不绑定当前线程 | `test_cross_thread_quit_and_ownership`（worker 线程创建 loop） | 已覆盖 |
+| `ns_loop_init` 不绑定当前线程 | `test_cross_thread_quit_and_ownership`（worker 线程创建 loop） | 已覆盖 |
 | `ns_loop_run(ns_loop_t *loop)` | `test_loop.c` 所有 run 相关测试 | 已覆盖 |
 | `ns_loop_quit(ns_loop_t *loop)` 跨线程可调用 | `test_cross_thread_quit_and_ownership` | 已覆盖 |
 | `ns_loop_current`/`ns_loop_is_owner`/TLS 已移除 | 头文件无声明；代码中无查找 | 已覆盖 |
@@ -204,15 +204,15 @@
 | 首字段必须是 `ns_signal_t signal` | 结构体定义验证 | 已覆盖 |
 | timer 到期触发内嵌 no-payload signal | `test_oneshot_broker_fires_signal` 验证 | 已覆盖 |
 | timer 只支持无参数触发 | 设计承诺，内嵌 signal 为 no-payload | 已覆盖 |
-| `ns_timer_create(timer, interval_us, attr)` | `test_timer.c` 使用 | 已覆盖 |
+| `ns_timer_init(timer, interval_us, attr)` | `test_timer.c` 使用 | 已覆盖 |
 | `ns_time_us_t` 是 `uint64_t` | `nanosig_timer.h` 定义 | 已覆盖 |
 | `attr` 位图语义 | `test_start_cancel_and_restart_semantics` 中 NS_TIMER_ATTR_ONESHOT | 已覆盖 |
 | bit1 RELOAD_FROM_NOW | 无测试 | **未覆盖** |
-| `ns_timer_create` 只初始化不启动 | `test_start_cancel_and_restart_semantics`（cancel 后再 start） | 已覆盖 |
+| `ns_timer_init` 只初始化不启动 | `test_start_cancel_and_restart_semantics`（cancel 后再 start） | 已覆盖 |
 | `ns_timer_start` 注册到 timer_mgr | `test_oneshot_broker_fires_signal`（start 后 broker 触发） | 已覆盖 |
 | `ns_timer_cancel` 合法对未开始的 timer 无副作用 | `test_start_cancel_and_restart_semantics`（create 后 cancel） | 已覆盖 |
 | `ns_timer_restart` 语义 | `test_start_cancel_and_restart_semantics`（restart 超时重置） | **部分覆盖**（未测 restart 在运行时） |
-| `ns_timer_destroy` 停止并释放 | `test_timer.c` 测试销毁 | 已覆盖 |
+| `ns_timer_deinit` 停止并释放 | `test_timer.c` 测试销毁 | 已覆盖 |
 
 ### watcher API 决策
 
@@ -273,8 +273,8 @@
 | `ns_init()` | ✓ | -- | -- | -- | ✓ (double init → E_EXISTS) | ✓ (shutdown lifecycle) |
 | `ns_shutdown()` | ✓ | -- | -- | -- | ✓ (double shutdown OK) | -- |
 | `ns_is_initialized()` | ✓ | -- | -- | -- | ✓ (NULL arg) | ✓ (pre-init vs post-shutdown) |
-| `ns_loop_create()` | ✓ | ✓ | -- | -- | ✓ (invalid config → E_INVAL, pre-init → E_SHUTDOWN) | ✓ (after shutdown) |
-| `ns_loop_destroy()` | ✓ | ✓ | -- | -- | ✓ (NULL) | ✓ (while started → E_BUSY) |
+| `ns_loop_init()` | ✓ | ✓ | -- | -- | ✓ (invalid config → E_INVAL, pre-init → E_SHUTDOWN) | ✓ (after shutdown) |
+| `ns_loop_deinit()` | ✓ | ✓ | -- | -- | ✓ (NULL) | ✓ (while started → E_BUSY) |
 | `ns_loop_run()` | ✓ | -- | -- | -- | ✓ (NULL, while started → E_BUSY) | -- |
 | `ns_loop_quit()` | ✓ | ✓ | -- | -- | ✓ (NULL) | -- |
 | `ns_loop_start()` | ✓ | -- | -- | -- | ✓ (repeat → E_BUSY) | -- |
@@ -298,11 +298,11 @@
 
 | API | 同线程 | 跨线程 | 断连/取消 | 并发 | 错误入参 | teardown 竞态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ns_timer_create()` | ✓ | -- | -- | -- | ✓ (NULL, 0 interval) | ✓ (mgr next_timeout after shutdown) |
+| `ns_timer_init()` | ✓ | -- | -- | -- | ✓ (NULL, 0 interval) | ✓ (mgr next_timeout after shutdown) |
 | `ns_timer_start()` | ✓ | -- | ✓ (cancel) | -- | ✓ (zero_timer → E_INVAL) | ✓ (start after destroy?) |
 | `ns_timer_cancel()` | ✓ | -- | ✓ (double cancel) | -- | ✓ (zero_timer → E_INVAL) | -- |
 | `ns_timer_restart()` | ✓ | -- | -- | -- | ✓ (zero_timer → E_INVAL) | -- |
-| `ns_timer_destroy()` | ✓ | -- | -- | -- | ✓ (zero_timer → E_INVAL) | ✓ (broker shutdown) |
+| `ns_timer_deinit()` | ✓ | -- | -- | -- | ✓ (zero_timer → E_INVAL) | ✓ (broker shutdown) |
 
 ### broker / watcher API
 

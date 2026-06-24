@@ -107,7 +107,7 @@ static inline ns_loop_t *integration_create_loop(
     cfg.queue_byte_capacity = queue_byte_capacity;
     cfg.debug_name = debug_name;
 
-    if(ns_loop_create(&loop, &cfg) != NS_OK) return NULL;
+    if(ns_loop_init(&loop, &cfg) != NS_OK) return NULL;
     return loop;
 }
 

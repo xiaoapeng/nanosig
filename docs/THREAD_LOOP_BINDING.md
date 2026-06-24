@@ -7,7 +7,7 @@ to explicit parameter passing.
 
 Loop 不绑定线程。调用方通过显式传参管理 loop 生命周期。
 
-`ns_loop_create` 创建 loop，不绑定当前线程。调用方负责决定哪个线程
+`ns_loop_init` 创建 loop，不绑定当前线程。调用方负责决定哪个线程
 run 哪个 loop。`ns_loop_run(ns_loop_t *loop)` 和
 `ns_loop_quit(ns_loop_t *loop)` 都接受显式 loop 参数。
 

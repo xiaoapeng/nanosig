@@ -45,7 +45,7 @@ static int scenario_timer_storm(void)
 
     for(i = 0u; i < STORM_NUM_TIMERS; i++){
         ns_time_us_t interval = (ns_time_us_t)(((unsigned int)rand() % STORM_MAX_INTERVAL_US) + 100u);
-        EXPECT_OK(ns_timer_create(&g_storm_timers[i], interval, 0) == NS_OK);
+        EXPECT_OK(ns_timer_init(&g_storm_timers[i], interval, 0) == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_storm_timers[i].signal, storm_slot,
                                     g_storm_loop, NULL, &g_storm_conns[i]) == NS_OK);
     }
@@ -68,9 +68,9 @@ static int scenario_timer_storm(void)
 
     for(i = 0u; i < STORM_NUM_TIMERS; i++){
         EXPECT_OK(ns_signal_disconnect(&g_storm_conns[i]) == NS_OK);
-        EXPECT_OK(ns_timer_destroy(&g_storm_timers[i]) == NS_OK);
+        EXPECT_OK(ns_timer_deinit(&g_storm_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_destroy(g_storm_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_storm_loop) == NS_OK);
     g_storm_loop = NULL;
 
     integration_verify_clean_shutdown();

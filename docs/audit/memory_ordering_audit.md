@@ -61,7 +61,7 @@
 | `src/nanosig.c:71` | `load g_ns_initialized` | acquire | `ns_is_initialized` 探测 | 让 ns_init 中 broker/platform 的初始化在读侧可见 |
 | `src/nanosig.c:86` | `store g_ns_initialized=1` | release | `ns_init` 完成 | 发布"全局子系统已就绪" |
 | `src/nanosig.c:99` | `store g_ns_initialized=0` | release | `ns_shutdown` 启动 | 关闭序列的发布 |
-| `src/nanosig.c:166` | `load loop->running` | acquire | `ns_loop_destroy` | 让 destroy 看到上一次 run 结束（store release running=0） |
+| `src/nanosig.c:166` | `load loop->running` | acquire | `ns_loop_deinit` | 让 destroy 看到上一次 run 结束（store release running=0） |
 | `src/nanosig.c:206` | `CAS loop->running 0→1` | seq_cst (默认) | `ns_loop_run_impl` 入口 | 强约束：保证"只有一个 run"的语义对其他 observer（destroy）立即可见 |
 | `src/nanosig.c:211` | `load quit_requested` | acquire | 主循环顶部 | 与 `ns_loop_quit` 的 release store 配对 |
 | `src/nanosig.c:219` | `store quit_requested=0` | release | run 退出前复位 | 让 destroy 看到"已经退出" |
@@ -155,9 +155,9 @@ ns_atomic_init(&loop->quit_requested, 0);
 ns_atomic_init(&loop->running, 0);
 ```
 
-`atomic_init` 在 C11 中是**非原子**的（即不提供 happens-before）；它的契约是"对象在并发访问开始前由单一线程完成初始化"。前提是其它线程必须先 `ns_loop_run` 或先 `ns_loop_destroy`，而这两个函数都在内部做 acquire load `running` / `quit_requested`。`ns_loop_run` 的入口 CAS（默认 seq_cst）会发布 `init` 的所有副作用到消费者一侧。
+`atomic_init` 在 C11 中是**非原子**的（即不提供 happens-before）；它的契约是"对象在并发访问开始前由单一线程完成初始化"。前提是其它线程必须先 `ns_loop_run` 或先 `ns_loop_deinit`，而这两个函数都在内部做 acquire load `running` / `quit_requested`。`ns_loop_run` 的入口 CAS（默认 seq_cst）会发布 `init` 的所有副作用到消费者一侧。
 
-`src/ds/ns_mpsc_record_ring.c:252-254` 同理：环由 `ns_loop_create` 在 broker 启动前完成 init；之后只有 `try_pushv` / `try_acquire` 访问，发布路径在 `ns_mpsc_record_ring_init` 结束后通过 `ns_loop_quit` 的 release store / wakeup_signal 提供可见性。
+`src/ds/ns_mpsc_record_ring.c:252-254` 同理：环由 `ns_loop_init` 在 broker 启动前完成 init；之后只有 `try_pushv` / `try_acquire` 访问，发布路径在 `ns_mpsc_record_ring_init` 结束后通过 `ns_loop_quit` 的 release store / wakeup_signal 提供可见性。
 
 **结论**：不构成数据竞争，但**建议在审计备注中说明 `atomic_init` 的契约前置条件**，以免后续维护者在已并发的对象上错误使用 `ns_atomic_init`。
 
@@ -189,7 +189,7 @@ nanosig v1 的内存序契约**总体成立**，理由：
 
 **建议（可选）**：
 
-1. 在 `nanosig.h` / `nanosig_atomic.h` 顶部加一段注释，明确 "atomic_init 必须在并发访问前由单线程完成"；附上 `ns_loop_create` / `ns_mpsc_record_ring_init` 作为示例。
+1. 在 `nanosig.h` / `nanosig_atomic.h` 顶部加一段注释，明确 "atomic_init 必须在并发访问前由单线程完成"；附上 `ns_loop_init` / `ns_mpsc_record_ring_init` 作为示例。
 2. `mark_uncommitted` 的 release 改为 relaxed（仅在 init 阶段使用）以避免误读。
 3. 长期：可考虑在 `ns_signal_t::mutex` 之上做 TSAN 注解（`__attribute__((annotate("threading")))` 或 LLVM `no_thread_safety_analysis`），强化对 lock/connect/disconnect 的静态检查。
 

@@ -155,11 +155,11 @@ Each timer owns:
 - next deadline in microseconds
 - attr bitmap: bit0 repeat, bit1 reload from current time
 - running/cancellation state; `ns_timer_cancel` is valid after
-  `ns_timer_create` and is a no-op when the timer is not running
+  `ns_timer_init` and is a no-op when the timer is not running
 
 ## Allocation Boundary
 
-Allocation is allowed during `ns_loop_create`, `ns_signal_init_raw`, and
-`ns_timer_create`. `ns_signal_connect` does not allocate; callers own
+Allocation is allowed during `ns_loop_init`, `ns_signal_init_raw`, and
+`ns_timer_init`. `ns_signal_connect` does not allocate; callers own
 `ns_connection_t` storage. Allocation is not allowed during
 `ns_signal_emit_raw` or the future typed `ns_signal_emit` wrapper.

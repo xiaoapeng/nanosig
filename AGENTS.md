@@ -41,7 +41,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 - Do not port `eh_*` symbols into public nanosig APIs except the explicitly planned `eh_atomic.h` to `ns_atomic.h` reuse.
 - Preserve the latest PD API style: no public `__safety` annotations for now; function-wrapper connect/emit macros are lowercase, while declaration/definition/initializer/type-only macros are uppercase; use C designated initializers in examples.
 - The moved per-directory AGENTS instructions are centralized under `docs/agents/`; update those copies when source-tree guidance changes.
-- Preserve the explicit loop-passing model: `ns_loop_create` does not bind a thread, and `ns_signal_connect` requires a non-null target loop.
+- Preserve the explicit loop-passing model: `ns_loop_init` does not bind a thread, and `ns_signal_connect` requires a non-null target loop.
 - Follow `docs/EVENTHUB_OS_STYLE.md` when borrowing eventhub_os coding/comment style.
 - Do not generate AGENTS files inside hidden workflow/runtime directories such as `.omx/`, `.omc/`, or `.github/` unless the user explicitly asks for workflow documentation.
 - Keep reference-code documentation shallow; `tmp/eventhub_os/AGENTS.md` is enough unless active work moves into that tree.

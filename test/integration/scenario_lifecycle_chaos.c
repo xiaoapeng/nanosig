@@ -155,7 +155,7 @@ static int scenario_lifecycle_chaos(void)
 
     /* Create timers */
     for(i = 0u; i < CHAOS_NUM_TIMERS; i++){
-        EXPECT_OK(ns_timer_create(&g_chaos_timers[i], 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
+        EXPECT_OK(ns_timer_init(&g_chaos_timers[i], 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_chaos_timers[i].signal, chaos_dummy_slot,
                                     g_chaos_loop, NULL, &g_chaos_tconns[i]) == NS_OK);
         EXPECT_OK(ns_timer_start(&g_chaos_timers[i]) == NS_OK);
@@ -187,7 +187,7 @@ static int scenario_lifecycle_chaos(void)
 
     for(i = 0u; i < CHAOS_NUM_TIMERS; i++){
         EXPECT_OK(ns_signal_disconnect(&g_chaos_tconns[i]) == NS_OK);
-        EXPECT_OK(ns_timer_destroy(&g_chaos_timers[i]) == NS_OK);
+        EXPECT_OK(ns_timer_deinit(&g_chaos_timers[i]) == NS_OK);
     }
     for(i = 0u; i < CHAOS_NUM_WATCHERS; i++){
         (void)ns_broker_remove(&g_chaos_watchers[i]);
@@ -197,7 +197,7 @@ static int scenario_lifecycle_chaos(void)
     }
 
     EXPECT_OK(ns_signal_deinit_raw(&g_chaos_signal) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_chaos_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_chaos_loop) == NS_OK);
     g_chaos_loop = NULL;
 
     integration_verify_clean_shutdown();

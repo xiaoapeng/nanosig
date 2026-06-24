@@ -35,7 +35,7 @@ int main(void)
 
     if(ns_init() != NS_OK){ fprintf(stderr, "ns_init failed\n"); return 1; }
     if(ns_signal_init(&g_sig, ns_no_payload_t) != NS_OK){ fprintf(stderr, "signal_init failed\n"); return 1; }
-    if(ns_loop_create(&loop, &cfg) != NS_OK){ fprintf(stderr, "loop_create failed\n"); return 1; }
+    if(ns_loop_init(&loop, &cfg) != NS_OK){ fprintf(stderr, "loop_create failed\n"); return 1; }
     if(ns_signal_connect(&g_sig, (ns_slot_fn)on_slot, loop, loop, &g_conn) != NS_OK){ fprintf(stderr, "connect failed\n"); return 1; }
 
     if(bench_stats_init(&stats, "same_thread_latency", ITERATIONS) != 0){ fprintf(stderr, "OOM\n"); return 1; }
@@ -58,8 +58,8 @@ int main(void)
     bench_stats_report(&stats);
 
     (void)ns_signal_disconnect(&g_conn);
-    (void)ns_signal_deinit(g_sig);
-    (void)ns_loop_destroy(loop);
+    (void)ns_signal_deinit(&g_sig);
+    (void)ns_loop_deinit(loop);
     (void)ns_shutdown();
     bench_stats_destroy(&stats);
     return 0;

@@ -47,11 +47,7 @@ static int ns_timer_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
 
 static int ns_timer_runtime_ready(void)
 {
-    int initialized = 0;
-    int rc = ns_is_initialized(&initialized);
-
-    if(rc != NS_OK) return rc;
-    return initialized ? NS_OK : NS_E_SHUTDOWN;
+    return ns_is_initialized() ? NS_OK : NS_E_SHUTDOWN;
 }
 
 static int ns_timer_mgr_lock(void)
@@ -265,7 +261,7 @@ out_unlock:
     return rc;
 }
 
-int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr)
+int ns_timer_init(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr)
 {
     int rc;
 
@@ -369,7 +365,7 @@ int ns_timer_restart(ns_timer_t *timer)
     return rc;
 }
 
-int ns_timer_destroy(ns_timer_t *timer)
+int ns_timer_deinit(ns_timer_t *timer)
 {
     int rc;
     int deinit_rc;

@@ -103,15 +103,12 @@ int ns_shutdown(void)
     return ns_platform_shutdown();
 }
 
-int ns_is_initialized(int *out_initialized)
+int ns_is_initialized(void)
 {
-    if(out_initialized == NULL) return NS_E_INVAL;
-
-    *out_initialized = ns_runtime_is_initialized();
-    return NS_OK;
+    return ns_runtime_is_initialized();
 }
 
-int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
+int ns_loop_init(ns_loop_t **out_loop, const ns_loop_config_t *config)
 {
     ns_loop_t *loop;
     ns_loop_config_t local_config;
@@ -157,7 +154,7 @@ out_free:
     return rc;
 }
 
-int ns_loop_destroy(ns_loop_t *loop)
+int ns_loop_deinit(ns_loop_t *loop)
 {
     int rc;
 

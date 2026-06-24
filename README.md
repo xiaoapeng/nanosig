@@ -45,7 +45,7 @@ int main(void)
     ns_loop_t *loop = NULL;
 
     ns_init();
-    ns_loop_create(&loop, NULL);
+    ns_loop_init(&loop, NULL);
     ns_signal_init(&sig, ns_no_payload_t);
     ns_signal_connect(&sig, (ns_slot_fn)on_signal, loop, loop, &conn);
 
@@ -54,7 +54,7 @@ int main(void)
 
     ns_signal_disconnect(&conn);
     ns_signal_deinit(sig);
-    ns_loop_destroy(loop);
+    ns_loop_deinit(loop);
     ns_shutdown();
     return 0;
 }

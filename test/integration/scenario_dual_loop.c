@@ -92,8 +92,8 @@ static int scenario_dual_loop(void)
 
     EXPECT_OK(ns_loop_stop(g_dual_loop_a) == NS_OK);
     EXPECT_OK(ns_loop_stop(g_dual_loop_b) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_dual_loop_a) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(g_dual_loop_b) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_dual_loop_a) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_dual_loop_b) == NS_OK);
     g_dual_loop_a = NULL;
     g_dual_loop_b = NULL;
 

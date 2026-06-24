@@ -61,7 +61,7 @@ int main(void)
     cfg.debug_name = "main-loop";
 
     ns_loop_t *loop = NULL;
-    rc = ns_loop_create(&loop, &cfg);
+    rc = ns_loop_init(&loop, &cfg);
     if(rc != NS_OK) goto out_shutdown_signal;
 
     ctx.loop = loop;
@@ -96,11 +96,11 @@ out_shutdown_connection:
 out_connection:
     (void)ns_signal_disconnect(&connection);
 out_loop:
-    (void)ns_loop_destroy(loop);
+    (void)ns_loop_deinit(loop);
 out_shutdown_signal:
-    (void)ns_signal_deinit(shutdown_requested);
+    (void)ns_signal_deinit(&shutdown_requested);
 out_sample_signal:
-    (void)ns_signal_deinit(sample_ready);
+    (void)ns_signal_deinit(&sample_ready);
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

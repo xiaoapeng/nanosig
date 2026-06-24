@@ -18,7 +18,7 @@
 API 总数计算口径：
 
 - `nanosig.h` 入口 3：`ns_init` / `ns_shutdown` / `ns_is_initialized`
-- `nanosig_loop.h` 6：`ns_loop_create` / `destroy` / `run` / `quit` / `start` / `stop`
+- `nanosig_loop.h` 6：`ns_loop_init` / `destroy` / `run` / `quit` / `start` / `stop`
 - `nanosig_signal.h` 公开函数 5 + 宏 6 + 类型与辅助宏若干（按"对外产生调用的入口"计 5）
 - `nanosig_timer.h` 5
 - `nanosig_broker.h` 公开 6
@@ -32,7 +32,7 @@ API 总数计算口径：
 | --- | --- | --- |
 | MPM-safe（多线程直接调用，无需额外同步） | 9 | `ns_signal_emit_raw`、`ns_signal_connect`、`ns_signal_disconnect`、`ns_signal_disconnect_all`、`ns_timer_start`、`ns_timer_cancel`、`ns_timer_restart`、`ns_broker_add`、`ns_broker_remove` |
 | 单线程（必须由同一"拥有线程"独占调用） | 23 | `ns_loop_run`、所有 `ns_mpsc_record_ring_try_acquire` / `release`、`ns_hashtable_*`（除 `init`）、`ns_rbtree_*`、`ns_ringbuf_*`（除 `init`）等 |
-| 需要序列化（库内部有锁，调用方需遵守接口规则，否则 UB） | 8 | `ns_signal_init_raw` / `deinit_raw`、`ns_loop_create` / `destroy` / `start` / `stop`、`ns_init` / `ns_shutdown` |
+| 需要序列化（库内部有锁，调用方需遵守接口规则，否则 UB） | 8 | `ns_signal_init_raw` / `deinit_raw`、`ns_loop_init` / `destroy` / `start` / `stop`、`ns_init` / `ns_shutdown` |
 | N/A（一次性查询 / 纯计算 / 字段读写辅助） | 16 | `ns_is_initialized`、`ns_hash_string`、`ns_waitable_init`、遍历宏、atomic 包装等 |
 
 ## 全局 / 生命周期
@@ -47,8 +47,8 @@ API 总数计算口径：
 
 | API | 并发类 | 理由 | 调用方约束 |
 | --- | --- | --- | --- |
-| `ns_loop_create` (`nanosig_loop.h:67`) | 需要序列化 | `src/nanosig.c:114` 内部 `ns_platform_alloc` + 初始化 `mpsc ring` + `wakeup`；`@pre` 写明"不得与 `ns_loop_destroy` / 自身并发"。未使用 mutex 保护 | 单一线程；与同一 loop 的 destroy 串行；与运行中的 run 串行 |
-| `ns_loop_destroy` (`nanosig_loop.h:81`) | 需要序列化 | `src/nanosig.c:160` 校验 `running == 0`（原子）、`async_thread == NULL`，然后 `ns_platform_wakeup_destroy` + `ns_platform_free`；`@pre` 写明串行 | 单一线程；先 stop 后 destroy；必须已无 in-flight emit 引用此 loop |
+| `ns_loop_init` (`nanosig_loop.h:67`) | 需要序列化 | `src/nanosig.c:114` 内部 `ns_platform_alloc` + 初始化 `mpsc ring` + `wakeup`；`@pre` 写明"不得与 `ns_loop_deinit` / 自身并发"。未使用 mutex 保护 | 单一线程；与同一 loop 的 destroy 串行；与运行中的 run 串行 |
+| `ns_loop_deinit` (`nanosig_loop.h:81`) | 需要序列化 | `src/nanosig.c:160` 校验 `running == 0`（原子）、`async_thread == NULL`，然后 `ns_platform_wakeup_destroy` + `ns_platform_free`；`@pre` 写明串行 | 单一线程；先 stop 后 destroy；必须已无 in-flight emit 引用此 loop |
 | `ns_loop_run` (`nanosig_loop.h:94`) | 单线程 | `src/nanosig.c:227` 入口检查 `async_thread == NULL`，内部 `ns_atomic_compare_exchange_strong(&running, 0->1)` 防止并发 run | 同一 loop 只允许一个线程 run；`async_thread` 非空时直接 `NS_E_BUSY` |
 | `ns_loop_quit` (`nanosig_loop.h:105`) | MPM-safe | `src/nanosig.c:236` 仅原子 store `quit_requested=1 (release)` + `ns_platform_wakeup_signal` | 任意线程；多次调用幂等 |
 | `ns_loop_start` (`nanosig_loop.h:119`) | 需要序列化 | `src/nanosig.c:256` 创建后台线程；`@pre` 写明不可重复 start / 已 start 不可 run | 单一线程；与 stop 串行 |
@@ -70,11 +70,11 @@ API 总数计算口径：
 
 | API | 并发类 | 理由 | 调用方约束 |
 | --- | --- | --- | --- |
-| `ns_timer_create` (`nanosig_timer.h:79`) | 需要序列化 | `src/ns_timer.c:268` `ns_signal_init_raw`（新建 mutex）+ 初始化 `interval_us / attr / rb_node`；未对 timer 自身加锁 | 同一 timer 串行；调用前不可被其他线程访问 |
+| `ns_timer_init` (`nanosig_timer.h:79`) | 需要序列化 | `src/ns_timer.c:268` `ns_signal_init_raw`（新建 mutex）+ 初始化 `interval_us / attr / rb_node`；未对 timer 自身加锁 | 同一 timer 串行；调用前不可被其他线程访问 |
 | `ns_timer_start` (`nanosig_timer.h:90`) | MPM-safe | `src/ns_timer.c:289` 内部 `ns_timer_mgr_lock`（`g_timer_mgr.mutex`）+ `rbtree_insert` + `ns_timer_mgr_notify` | 任意线程；同一 timer 重复 start 返回 `NS_E_EXISTS` |
 | `ns_timer_cancel` (`nanosig_timer.h:101`) | MPM-safe | `src/ns_timer.c:312` 加 `g_timer_mgr.mutex` 调 `ns_timer_cancel_locked` | 任意线程；未运行也成功（no-op） |
 | `ns_timer_restart` (`nanosig_timer.h:112`) | MPM-safe | `src/ns_timer.c:335` 加 `g_timer_mgr.mutex`、remove + insert | 任意线程 |
-| `ns_timer_destroy` (`nanosig_timer.h:124`) | 需要序列化 | `src/ns_timer.c:372` 内部 `ns_timer_cancel` + `ns_signal_deinit_raw` + `ns_rbtree_node_init`；头 `@pre` 建议先显式 `ns_signal_disconnect` | 同一 timer 串行；调用方须保证无 in-flight slot 调用 |
+| `ns_timer_deinit` (`nanosig_timer.h:124`) | 需要序列化 | `src/ns_timer.c:372` 内部 `ns_timer_cancel` + `ns_signal_deinit_raw` + `ns_rbtree_node_init`；头 `@pre` 建议先显式 `ns_signal_disconnect` | 同一 timer 串行；调用方须保证无 in-flight slot 调用 |
 
 ## watcher / broker
 
@@ -125,7 +125,7 @@ API 总数计算口径：
 
 - **未测试**：多线程同时 `ns_signal_init` / `deinit` 同一 signal —— `@pre` 已禁止，单元测试中无该场景。
 - **未测试**：`ns_loop_quit` 在 run 尚未开始时被另一线程调用；`running == 0` 状态下 quit 不会唤醒任何线程。
-- **未测试**：`ns_timer_destroy` 在 timer signal 仍有 in-flight slot 调用时调用（`@pre` 已要求先 disconnect，但未断言）。
+- **未测试**：`ns_timer_deinit` 在 timer signal 仍有 in-flight slot 调用时调用（`@pre` 已要求先 disconnect，但未断言）。
 - **未测试**：`ns_broker_add` / `ns_broker_remove` 与 broker 自身遍历 `watcher_head` 并发——实现中 `ns_broker_remove_all_watchers` 在 shutdown 路径上才会无锁遍历，已在 mutex 内，但 `ns_broker_run` 的 completion 路径（`ns_broker_emit_completion` → `ns_signal_emit_raw`）不持 `watcher_mutex`，仅持 `signal->mutex`；并发 add+emit 路径未做端到端测试。
 - **未测试**：`ns_mpsc_record_ring` 单消费者约束违反——`test_mpsc_record_ring_stress.c` 假定单消费者，无多 consumer 用例。
 - **未测试**：跨平台 waitable（`event_bit` for RTOS 路径为 v2 占位）目前未实现并发测试。
@@ -137,7 +137,7 @@ v1 线程安全契约**整体成立**：
 
 - 公共高阶 API（`ns_signal_emit_raw`、`connect` / `disconnect`、`ns_timer_start/cancel/restart`、`ns_broker_add/remove`）由库内 mutex 守护，跨线程安全。
 - `ns_loop_t` 设计承诺兑现：内部 `running` / `quit_requested` 用原子，单 run 线程约束由 `compare_exchange` 强制；`quit` / `start`（不同线程协作）由原子 + wakeup 守护。
-- timer 全局 manager 由 `g_timer_mgr.mutex` 守护，`ns_timer_create/destroy` 仍依赖调用方串行（对象级）。
+- timer 全局 manager 由 `g_timer_mgr.mutex` 守护，`ns_timer_init/destroy` 仍依赖调用方串行（对象级）。
 - broker watcher 注册表由 `watcher_mutex` 守护。
 - MPSC record ring 的多生产者并发已由 lock-free 算法 + 显式头注释保证。
 

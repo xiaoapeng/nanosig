@@ -90,17 +90,17 @@ cfg.max_payload_size = 256u;
 cfg.debug_name = "worker-B";
 
 ns_loop_t *loop = NULL;
-int rc = ns_loop_create(&loop, &cfg);
+int rc = ns_loop_init(&loop, &cfg);
 if(rc != NS_OK) {
     return rc;
 }
 
 /* run callbacks on this thread */
 
-(void)ns_loop_destroy();
+(void)ns_loop_deinit();
 ```
 
-`ns_loop_create` is the per-thread initialization point. A second create in the
+`ns_loop_init` is the per-thread initialization point. A second create in the
 same thread fails with `NS_E_EXISTS`. There is no separate `ns_thread_init`.
 
 The type remains named `ns_loop_t`. The object is still the event loop; thread
@@ -297,7 +297,7 @@ static void on_tick(void *user_data, const ns_no_payload_t *payload);
 ns_timer_t timer;
 ns_connection_t connection;
 
-rc = ns_timer_create(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
+rc = ns_timer_init(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
 if(rc != NS_OK) {
     goto out_loop;
 }
@@ -324,7 +324,7 @@ out_connection:
     (void)ns_timer_cancel(&timer);
     (void)ns_signal_disconnect(&connection);
 out_timer:
-    (void)ns_timer_destroy(&timer);
+    (void)ns_timer_deinit(&timer);
 ```
 
 `interval_us` is a `uint64_t` microsecond interval. Timer attributes are a
@@ -335,13 +335,13 @@ to current-time based reload. When bit1 is clear, the next deadline follows
 otherwise it falls back to `now + interval_us`. This mirrors the useful
 `eh_timer` behavior while keeping the nanosig timer payload-free.
 `ns_timer_cancel` is valid for any timer successfully initialized by
-`ns_timer_create`; if the timer is not running, it is a no-op success path.
+`ns_timer_init`; if the timer is not running, it is a no-op success path.
 
 ## Ownership Rules
 
 - One thread owns at most one `ns_loop_t`.
-- `ns_loop_create` binds the new loop to the current thread.
-- `ns_loop_destroy` must be called by the owning thread and unbinds that thread. It takes no parameter and reads the loop from TLS.
+- `ns_loop_init` binds the new loop to the current thread.
+- `ns_loop_deinit` must be called by the owning thread and unbinds that thread. It takes no parameter and reads the loop from TLS.
 - `ns_signal_emit_raw` is callable from any thread.
 - `ns_signal_emit(signal, NS_NO_PAYLOAD)` is callable from any thread for
   `ns_no_payload_t` signals.

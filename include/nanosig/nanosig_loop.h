@@ -2,7 +2,7 @@
  * @file nanosig_loop.h
  * @brief nanosig 事件循环 API。
  * @thread-safety
- *   - ns_loop_create / ns_loop_destroy：调用方必须串行化调用，非 MPM-safe。
+ *   - ns_loop_init / ns_loop_deinit：调用方必须串行化调用，非 MPM-safe。
  *   - ns_loop_run：单线程（绑定到调用者线程）；跨线程 quit 通过原子操作安全，
  *     但调用方必须保证 run 返回前 loop 不再被使用。
  *   - ns_loop_start / ns_loop_stop：调用方必须串行化；二次 stop 返回 NS_E_INVAL。
@@ -64,13 +64,13 @@ typedef struct ns_loop_config {
  *
  * `config` 为 `NULL` 时使用默认配置。loop 不绑定线程，调用方负责管理其生命周期。
  *
- * @pre 本函数不得与 `ns_loop_destroy()` 或自身并发调用。
+ * @pre 本函数不得与 `ns_loop_deinit()` 或自身并发调用。
  *
  * @param out_loop 输出创建得到的 loop 句柄；可为 `NULL`，此时不向外传值。
  * @param config loop 配置；可为 `NULL`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
+extern int ns_loop_init(ns_loop_t **out_loop, const ns_loop_config_t *config);
 
 /**
  * @brief 销毁事件循环。
@@ -79,12 +79,12 @@ extern int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config);
  * @pre 调用前必须断开所有以该 loop 为目标的 signal connection，并确保没有
  *      in-flight 的 `ns_signal_emit_raw()` 仍持有指向该 loop 的指针。
  * @pre `ns_shutdown()` 尚未调用；shutdown 后调用本函数行为未定义。
- * @pre 本函数不得与 `ns_loop_create()` 或自身并发调用。
+ * @pre 本函数不得与 `ns_loop_init()` 或自身并发调用。
  *
  * @param loop 要销毁的 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
-extern int ns_loop_destroy(ns_loop_t *loop);
+extern int ns_loop_deinit(ns_loop_t *loop);
 
 /**
  * @brief 运行事件循环。

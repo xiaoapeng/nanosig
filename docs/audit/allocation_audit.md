@@ -33,9 +33,9 @@
 
 | 位置 | 调用 | 对象 / 大小 | 所属生命周期 | 配对 free | 失败回滚 | 跨线程 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nanosig.c:132` | `ns_platform_alloc(total_size)` | `ns_loop_t` + MPSC storage | `ns_loop_create` | `destroy:171` | `out_free:156` | 创建线程 → 销毁线程；async 线程仅消费 | 单块分配，struct 与 queue storage 连续 |
-| `nanosig.c:156` | `ns_platform_free(loop)` | — | `ns_loop_create` 失败 | — | 是（goto out_free） | — | wakeup_create 失败时 → out_free |
-| `nanosig.c:171` | `ns_platform_free(loop)` | — | `ns_loop_destroy` | — | — | 必须由停止后的 owner 线程调用 | 先 destroy wakeup，再 free loop |
+| `nanosig.c:132` | `ns_platform_alloc(total_size)` | `ns_loop_t` + MPSC storage | `ns_loop_init` | `destroy:171` | `out_free:156` | 创建线程 → 销毁线程；async 线程仅消费 | 单块分配，struct 与 queue storage 连续 |
+| `nanosig.c:156` | `ns_platform_free(loop)` | — | `ns_loop_init` 失败 | — | 是（goto out_free） | — | wakeup_create 失败时 → out_free |
+| `nanosig.c:171` | `ns_platform_free(loop)` | — | `ns_loop_deinit` | — | — | 必须由停止后的 owner 线程调用 | 先 destroy wakeup，再 free loop |
 
 ### 核心层 — `src/ns_broker.c`
 
@@ -153,7 +153,7 @@ macOS backend 与 Linux 结构相同（kqueue 替代 epoll、pthread 相同）�
 
 - **位置**：`src/ns_broker.c:284-342`、`src/nanosig.c:114-158`
 - **严重度**：Major（确认无违规）
-- **描述**：`ns_broker_global_init` 使用 6 级 goto cascade 标签（`out_timer_mgr` -> `out_mutex` -> `out_wakeup_waitable` -> `out_waitset` -> `out_wakeup` -> `out_free`），每个标签依次销毁已初始化的子对象。`ns_loop_create` 使用 1 级 `out_free` 释放 loop 的完整单块分配。两处都正确设置 NULL 避免双重释放，并在 `ns_platform_free` 之前调用了各子资源析构。
+- **描述**：`ns_broker_global_init` 使用 6 级 goto cascade 标签（`out_timer_mgr` -> `out_mutex` -> `out_wakeup_waitable` -> `out_waitset` -> `out_wakeup` -> `out_free`），每个标签依次销毁已初始化的子对象。`ns_loop_init` 使用 1 级 `out_free` 释放 loop 的完整单块分配。两处都正确设置 NULL 避免双重释放，并在 `ns_platform_free` 之前调用了各子资源析构。
 
 ### 发现 #5：无全局 loop 注册机制
 
@@ -166,7 +166,7 @@ macOS backend 与 Linux 结构相同（kqueue 替代 epoll、pthread 相同）�
 
 - **位置**：跨文件
 - **严重度**：Info
-- **描述**：`ns_loop_t` 的创建线程（`ns_loop_create`）是 MPSC 的消费者（SC），`async_thread`（`ns_loop_start`）也是消费者，emit 线程（调用 `ns_signal_emit_raw` 的线程）是生产者。但 loop 的 `ns_loop_destroy` 应在 `ns_loop_stop` 之后由 owner 线程（而非 async 线程）调用。当前的 publicly exported API 未强制这一线程所有权约束。同样，`ns_watcher_t` 的 `init`/`deinit` 调用者预期是用户线程。`ns_broker_global_shutdown` 通过线程 join 保证了安全析构。
+- **描述**：`ns_loop_t` 的创建线程（`ns_loop_init`）是 MPSC 的消费者（SC），`async_thread`（`ns_loop_start`）也是消费者，emit 线程（调用 `ns_signal_emit_raw` 的线程）是生产者。但 loop 的 `ns_loop_deinit` 应在 `ns_loop_stop` 之后由 owner 线程（而非 async 线程）调用。当前的 publicly exported API 未强制这一线程所有权约束。同样，`ns_watcher_t` 的 `init`/`deinit` 调用者预期是用户线程。`ns_broker_global_shutdown` 通过线程 join 保证了安全析构。
 - **修复方向**：在公开头文件 API 注释中添加"本对象只能由创建线程销毁"的说明。
 
 ## 结论
@@ -175,7 +175,7 @@ macOS backend 与 Linux 结构相同（kqueue 替代 epoll、pthread 相同）�
 
 1. **热路径零分配**：`ns_signal_emit_raw` → `ns_mpsc_record_ring_try_pushv` → `ns_platform_wakeup_signal` 全链路无 `ns_platform_alloc` 或底层 `malloc`。所有分配仅发生在 init / create 路径。
 2. **配对完整**：每个 `ns_platform_alloc` 均有对应的 `ns_platform_free`，通过 goto cascade 或 destroy 配对函数实现。无泄漏。
-3. **失败回滚正确**：`ns_loop_create` 和 `ns_broker_global_init` 的失败路径正确释放已分配资源并返回 `NS_E_NOMEM`。
+3. **失败回滚正确**：`ns_loop_init` 和 `ns_broker_global_init` 的失败路径正确释放已分配资源并返回 `NS_E_NOMEM`。
 4. **错误码一致**：所有 alloc 失败返回 `NS_E_NOMEM`。
 
 **遗留风险**：

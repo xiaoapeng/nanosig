@@ -15,7 +15,7 @@ timer 是 nanosig 的定时器模块，基于 rbtree 按 deadline 排序，到�
 
 ```
 用户层：
-  ns_timer_create / start / cancel / restart / destroy
+  ns_timer_init / start / cancel / restart / destroy
   ns_signal_connect(&timer->signal, slot, ...)
 
 timer_manager 层（独立模块）：
@@ -74,15 +74,15 @@ mgr->now = ns_platform_clock_monotonic_us();
 ### 用户接口
 
 ```c
-int ns_timer_create(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
+int ns_timer_init(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr);
 int ns_timer_start(ns_timer_t *timer);
 int ns_timer_cancel(ns_timer_t *timer);
 int ns_timer_restart(ns_timer_t *timer);
-int ns_timer_destroy(ns_timer_t *timer);
+int ns_timer_deinit(ns_timer_t *timer);
 ```
 
-用户通过 `ns_signal_connect(&timer->signal, ...)` 连接 slot。`ns_timer_create`
-初始化内嵌 no-payload signal，`ns_timer_destroy` 负责释放该 signal 的内部资源。
+用户通过 `ns_signal_connect(&timer->signal, ...)` 连接 slot。`ns_timer_init`
+初始化内嵌 no-payload signal，`ns_timer_deinit` 负责释放该 signal 的内部资源。
 
 ### broker 内部接口
 

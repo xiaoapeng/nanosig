@@ -64,7 +64,7 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_init(&dynamic_owner.no_payload_signal, ns_no_payload_t);
     (void)owner;
     (void)dynamic_owner;
-    (void)ns_timer_create(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
+    (void)ns_timer_init(&timer, 100000u, NS_TIMER_ATTR_REPEAT);
     (void)ns_signal_connect_typed(timer.signal, matrix_no_payload_slot, ns_no_payload_t, loop, &observed, &connections[0]);
 
     (void)ns_signal_connect_typed(
@@ -128,11 +128,11 @@ int ns_pd_macro_matrix_compile_only(ns_loop_t *loop)
     (void)ns_signal_disconnect_all(&matrix_payload_signal);
     (void)ns_signal_disconnect_all(&matrix_no_payload_signal);
     (void)ns_signal_disconnect_all(&timer.signal);
-    (void)ns_signal_deinit(matrix_no_payload_signal);
-    (void)ns_signal_deinit(matrix_payload_signal);
-    (void)ns_signal_deinit(dynamic_owner.no_payload_signal);
-    (void)ns_signal_deinit(dynamic_owner.payload_signal);
-    (void)ns_timer_destroy(&timer);
+    (void)ns_signal_deinit(&matrix_no_payload_signal);
+    (void)ns_signal_deinit(&matrix_payload_signal);
+    (void)ns_signal_deinit(&dynamic_owner.no_payload_signal);
+    (void)ns_signal_deinit(&dynamic_owner.payload_signal);
+    (void)ns_timer_deinit(&timer);
 
     return observed;
 }

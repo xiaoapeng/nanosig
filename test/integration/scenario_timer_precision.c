@@ -55,14 +55,14 @@ static int scenario_timer_precision(void)
     EXPECT_OK(g_tp_loop != NULL);
 
     for(i = 0u; i < TP_NUM_TIMERS; i++){
-        EXPECT_OK(ns_timer_create(&g_tp_timers[i], intervals[i], NS_TIMER_ATTR_REPEAT) == NS_OK);
+        EXPECT_OK(ns_timer_init(&g_tp_timers[i], intervals[i], NS_TIMER_ATTR_REPEAT) == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_tp_timers[i].signal, tp_slot,
                                     g_tp_loop, (void *)(intptr_t)i, &g_tp_conns[i]) == NS_OK);
         EXPECT_OK(ns_timer_start(&g_tp_timers[i]) == NS_OK);
     }
 
     /* Exit timer quits the loop after 3 seconds */
-    EXPECT_OK(ns_timer_create(&exit_timer, TP_RUN_DURATION_US, 0) == NS_OK);
+    EXPECT_OK(ns_timer_init(&exit_timer, TP_RUN_DURATION_US, 0) == NS_OK);
     EXPECT_OK(ns_signal_connect(&exit_timer.signal, tp_exit_slot, g_tp_loop, NULL, &exit_conn) == NS_OK);
     EXPECT_OK(ns_timer_start(&exit_timer) == NS_OK);
 
@@ -78,13 +78,13 @@ static int scenario_timer_precision(void)
     }
 
     EXPECT_OK(ns_signal_disconnect(&exit_conn) == NS_OK);
-    EXPECT_OK(ns_timer_destroy(&exit_timer) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&exit_timer) == NS_OK);
 
     for(i = 0u; i < TP_NUM_TIMERS; i++){
         EXPECT_OK(ns_signal_disconnect(&g_tp_conns[i]) == NS_OK);
-        EXPECT_OK(ns_timer_destroy(&g_tp_timers[i]) == NS_OK);
+        EXPECT_OK(ns_timer_deinit(&g_tp_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_destroy(g_tp_loop) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(g_tp_loop) == NS_OK);
     g_tp_loop = NULL;
 
     integration_verify_clean_shutdown();

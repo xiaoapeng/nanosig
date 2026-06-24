@@ -46,7 +46,7 @@ static int scenario_lifecycle_marathon(void)
         /* Phase 1: Create timers */
         INTEGRATION_PHASE("marathon: round %u phase 1 — create %u timers", round + 1u, LM_NUM_TIMERS);
         for(i = 0u; i < LM_NUM_TIMERS; i++){
-            EXPECT_OK(ns_timer_create(&timers[i], 100000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
+            EXPECT_OK(ns_timer_init(&timers[i], 100000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
             EXPECT_OK(ns_signal_connect(&timers[i].signal, dummy_slot, loop, NULL, &timer_conns[i]) == NS_OK);
             EXPECT_OK(ns_timer_start(&timers[i]) == NS_OK);
         }
@@ -106,9 +106,9 @@ static int scenario_lifecycle_marathon(void)
         }
         for(i = 0u; i < LM_NUM_TIMERS; i++){
             EXPECT_OK(ns_signal_disconnect(&timer_conns[i]) == NS_OK);
-            EXPECT_OK(ns_timer_destroy(&timers[i]) == NS_OK);
+            EXPECT_OK(ns_timer_deinit(&timers[i]) == NS_OK);
         }
-        EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+        EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
 
         integration_verify_clean_shutdown();
         INTEGRATION_PASS("marathon: round %u/3 complete", round + 1u);
