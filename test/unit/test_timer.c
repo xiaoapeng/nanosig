@@ -261,6 +261,114 @@ static int test_timer_microsecond_interval(void)
     return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Test: restart while timer is running resets the deadline            */
+/* ------------------------------------------------------------------ */
+
+static int g_restart_while_running_seen = 0;
+
+static void slot_restart_while_running(void *user_data, const void *payload)
+{
+    (void)user_data;
+    (void)payload;
+    g_restart_while_running_seen++;
+    /* quit the loop so the test can finish */
+}
+
+static int test_restart_while_running(void)
+{
+    ns_timer_t timer;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    ns_platform_time_us_t timeout_before = 0u;
+    ns_platform_time_us_t timeout_after = 0u;
+    timer_slot_ctx_t ctx;
+
+    g_restart_while_running_seen = 0;
+    ctx.loop = NULL;
+    ctx.seen = 0;
+
+    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    ctx.loop = loop;
+
+    /* 200ms oneshot — long enough to restart before it fires */
+    EXPECT_OK(ns_timer_init(&timer, 200000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, slot_restart_while_running, loop, &ctx, &conn) == NS_OK);
+
+    EXPECT_OK(ns_timer_start(&timer) == NS_OK);
+
+    /* Confirm timer is running */
+    EXPECT_OK(ns_timer_mgr_next_timeout(&timeout_before) == NS_OK);
+    EXPECT_OK(timeout_before <= 200000u);
+
+    /* Restart while running — should reset the deadline */
+    EXPECT_OK(ns_timer_restart(&timer) == NS_OK);
+
+    /* After restart, the timeout should have been refreshed.
+     * The remaining time should still be <= interval_us. */
+    EXPECT_OK(ns_timer_mgr_next_timeout(&timeout_after) == NS_OK);
+    EXPECT_OK(timeout_after <= 200000u);
+
+    /* Cancel and use a short timer to verify the slot works */
+    EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
+
+    /* Now test restart→fire with a short timer */
+    EXPECT_OK(ns_timer_init(&timer, 10000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
+    EXPECT_OK(ns_timer_start(&timer) == NS_OK);
+
+    /* Restart while running */
+    EXPECT_OK(ns_timer_restart(&timer) == NS_OK);
+
+    /* Run loop — timer should fire once */
+    EXPECT_OK(ns_loop_run(loop) == NS_OK);
+    EXPECT_EQ(ctx.seen, 1);
+
+    EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Test: restart on a stopped timer behaves like start                */
+/* ------------------------------------------------------------------ */
+
+static int test_restart_idle_timer(void)
+{
+    ns_timer_t timer;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    timer_slot_ctx_t ctx;
+    ns_platform_time_us_t timeout = 0u;
+
+    ctx.loop = NULL;
+    ctx.seen = 0;
+
+    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    ctx.loop = loop;
+
+    EXPECT_OK(ns_timer_init(&timer, 10000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
+
+    /* restart on a timer that was never started — should behave like start */
+    EXPECT_OK(ns_timer_restart(&timer) == NS_OK);
+    EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
+    EXPECT_OK(timeout <= 10000u);
+
+    EXPECT_OK(ns_loop_run(loop) == NS_OK);
+    EXPECT_EQ(ctx.seen, 1);
+
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
+    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+
+    return 0;
+}
+
 int main(void)
 {
     ns_platform_time_us_t timeout = 0u;
@@ -276,6 +384,8 @@ int main(void)
     if(test_repeat_timer_reload_from_now() != 0) return 1;
     if(test_repeat_timer_multiple() != 0) return 1;
     if(test_timer_microsecond_interval() != 0) return 1;
+    if(test_restart_while_running() != 0) return 1;
+    if(test_restart_idle_timer() != 0) return 1;
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;

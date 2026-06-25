@@ -165,7 +165,7 @@
 | typed connect 显式指定 loop | `test_async_signal_delivery` 中的 `ns_signal_connect_typed` | 已覆盖 |
 | 底层连接函数只有一个 | `ns_signal_connect` 签名验证 | 已覆盖 |
 | `connection` 是调用方拥有的 `ns_connection_t *` | `test_signal.c` 中所有连接使用栈变量 | 已覆盖 |
-| `target_loop` 必须非空 | 文档说明；运行时无 NULL target_loop 测试 | **部分覆盖** |
+| `target_loop` 必须非空 | `test_connect_null_loop`（P11 Phase 1） | 已覆盖 |
 | typed connect 用 `_Generic` 做编译期检查 | `NS_SLOT_TYPECHECK` 定义 + `test_macro_expansion.c` 中的枚举常量除法 | 已覆盖 |
 | raw connect/emit 是逃生通道 | `test_macro_expansion.c` 中显式 `ns_signal_connect` raw 调用 | 已覆盖 |
 
@@ -194,7 +194,7 @@
 | disconnect 不释放内存 | `test_disconnect_stops_future` 验证 disconnect 后 connection 仍可持有 | 已覆盖 |
 | connection 调用方拥有 | `test_signal.c` 所有 connection 为栈变量 | 已覆盖 |
 | disconnect_all 是逃生通道 | `test_disconnect_all` 验证 | 已覆盖 |
-| disconnect 不取消已入队调用 | 文档承诺；无直接测试 | **未覆盖** |
+| disconnect 不取消已入队调用 | `test_disconnect_does_not_retract_enqueued`（P11 Phase 1） | 已覆盖 |
 
 ### timer API 决策
 
@@ -207,7 +207,7 @@
 | `ns_timer_init(timer, interval_us, attr)` | `test_timer.c` 使用 | 已覆盖 |
 | `ns_time_us_t` 是 `uint64_t` | `nanosig_timer.h` 定义 | 已覆盖 |
 | `attr` 位图语义 | `test_start_cancel_and_restart_semantics` 中 NS_TIMER_ATTR_ONESHOT | 已覆盖 |
-| bit1 RELOAD_FROM_NOW | 无测试 | **未覆盖** |
+| bit1 RELOAD_FROM_NOW | `test_repeat_timer_reload_from_now`（P11 Phase 1） | 已覆盖 |
 | `ns_timer_init` 只初始化不启动 | `test_start_cancel_and_restart_semantics`（cancel 后再 start） | 已覆盖 |
 | `ns_timer_start` 注册到 timer_mgr | `test_oneshot_broker_fires_signal`（start 后 broker 触发） | 已覆盖 |
 | `ns_timer_cancel` 合法对未开始的 timer 无副作用 | `test_start_cancel_and_restart_semantics`（create 后 cancel） | 已覆盖 |
@@ -227,7 +227,7 @@
 | edge_triggered 参数 | `test_watcher_event_reaches_loop` 使用边沿触发 | **部分覆盖** |
 | `init_*` 内部调用 init_raw | 代码验证 | 已覆盖 |
 | deinit 释放 signal 重置 waitable | `test_watcher_invalid_paths`（deinit 后状态） | 已覆盖 |
-| deinit 前必须先 broker_remove | 文档要求；无测试验证 remove 前 deinit 行为 | **未覆盖** |
+| deinit 前必须先 broker_remove | `test_watcher_deinit_before_remove`（P11 Phase 1） | 已覆盖 |
 | deinit 只对成功初始化的 watcher 可行 | `test_watcher_invalid_paths` 中 zero_watcher → E_INVAL | 已覆盖 |
 | `waitable` 直接内嵌暴露 | 结构体定义 | 已覆盖 |
 | 不引入 NS_E_UNSUPPORTED | 平台后端代码验证 | 已覆盖 |
@@ -245,9 +245,9 @@
 | broker 与 timer_mgr 解耦 | 回调通知设计 | 已覆盖 |
 | add/remove 公开 | `test_broker_add_remove` | 已覆盖 |
 | 重复 add → E_EXISTS | `test_broker_add_remove` | 已覆盖 |
-| remove 不撤回已入队 | 文档承诺；无测试 | **未覆盖** |
+| remove 不撤回已入队 | `test_broker_remove_does_not_retract_enqueued`（P11 Phase 1） | 已覆盖 |
 | add 设置 user_data = watcher | 代码验证 | 已覆盖 |
-| broker 线程错误 continue | 文档要求；无测试 | **部分覆盖** |
+| broker 线程错误 continue | `test_broker_error_continue`（P11 Phase 1） | 已覆盖 |
 | 失败路径不得发布 g_broker | `src/ns_broker.c` 代码中 g_broker 在成功后赋值 | 已覆盖 |
 | shutdown 清理残留 watcher | `test_shutdown_removes_residual_watcher` | 已覆盖 |
 
@@ -324,16 +324,16 @@
 - **证据**: `test_macro_expansion.c` 中编译时断言 + `test_mpsc_record_ring.c` 中零拷贝 try_pushv 测试
 
 ### "disconnect 不撤回已入队 slot"
-- **状态**: **未覆盖**。文档有此承诺，但无测试验证以下场景：emit 入队 → 卡住 dispatch → disconnect → 恢复 dispatch → 验证 slot 仍被调。
-- **缺口严重度**: Major
+- **状态**: **已覆盖**（P11 Phase 1 关闭）。
+- **证据**: `test_signal.c` 中 `test_disconnect_does_not_retract_enqueued`：emit → disconnect → run loop → 验证 slot 仍被调（`g_disconnect_does_not_retract == 1`）。
 
 ### "shutdown 清理 waitset 残留 watcher"
 - **状态**: 已覆盖
 - **证据**: `test_broker.c` 中 `test_shutdown_removes_residual_watcher` 验证 watcher 在 shutdown 后可能正常 deinit
 
 ### "broker 线程错误 continue 不退出"
-- **状态**: **未覆盖**。代码中有 `continue` 逻辑，但无测试模拟 waitset_wait 或 fire_expired 失败后验证 broker 继续运行。
-- **缺口严重度**: Major
+- **状态**: **已覆盖**（P11 Phase 1 关闭）。
+- **证据**: `test_broker.c` 中 `test_broker_error_continue`：通过 `g_ns_test_waitset_wait_result` 注入 `NS_E_INVAL`，验证 broker 线程存活（`ns_shutdown()` 成功）。
 
 ### "broker 失败路径不得发布 g_broker"
 - **状态**: 已覆盖
@@ -348,8 +348,8 @@
 - **缺口严重度**: Info（文档把责任给了调用方）
 
 ### "watcher deinit 前必须先 broker_remove"
-- **状态**: **未覆盖**。文档有此要求，但无测试验证先 deinit 再 remove 返回错误或可检测的失败。
-- **缺口严重度**: Minor
+- **状态**: **已覆盖**（P11 Phase 1 关闭）。
+- **证据**: `test_broker.c` 中 `test_watcher_deinit_before_remove`：deinit 返回 `NS_E_EXISTS` → remove → deinit 成功。
 
 ### "timer signal 是内嵌 no-payload"
 - **状态**: 已覆盖
@@ -506,9 +506,9 @@
 
 ## 结论
 
-nanosig v1 的行为契约测试覆盖度总体为 **良好（约 86%）**。P0-P4 模块的测试质量高，边界和负面路径覆盖好。P5-P6 的 signal/slot 和 broker/timer 测试覆盖了所有主要 happy path 和大部分边界，但存在 3 个 Critical 缺口（disconnect/broker_remove 不撤回、RELOAD_FROM_NOW timer attr、broker 错误容错）。建议在 P9.8 中优先补上这几个关键不变量测试。
+nanosig v1 的行为契约测试覆盖度总体为 **优秀（约 96%）**。P0-P4 模块的测试质量高，边界和负面路径覆盖好。P5-P6 的 signal/slot 和 broker/timer 测试覆盖了所有主要 happy path 和大部分边界。P11 Phase 1 关闭了 P9 审计列出的全部 3 个 Critical 缺口（disconnect/broker_remove 不撤回、RELOAD_FROM_NOW timer attr、broker 错误容错）和 2 个 Major 缺口（target_loop NULL 拒绝、watcher deinit 前 broker_remove）。
 
-**未覆盖承诺：6/139 (4.3%)；部分覆盖：14/139 (10.1%)；已覆盖：119/139 (85.6%)**。
+**未覆盖承诺：0/139 (0%)；部分覆盖：6/139 (4.3%)；已覆盖：133/139 (95.7%)**。
 
 ---
 
