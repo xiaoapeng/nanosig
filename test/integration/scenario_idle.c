@@ -12,6 +12,9 @@
  * Duration scaled by NANOSIG_TEST_SCALE env var.
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define IDLE_DURATION_US (3u * 1000000u * integration_test_scale()) /* 3s × scale */
 
 static ns_loop_t *g_idle_loop;
@@ -57,3 +60,7 @@ static int scenario_idle(void)
 }
 
 #undef IDLE_DURATION_US
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_idle(); }
+#endif

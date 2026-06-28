@@ -10,6 +10,9 @@
  * #included into test_layer2.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define RAND_CHAOS_RUN_US (3u * 1000000u * integration_test_scale()) /* 3s x scale */
 
 static ns_loop_t *g_rc_loop;
@@ -23,17 +26,17 @@ static ns_watcher_t g_rc_watcher;
 static ns_connection_t g_rc_wconn;
 static ns_platform_waitable_t g_rc_raw;
 
+#include "test_thread.h"
+
 static void rc_dummy_slot(void *user_data, const void *payload)
 {
     (void)user_data;
     (void)payload;
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI rc_worker_main(LPVOID arg)
-#else
-static void *rc_worker_main(void *arg)
-#endif
+static test_thread_t g_rc_thread;
+
+static int rc_worker_entry(void *arg)
 {
     (void)arg;
 
@@ -68,40 +71,7 @@ static void *rc_worker_main(void *arg)
 #endif
     }
 
-#if defined(_WIN32)
-    return 0u;
-#else
-    return NULL;
-#endif
-}
-
-#if defined(_WIN32)
-static HANDLE g_rc_thread;
-#else
-static pthread_t g_rc_thread;
-#endif
-
-static int rc_worker_start(void)
-{
-#if defined(_WIN32)
-    g_rc_thread = CreateThread(NULL, 0u, rc_worker_main, NULL, 0u, NULL);
-    return (g_rc_thread != NULL) ? 0 : -1;
-#else
-    return (pthread_create(&g_rc_thread, NULL, rc_worker_main, NULL) == 0) ? 0 : -1;
-#endif
-}
-
-static void rc_worker_join(void)
-{
-#if defined(_WIN32)
-    if(g_rc_thread != NULL){
-        WaitForSingleObject(g_rc_thread, 5000u);
-        CloseHandle(g_rc_thread);
-        g_rc_thread = NULL;
-    }
-#else
-    (void)pthread_join(g_rc_thread, NULL);
-#endif
+    return 0;
 }
 
 static int scenario_random_chaos(void)
@@ -133,7 +103,8 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_broker_add(&g_rc_watcher) == NS_OK);
 
     INTEGRATION_PHASE("random_chaos: running 3s chaos");
-    EXPECT_OK(rc_worker_start() == 0);
+    test_thread_init(&g_rc_thread, rc_worker_entry, NULL);
+    EXPECT_OK(test_thread_start(&g_rc_thread) == 0);
 
 #if defined(_WIN32)
     Sleep(3000u);
@@ -142,7 +113,7 @@ static int scenario_random_chaos(void)
 #endif
 
     ns_atomic_store_explicit(&g_rc_quit, 1, ns_memory_order_release);
-    rc_worker_join();
+    test_thread_join(&g_rc_thread);
 
     {
         int ops = ns_atomic_load_explicit(&g_rc_op_count, ns_memory_order_relaxed);
@@ -171,3 +142,7 @@ static int scenario_random_chaos(void)
 }
 
 #undef RAND_CHAOS_RUN_US
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_random_chaos(); }
+#endif

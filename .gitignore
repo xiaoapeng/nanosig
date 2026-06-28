@@ -10,3 +10,4 @@ build-linux*
 .clawbench/
 .codex
 Testing/
+build-coverage/

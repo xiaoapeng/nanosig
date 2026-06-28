@@ -10,6 +10,9 @@
  * #included into test_layer2.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define STORM_NUM_TIMERS 500u  /* Array capacity; scaled exit via integration_test_scale */
 #define STORM_MAX_INTERVAL_US 1000u  /* 1ms */
 
@@ -80,3 +83,7 @@ static int scenario_timer_storm(void)
 
 #undef STORM_NUM_TIMERS
 #undef STORM_MAX_INTERVAL_US
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_timer_storm(); }
+#endif

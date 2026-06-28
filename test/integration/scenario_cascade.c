@@ -11,6 +11,9 @@
  * #included into test_layer1.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define CASCADE_DEPTH 10
 
 static ns_timer_t g_cascade_timers[CASCADE_DEPTH];
@@ -78,3 +81,7 @@ static int scenario_cascade(void)
 }
 
 #undef CASCADE_DEPTH
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_cascade(); }
+#endif

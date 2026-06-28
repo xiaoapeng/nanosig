@@ -12,6 +12,9 @@
  * #included into test_layer3.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define MR_NUM_LOOPS 3u
 
 static ns_loop_t *g_mr_loops[MR_NUM_LOOPS];
@@ -177,3 +180,7 @@ static int scenario_multi_route(void)
 }
 
 #undef MR_NUM_LOOPS
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_multi_route(); }
+#endif

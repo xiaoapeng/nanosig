@@ -10,6 +10,9 @@
  * #included into test_layer2.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define SIGSTORM_SLOTS_PER_LOOP 25u
 #define SIGSTORM_NUM_THREADS 4u
 #define SIGSTORM_EMITS_PER_THREAD (250u * integration_test_scale())
@@ -24,6 +27,8 @@ static atomic_int g_ss_counts[SIGSTORM_SLOTS_PER_LOOP * 2u];
 static atomic_int g_ss_threads_ready;
 static atomic_int g_ss_threads_done;
 
+#include "test_thread.h"
+
 static void ss_slot(void *user_data, const void *payload)
 {
     size_t idx = (size_t)(intptr_t)user_data;
@@ -31,11 +36,9 @@ static void ss_slot(void *user_data, const void *payload)
     ns_atomic_fetch_add_explicit(&g_ss_counts[idx], 1, ns_memory_order_relaxed);
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI ss_worker_main(LPVOID arg)
-#else
-static void *ss_worker_main(void *arg)
-#endif
+static test_thread_t g_ss_threads[SIGSTORM_NUM_THREADS];
+
+static int ss_worker_entry(void *arg)
 {
     unsigned int i;
     (void)arg;
@@ -48,18 +51,8 @@ static void *ss_worker_main(void *arg)
 
     ns_atomic_fetch_add_explicit(&g_ss_threads_done, 1, ns_memory_order_release);
 
-#if defined(_WIN32)
-    return 0u;
-#else
-    return NULL;
-#endif
+    return 0;
 }
-
-#if defined(_WIN32)
-static HANDLE g_ss_threads[SIGSTORM_NUM_THREADS];
-#else
-static pthread_t g_ss_threads[SIGSTORM_NUM_THREADS];
-#endif
 
 static int scenario_signal_storm(void)
 {
@@ -103,22 +96,13 @@ static int scenario_signal_storm(void)
 
     /* Start worker threads */
     for(i = 0u; i < SIGSTORM_NUM_THREADS; i++){
-#if defined(_WIN32)
-        g_ss_threads[i] = CreateThread(NULL, 0u, ss_worker_main, NULL, 0u, NULL);
-        EXPECT_OK(g_ss_threads[i] != NULL);
-#else
-        EXPECT_OK(pthread_create(&g_ss_threads[i], NULL, ss_worker_main, NULL) == 0);
-#endif
+        test_thread_init(&g_ss_threads[i], ss_worker_entry, NULL);
+        EXPECT_OK(test_thread_start(&g_ss_threads[i]) == 0);
     }
 
     /* Wait for all threads */
     for(i = 0u; i < SIGSTORM_NUM_THREADS; i++){
-#if defined(_WIN32)
-        WaitForSingleObject(g_ss_threads[i], 10000u);
-        CloseHandle(g_ss_threads[i]);
-#else
-        (void)pthread_join(g_ss_threads[i], NULL);
-#endif
+        test_thread_join(&g_ss_threads[i]);
     }
 
     /* Give async dispatch time to complete */
@@ -166,3 +150,7 @@ static int scenario_signal_storm(void)
 #undef SIGSTORM_EMITS_PER_THREAD
 #undef SIGSTORM_TOTAL_EMITS
 #undef SIGSTORM_EXPECTED_PER_SLOT
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_signal_storm(); }
+#endif

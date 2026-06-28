@@ -79,6 +79,25 @@
       }
     },
     {
+      "name": "linux-coverage",
+      "displayName": "Linux Coverage (gcov/lcov)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-coverage",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF",
+        "NANOSIG_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
       "name": "macos-debug-asan",
       "displayName": "macOS Debug ASAN",
       "generator": "Unix Makefiles",
@@ -174,6 +193,7 @@
     { "name": "linux-debug-tsan", "configurePreset": "linux-debug-tsan" },
     { "name": "linux-debug-ubsan", "configurePreset": "linux-debug-ubsan" },
     { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-coverage", "configurePreset": "linux-coverage" },
     { "name": "macos-debug-asan", "configurePreset": "macos-debug-asan" },
     { "name": "macos-debug-ubsan", "configurePreset": "macos-debug-ubsan" },
     { "name": "macos-release", "configurePreset": "macos-release" },
@@ -199,6 +219,11 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-coverage",
+      "configurePreset": "linux-coverage",
       "output": { "outputOnFailure": true }
     },
     {

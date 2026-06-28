@@ -34,7 +34,7 @@ static int expect_order(ns_list_node_t *head, const int *expected, int count)
     return index == count ? 0 : 1;
 }
 
-int main(void)
+static int test_basic_ops(void)
 {
     ns_list_node_t head = NS_LIST_INITIALIZER(head);
     ns_list_node_t other = NS_LIST_INITIALIZER(other);
@@ -47,8 +47,6 @@ int main(void)
     const int after_move[] = { 3, 1 };
     const int after_splice[] = { 3, 1, 4 };
     ns_list_node_t *popped;
-
-    if(expect_true(ns_list_empty(&head)) != 0) return 1;
 
     ns_list_push_back(&head, &a.node);
     ns_list_push_back(&head, &b.node);
@@ -74,5 +72,19 @@ int main(void)
     ns_list_remove(&a.node);
     if(expect_true(ns_list_empty(&head)) != 0) return 1;
 
+    return 0;
+}
+
+static int test_invalid_inputs(void)
+{
+    ns_list_node_t head = NS_LIST_INITIALIZER(head);
+    if(expect_true(ns_list_empty(&head)) != 0) return 1;
+    return 0;
+}
+
+int main(void)
+{
+    if(test_basic_ops() != 0) return 1;
+    if(test_invalid_inputs() != 0) return 1;
     return 0;
 }

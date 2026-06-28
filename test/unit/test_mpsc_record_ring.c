@@ -11,6 +11,8 @@
 
 #include <nanosig/nanosig_mpsc_record_ring.h>
 
+#include "test_thread.h"
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -41,11 +43,7 @@ typedef struct producer_ctx {
     int payload_mode;
     size_t fixed_payload_size;
     atomic_int done;
-#if defined(_WIN32)
-    HANDLE thread;
-#else
-    pthread_t thread;
-#endif
+    test_thread_t th;
 } producer_ctx_t;
 
 #define MAX_PAYLOAD_SIZE 64u
@@ -732,40 +730,10 @@ static void producer_run(producer_ctx_t *ctx)
     ns_atomic_store_explicit(&ctx->done, 1, ns_memory_order_release);
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI producer_thread_main(LPVOID arg)
+static int producer_entry(void *arg)
 {
     producer_run((producer_ctx_t *)arg);
-    return 0u;
-}
-#else
-static void *producer_thread_main(void *arg)
-{
-    producer_run((producer_ctx_t *)arg);
-    return NULL;
-}
-#endif
-
-static int producer_start(producer_ctx_t *ctx)
-{
-#if defined(_WIN32)
-    ctx->thread = CreateThread(NULL, 0u, producer_thread_main, ctx, 0u, NULL);
-    return ctx->thread != NULL ? 0 : 1;
-#else
-    return pthread_create(&ctx->thread, NULL, producer_thread_main, ctx) == 0 ? 0 : 1;
-#endif
-}
-
-static int producer_join(producer_ctx_t *ctx)
-{
-#if defined(_WIN32)
-    DWORD wait_rc = WaitForSingleObject(ctx->thread, INFINITE);
-    BOOL close_rc = CloseHandle(ctx->thread);
-
-    return (wait_rc == WAIT_OBJECT_0) && (close_rc != 0) ? 0 : 1;
-#else
-    return pthread_join(ctx->thread, NULL) == 0 ? 0 : 1;
-#endif
+    return 0;
 }
 
 #define MP_MAX_PRODUCERS 8
@@ -811,7 +779,8 @@ static int run_mp_test(
         producers[i].payload_mode = payload_mode;
         producers[i].fixed_payload_size = fixed_payload_size;
         ns_atomic_init(&producers[i].done, 0);
-        if(producer_start(&producers[i]) != 0){
+        test_thread_init(&producers[i].th, producer_entry, &producers[i]);
+        if(test_thread_start(&producers[i].th) != 0){
             start_failed = 1;
             break;
         }
@@ -821,7 +790,7 @@ static int run_mp_test(
     total_count = started * per_producer_count;
 
     if(start_failed != 0){
-        for(i = 0u; i < started; ++i) producer_join(&producers[i]);
+        for(i = 0u; i < started; ++i) test_thread_join(&producers[i].th);
         return 1;
     }
 
@@ -861,7 +830,7 @@ static int run_mp_test(
     }
 
     for(i = 0u; i < started; ++i){
-        if(producer_join(&producers[i]) != 0) return 1;
+        test_thread_join(&producers[i].th);
         if(producers[i].failed != 0) return 1;
     }
 

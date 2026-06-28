@@ -14,6 +14,9 @@
  * #included into test_layer3.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define LM_NUM_TIMERS 5u
 #define LM_NUM_WATCHERS 5u
 #define LM_PHASE_DURATION_US (3u * 1000000u * integration_test_scale()) /* 3s per phase x scale */
@@ -118,3 +121,7 @@ static int scenario_lifecycle_marathon(void)
 #undef LM_NUM_WATCHERS
 #undef LM_PHASE_DURATION_US
 #undef LM_NUM_ROUNDS
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_lifecycle_marathon(); }
+#endif

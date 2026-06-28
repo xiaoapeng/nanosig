@@ -10,6 +10,9 @@
  * #included into test_layer1.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define DUAL_LOOP_EMIT_COUNT 100
 
 static atomic_int g_dual_count_a;
@@ -103,3 +106,7 @@ static int scenario_dual_loop(void)
 }
 
 #undef DUAL_LOOP_EMIT_COUNT
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_dual_loop(); }
+#endif

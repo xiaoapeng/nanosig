@@ -12,6 +12,9 @@
  * #included into test_layer3.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define TP_NUM_TIMERS 5u
 #define TP_RUN_DURATION_US (3u * 1000000u * integration_test_scale())
 
@@ -94,3 +97,7 @@ static int scenario_timer_precision(void)
 
 #undef TP_NUM_TIMERS
 #undef TP_RUN_DURATION_US
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_timer_precision(); }
+#endif

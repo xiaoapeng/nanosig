@@ -10,6 +10,9 @@
  * #included into test_layer2.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define RR_NUM_THREADS 8u
 #define RR_EMITS_PER_THREAD (100u * integration_test_scale())
 #define RR_NUM_WATCHERS 3u
@@ -24,6 +27,8 @@ static ns_timer_t g_rr_timer;
 static ns_connection_t g_rr_timer_conn;
 static atomic_int g_rr_count;
 static atomic_int g_rr_threads_ready;
+
+#include "test_thread.h"
 
 static void rr_slot(void *user_data, const void *payload)
 {
@@ -48,11 +53,9 @@ static void rr_slot(void *user_data, const void *payload)
     }
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI rr_worker_main(LPVOID arg)
-#else
-static void *rr_worker_main(void *arg)
-#endif
+static test_thread_t g_rr_threads[RR_NUM_THREADS];
+
+static int rr_worker_entry(void *arg)
 {
     unsigned int i;
     (void)arg;
@@ -63,18 +66,8 @@ static void *rr_worker_main(void *arg)
         (void)ns_signal_emit_raw(&g_rr_signal, NULL, 0u);
     }
 
-#if defined(_WIN32)
-    return 0u;
-#else
-    return NULL;
-#endif
+    return 0;
 }
-
-#if defined(_WIN32)
-static HANDLE g_rr_threads[RR_NUM_THREADS];
-#else
-static pthread_t g_rr_threads[RR_NUM_THREADS];
-#endif
 
 static int scenario_reentrant_race(void)
 {
@@ -111,21 +104,12 @@ static int scenario_reentrant_race(void)
                       RR_NUM_THREADS, RR_EMITS_PER_THREAD);
 
     for(i = 0u; i < RR_NUM_THREADS; i++){
-#if defined(_WIN32)
-        g_rr_threads[i] = CreateThread(NULL, 0u, rr_worker_main, NULL, 0u, NULL);
-        EXPECT_OK(g_rr_threads[i] != NULL);
-#else
-        EXPECT_OK(pthread_create(&g_rr_threads[i], NULL, rr_worker_main, NULL) == 0);
-#endif
+        test_thread_init(&g_rr_threads[i], rr_worker_entry, NULL);
+        EXPECT_OK(test_thread_start(&g_rr_threads[i]) == 0);
     }
 
     for(i = 0u; i < RR_NUM_THREADS; i++){
-#if defined(_WIN32)
-        WaitForSingleObject(g_rr_threads[i], 10000u);
-        CloseHandle(g_rr_threads[i]);
-#else
-        (void)pthread_join(g_rr_threads[i], NULL);
-#endif
+        test_thread_join(&g_rr_threads[i]);
     }
 
     /* Allow async dispatch to settle */
@@ -167,3 +151,7 @@ static int scenario_reentrant_race(void)
 #undef RR_NUM_THREADS
 #undef RR_EMITS_PER_THREAD
 #undef RR_NUM_WATCHERS
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_reentrant_race(); }
+#endif

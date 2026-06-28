@@ -9,6 +9,9 @@
  * #included into test_layer1.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define WATCHDOG_NUM_WATCHERS 2u
 #define WATCHDOG_INTERVAL_US 100000u
 
@@ -116,3 +119,7 @@ static int scenario_watchdog(void)
 
 #undef WATCHDOG_NUM_WATCHERS
 #undef WATCHDOG_INTERVAL_US
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_watchdog(); }
+#endif

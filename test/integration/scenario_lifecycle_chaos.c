@@ -11,12 +11,16 @@
  * #included into test_layer1.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define CHAOS_NUM_WATCHERS 5u
 #define CHAOS_NUM_TIMERS 3u
 #define CHAOS_RUN_DURATION_US (5u * 1000000u * integration_test_scale())  /* 5s x scale */
 #define CHAOS_OPS_PER_SECOND 20u
 
 #include <stdlib.h>
+#include "test_thread.h"
 #if !defined(_WIN32)
 #include <pthread.h>
 #endif
@@ -37,11 +41,9 @@ static void chaos_dummy_slot(void *user_data, const void *payload)
     (void)payload;
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI chaos_worker_main(LPVOID arg)
-#else
-static void *chaos_worker_main(void *arg)
-#endif
+static test_thread_t g_chaos_thread;
+
+static int chaos_worker_entry(void *arg)
 {
     (void)arg;
 
@@ -85,40 +87,7 @@ static void *chaos_worker_main(void *arg)
 #endif
     }
 
-#if defined(_WIN32)
-    return 0u;
-#else
-    return NULL;
-#endif
-}
-
-#if defined(_WIN32)
-static HANDLE g_chaos_thread;
-#else
-static pthread_t g_chaos_thread;
-#endif
-
-static int chaos_worker_start(void)
-{
-#if defined(_WIN32)
-    g_chaos_thread = CreateThread(NULL, 0u, chaos_worker_main, NULL, 0u, NULL);
-    return (g_chaos_thread != NULL) ? 0 : -1;
-#else
-    return (pthread_create(&g_chaos_thread, NULL, chaos_worker_main, NULL) == 0) ? 0 : -1;
-#endif
-}
-
-static void chaos_worker_join(void)
-{
-#if defined(_WIN32)
-    if(g_chaos_thread != NULL){
-        WaitForSingleObject(g_chaos_thread, 5000u);
-        CloseHandle(g_chaos_thread);
-        g_chaos_thread = NULL;
-    }
-#else
-    (void)pthread_join(g_chaos_thread, NULL);
-#endif
+    return 0;
 }
 
 static int scenario_lifecycle_chaos(void)
@@ -161,7 +130,8 @@ static int scenario_lifecycle_chaos(void)
     EXPECT_OK(ns_signal_init_raw(&g_chaos_signal, 0u, 0u, "chaos_signal") == NS_OK);
 
     INTEGRATION_PHASE("lifecycle_chaos: starting chaos worker for 5s");
-    EXPECT_OK(chaos_worker_start() == 0);
+    test_thread_init(&g_chaos_thread, chaos_worker_entry, NULL);
+    EXPECT_OK(test_thread_start(&g_chaos_thread) == 0);
 
     /* Sleep for run duration */
 #if defined(_WIN32)
@@ -171,7 +141,7 @@ static int scenario_lifecycle_chaos(void)
 #endif
 
     ns_atomic_store_explicit(&g_chaos_quit, 1, ns_memory_order_release);
-    chaos_worker_join();
+    test_thread_join(&g_chaos_thread);
 
     {
         int ops = ns_atomic_load_explicit(&g_chaos_op_count, ns_memory_order_relaxed);
@@ -205,3 +175,7 @@ static int scenario_lifecycle_chaos(void)
 #undef CHAOS_NUM_TIMERS
 #undef CHAOS_RUN_DURATION_US
 #undef CHAOS_OPS_PER_SECOND
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_lifecycle_chaos(); }
+#endif

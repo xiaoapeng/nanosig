@@ -12,6 +12,7 @@
 #include <nanosig/nanosig.h>
 
 #include "test_macros.h"
+#include "test_thread.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -24,17 +25,12 @@
 #endif
 
 typedef struct loop_thread_ctx {
-    atomic_int ready;
-    atomic_int thread_failed;
-    atomic_int failure_code;
     atomic_int failure_line;
+    atomic_int running;    /* 1 when worker has entered ns_loop_run */
     ns_loop_t *loop;
-#if defined(_WIN32)
-    HANDLE thread;
-#else
-    pthread_t thread;
-#endif
 } loop_thread_ctx_t;
+
+static test_thread_t g_loop_thread;
 
 static void test_yield(void)
 {
@@ -87,9 +83,18 @@ static int test_same_thread_binding(void)
     return 0;
 }
 
-static void loop_thread_run(loop_thread_ctx_t *ctx)
+static void running_marker_slot(void *user_data, const void *payload)
 {
+    (void)payload;
+    ns_atomic_store_explicit(&((loop_thread_ctx_t *)user_data)->running, 1, ns_memory_order_release);
+}
+
+static int loop_thread_entry(void *arg)
+{
+    loop_thread_ctx_t *ctx = (loop_thread_ctx_t *)arg;
     ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
+    ns_timer_t marker_timer;
+    ns_connection_t marker_conn;
     int rc = NS_OK;
 
     cfg.debug_name = "worker-loop";
@@ -97,18 +102,45 @@ static void loop_thread_run(loop_thread_ctx_t *ctx)
     rc = ns_loop_init(&ctx->loop, &cfg);
     if(rc != NS_OK){
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
-        goto out;
+        test_thread_signal_failed(&g_loop_thread, rc);
+        return rc;
     }
 
-    ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
+    /* A 1-us oneshot timer fires as soon as ns_loop_run enters its dispatch
+     * cycle. Its slot sets ctx->running = 1, signalling the main thread that
+     * the loop is actively processing events — at which point ns_loop_quit
+     * is safe to call from another thread. */
+    if(ns_timer_init(&marker_timer, 1u, 0) != NS_OK){
+        ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
+        test_thread_signal_failed(&g_loop_thread, NS_E_NOMEM);
+        (void)ns_loop_deinit(ctx->loop);
+        ctx->loop = NULL;
+        return NS_E_NOMEM;
+    }
+    if(ns_signal_connect(&marker_timer.signal, running_marker_slot, ctx->loop,
+                         ctx, &marker_conn) != NS_OK){
+        ns_timer_deinit(&marker_timer);
+        ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
+        test_thread_signal_failed(&g_loop_thread, NS_E_INVAL);
+        (void)ns_loop_deinit(ctx->loop);
+        ctx->loop = NULL;
+        return NS_E_INVAL;
+    }
+    (void)ns_timer_start(&marker_timer);
+    ns_signal_connect(&marker_timer.signal, running_marker_slot, ctx->loop,
+                      ctx, &marker_conn);
+
+    test_thread_signal_ready(&g_loop_thread);
 
     rc = ns_loop_run(ctx->loop);
+
+    ns_signal_disconnect(&marker_conn);
+    ns_timer_deinit(&marker_timer);
+
     if(rc != NS_OK){
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
-        goto out;
     }
 
-out:
     if(ctx->loop != NULL){
         int destroy_rc = ns_loop_deinit(ctx->loop);
         if((rc == NS_OK) && (destroy_rc != NS_OK)){
@@ -118,75 +150,37 @@ out:
         ctx->loop = NULL;
     }
 
-    ns_atomic_store_explicit(&ctx->failure_code, rc, ns_memory_order_relaxed);
-    ns_atomic_store_explicit(&ctx->thread_failed, (rc == NS_OK) ? 0 : 1, ns_memory_order_release);
-}
-
-#if defined(_WIN32)
-static DWORD WINAPI loop_thread_main(LPVOID arg)
-{
-    loop_thread_run((loop_thread_ctx_t *)arg);
-    return 0u;
-}
-#else
-static void *loop_thread_main(void *arg)
-{
-    loop_thread_run((loop_thread_ctx_t *)arg);
-    return NULL;
-}
-#endif
-
-static int loop_thread_start(loop_thread_ctx_t *ctx)
-{
-#if defined(_WIN32)
-    ctx->thread = CreateThread(NULL, 0u, loop_thread_main, ctx, 0u, NULL);
-    return ctx->thread != NULL ? 0 : 1;
-#else
-    return pthread_create(&ctx->thread, NULL, loop_thread_main, ctx) == 0 ? 0 : 1;
-#endif
-}
-
-static int loop_thread_join(loop_thread_ctx_t *ctx)
-{
-#if defined(_WIN32)
-    DWORD wait_rc = WaitForSingleObject(ctx->thread, INFINITE);
-    BOOL close_rc = CloseHandle(ctx->thread);
-
-    return (wait_rc == WAIT_OBJECT_0) && (close_rc != 0) ? 0 : 1;
-#else
-    return pthread_join(ctx->thread, NULL) == 0 ? 0 : 1;
-#endif
+    return rc;
 }
 
 static int test_cross_thread_quit_and_ownership(void)
 {
     loop_thread_ctx_t ctx;
 
-    ctx.loop = NULL;
-    ns_atomic_init(&ctx.ready, 0);
-    ns_atomic_init(&ctx.thread_failed, 0);
-    ns_atomic_init(&ctx.failure_code, NS_OK);
     ns_atomic_init(&ctx.failure_line, 0);
+    ctx.loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    if(expect_true(loop_thread_start(&ctx) == 0) != 0){
-        fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, "loop_thread_start(&ctx) == 0");
+    test_thread_init(&g_loop_thread, loop_thread_entry, &ctx);
+    if(expect_true(test_thread_start(&g_loop_thread) == 0) != 0){
+        fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, "test_thread_start(&g_loop_thread) == 0");
         (void)ns_shutdown();
         return 1;
     }
 
-    while(ns_atomic_load_explicit(&ctx.ready, ns_memory_order_acquire) == 0){
+    EXPECT_OK(test_thread_wait_ready(&g_loop_thread) == 0);
+    while(ns_atomic_load_explicit(&ctx.running, ns_memory_order_acquire) == 0){
         test_yield();
     }
 
     EXPECT_OK(ctx.loop != NULL);
     EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
-    EXPECT_OK(loop_thread_join(&ctx) == 0);
-    if(expect_true(ns_atomic_load_explicit(&ctx.thread_failed, ns_memory_order_acquire) == 0) != 0){
+    test_thread_join(&g_loop_thread);
+    if(expect_true(g_loop_thread.rc == 0) != 0){
         fprintf(
             stderr,
             "worker thread failed: rc=%d line=%d\n",
-            ns_atomic_load_explicit(&ctx.failure_code, ns_memory_order_relaxed),
+            g_loop_thread.rc,
             ns_atomic_load_explicit(&ctx.failure_line, ns_memory_order_relaxed));
         return 1;
     }
@@ -385,88 +379,59 @@ static int test_async_quit_in_slot(void)
 /* ------------------------------------------------------------------ */
 
 typedef struct multi_loop_ctx {
-    atomic_int ready;
-    atomic_int slot_a_called;
-    atomic_int slot_b_called;
-    atomic_int fail_code;
-    atomic_int fail_line;
+    atomic_int slot_called;
     ns_loop_t *loop;
     int id;
-#if defined(_WIN32)
-    HANDLE thread;
-#else
-    pthread_t thread;
-#endif
+    test_thread_t *self;
 } multi_loop_ctx_t;
 
 static void slot_multi_loop_a(void *user_data, const void *payload)
 {
     multi_loop_ctx_t *ctx = (multi_loop_ctx_t *)user_data;
     (void)payload;
-    ns_atomic_store_explicit(&ctx->slot_a_called, 1, ns_memory_order_release);
+    ns_atomic_store_explicit(&ctx->slot_called, 1, ns_memory_order_release);
 }
 
 static void slot_multi_loop_b(void *user_data, const void *payload)
 {
     multi_loop_ctx_t *ctx = (multi_loop_ctx_t *)user_data;
     (void)payload;
-    ns_atomic_store_explicit(&ctx->slot_b_called, 1, ns_memory_order_release);
+    ns_atomic_store_explicit(&ctx->slot_called, 1, ns_memory_order_release);
 }
 
-static void multi_loop_worker(multi_loop_ctx_t *ctx)
+static int multi_loop_entry(void *arg)
 {
+    multi_loop_ctx_t *ctx = (multi_loop_ctx_t *)arg;
     int rc;
 
     rc = ns_loop_init(&ctx->loop, NULL);
     if(rc != NS_OK){
-        ns_atomic_store_explicit(&ctx->fail_code, rc, ns_memory_order_release);
-        ns_atomic_store_explicit(&ctx->fail_line, __LINE__, ns_memory_order_release);
-        return;
+        test_thread_signal_failed(ctx->self, rc);
+        return rc;
     }
 
-    ns_atomic_store_explicit(&ctx->ready, 1, ns_memory_order_release);
+    test_thread_signal_ready(ctx->self);
     rc = ns_loop_run(ctx->loop);
-    if(rc != NS_OK){
-        ns_atomic_store_explicit(&ctx->fail_code, rc, ns_memory_order_release);
-        ns_atomic_store_explicit(&ctx->fail_line, __LINE__, ns_memory_order_release);
-    }
     ns_loop_deinit(ctx->loop);
+    return rc;
 }
-
-#if defined(_WIN32)
-static DWORD WINAPI multi_loop_main(LPVOID arg)
-{
-    multi_loop_worker((multi_loop_ctx_t *)arg);
-    return 0u;
-}
-#else
-static void *multi_loop_main(void *arg)
-{
-    multi_loop_worker((multi_loop_ctx_t *)arg);
-    return NULL;
-}
-#endif
 
 static int test_multi_loop_simultaneous(void)
 {
     multi_loop_ctx_t ctx_a;
     multi_loop_ctx_t ctx_b;
+    test_thread_t th_a;
+    test_thread_t th_b;
     ns_signal_t sig;
     ns_connection_t conn_a;
     ns_connection_t conn_b;
     int rc;
 
-    ns_atomic_init(&ctx_a.ready, 0);
-    ns_atomic_init(&ctx_a.slot_a_called, 0);
-    ns_atomic_init(&ctx_a.fail_code, NS_OK);
-    ns_atomic_init(&ctx_a.fail_line, 0);
+    ns_atomic_init(&ctx_a.slot_called, 0);
     ctx_a.loop = NULL;
     ctx_a.id = 1;
 
-    ns_atomic_init(&ctx_b.ready, 0);
-    ns_atomic_init(&ctx_b.slot_b_called, 0);
-    ns_atomic_init(&ctx_b.fail_code, NS_OK);
-    ns_atomic_init(&ctx_b.fail_line, 0);
+    ns_atomic_init(&ctx_b.slot_called, 0);
     ctx_b.loop = NULL;
     ctx_b.id = 2;
 
@@ -476,26 +441,16 @@ static int test_multi_loop_simultaneous(void)
     EXPECT_OK(rc == NS_OK);
 
     /* Start loop A thread */
-#if defined(_WIN32)
-    ctx_a.thread = CreateThread(NULL, 0u, multi_loop_main, &ctx_a, 0u, NULL);
-    EXPECT_OK(ctx_a.thread != NULL);
-#else
-    EXPECT_OK(pthread_create(&ctx_a.thread, NULL, multi_loop_main, &ctx_a) == 0);
-#endif
-    while(ns_atomic_load_explicit(&ctx_a.ready, ns_memory_order_acquire) == 0){
-        test_yield();
-    }
+    ctx_a.self = &th_a;
+    test_thread_init(&th_a, multi_loop_entry, &ctx_a);
+    EXPECT_OK(test_thread_start(&th_a) == 0);
+    EXPECT_OK(test_thread_wait_ready(&th_a) == 0);
 
     /* Start loop B thread */
-#if defined(_WIN32)
-    ctx_b.thread = CreateThread(NULL, 0u, multi_loop_main, &ctx_b, 0u, NULL);
-    EXPECT_OK(ctx_b.thread != NULL);
-#else
-    EXPECT_OK(pthread_create(&ctx_b.thread, NULL, multi_loop_main, &ctx_b) == 0);
-#endif
-    while(ns_atomic_load_explicit(&ctx_b.ready, ns_memory_order_acquire) == 0){
-        test_yield();
-    }
+    ctx_b.self = &th_b;
+    test_thread_init(&th_b, multi_loop_entry, &ctx_b);
+    EXPECT_OK(test_thread_start(&th_b) == 0);
+    EXPECT_OK(test_thread_wait_ready(&th_b) == 0);
 
     /* Connect sig to slot_a on loop A, slot_b on loop B */
     rc = ns_signal_connect(&sig, slot_multi_loop_a, ctx_a.loop, &ctx_a, &conn_a);
@@ -509,25 +464,20 @@ static int test_multi_loop_simultaneous(void)
     EXPECT_OK(rc == NS_OK);
 
     /* Wait for both slots */
-    while(ns_atomic_load_explicit(&ctx_a.slot_a_called, ns_memory_order_acquire) == 0 ||
-          ns_atomic_load_explicit(&ctx_b.slot_b_called, ns_memory_order_acquire) == 0){
+    while(ns_atomic_load_explicit(&ctx_a.slot_called, ns_memory_order_acquire) == 0 ||
+          ns_atomic_load_explicit(&ctx_b.slot_called, ns_memory_order_acquire) == 0){
         test_yield();
     }
-    EXPECT_OK(ns_atomic_load_explicit(&ctx_a.slot_a_called, ns_memory_order_acquire) != 0);
-    EXPECT_OK(ns_atomic_load_explicit(&ctx_b.slot_b_called, ns_memory_order_acquire) != 0);
+    EXPECT_OK(ns_atomic_load_explicit(&ctx_a.slot_called, ns_memory_order_acquire) != 0);
+    EXPECT_OK(ns_atomic_load_explicit(&ctx_b.slot_called, ns_memory_order_acquire) != 0);
 
     /* Quit and join */
     EXPECT_OK(ns_loop_quit(ctx_a.loop) == NS_OK);
     EXPECT_OK(ns_loop_quit(ctx_b.loop) == NS_OK);
-#if defined(_WIN32)
-    WaitForSingleObject(ctx_a.thread, INFINITE); CloseHandle(ctx_a.thread);
-    WaitForSingleObject(ctx_b.thread, INFINITE); CloseHandle(ctx_b.thread);
-#else
-    pthread_join(ctx_a.thread, NULL);
-    pthread_join(ctx_b.thread, NULL);
-#endif
-    EXPECT_OK(ns_atomic_load_explicit(&ctx_a.fail_code, ns_memory_order_acquire) == NS_OK);
-    EXPECT_OK(ns_atomic_load_explicit(&ctx_b.fail_code, ns_memory_order_acquire) == NS_OK);
+    test_thread_join(&th_a);
+    test_thread_join(&th_b);
+    EXPECT_OK(th_a.rc == 0);
+    EXPECT_OK(th_b.rc == 0);
 
     EXPECT_OK(ns_signal_disconnect(&conn_a) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn_b) == NS_OK);
@@ -599,32 +549,20 @@ static void slot_async_cross(void *user_data, const ns_no_payload_t *payload)
     (void)ns_loop_quit(loop);
 }
 
-#if defined(_WIN32)
-static DWORD WINAPI async_emit_main(LPVOID arg)
+static test_thread_t g_async_emit_thread;
+
+static int async_emit_entry(void *arg)
 {
     ns_signal_t *sig = (ns_signal_t *)arg;
     (void)ns_signal_emit_raw(sig, NULL, 0u);
-    return 0u;
+    return 0;
 }
-#else
-static void *async_emit_main(void *arg)
-{
-    ns_signal_t *sig = (ns_signal_t *)arg;
-    (void)ns_signal_emit_raw(sig, NULL, 0u);
-    return NULL;
-}
-#endif
 
 static int test_async_cross_thread(void)
 {
     ns_signal_t sig;
     ns_connection_t conn;
     ns_loop_t *loop = NULL;
-#if defined(_WIN32)
-    HANDLE thread;
-#else
-    pthread_t thread;
-#endif
 
     ns_atomic_init(&g_slot_called, 0);
 
@@ -636,15 +574,9 @@ static int test_async_cross_thread(void)
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
 
     /* Emit from another thread */
-#if defined(_WIN32)
-    thread = CreateThread(NULL, 0u, async_emit_main, &sig, 0u, NULL);
-    EXPECT_OK(thread != NULL);
-    WaitForSingleObject(thread, INFINITE);
-    CloseHandle(thread);
-#else
-    EXPECT_OK(pthread_create(&thread, NULL, async_emit_main, &sig) == 0);
-    pthread_join(thread, NULL);
-#endif
+    test_thread_init(&g_async_emit_thread, async_emit_entry, &sig);
+    EXPECT_OK(test_thread_start(&g_async_emit_thread) == 0);
+    test_thread_join(&g_async_emit_thread);
 
     /* Slot quits loop, stop joins thread */
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);

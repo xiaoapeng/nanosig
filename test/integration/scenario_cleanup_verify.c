@@ -11,6 +11,9 @@
  * #included into test_layer3.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 static int scenario_cleanup_verify(void)
 {
     INTEGRATION_PHASE("cleanup: init and immediate shutdown");
@@ -25,3 +28,7 @@ static int scenario_cleanup_verify(void)
     INTEGRATION_PASS("cleanup: double init/shutdown cycle clean");
     return 0;
 }
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_cleanup_verify(); }
+#endif

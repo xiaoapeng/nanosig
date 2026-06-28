@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <nanosig/nanosig_ringbuf.h>
+
 static int expect_true(int condition)
 {
     return condition ? 0 : 1;
@@ -19,15 +20,12 @@ static int expect_bytes(const uint8_t *actual, const char *expected, int32_t siz
     return memcmp(actual, expected, (size_t)size) == 0 ? 0 : 1;
 }
 
-int main(void)
+static int test_basic_ops(void)
 {
     uint8_t storage[5];
     uint8_t out[8];
     ns_ringbuf_t ringbuf;
-    ns_ringbuf_t invalid;
     int32_t len;
-
-    memset(&invalid, 0, sizeof(invalid));
 
     if(expect_true(ns_ringbuf_init(&ringbuf, storage, (int32_t)sizeof(storage)) == NS_OK) != 0) return 1;
     if(expect_true(ns_ringbuf_total_size(&ringbuf) == 5) != 0) return 1;
@@ -80,7 +78,17 @@ int main(void)
     ns_ringbuf_reset(&ringbuf);
     if(expect_true(ns_ringbuf_size(&ringbuf) == 0) != 0) return 1;
 
-    /* 无效输入 */
+    return 0;
+}
+
+static int test_invalid_inputs(void)
+{
+    uint8_t storage[5];
+    uint8_t out[8];
+    ns_ringbuf_t invalid;
+
+    memset(&invalid, 0, sizeof(invalid));
+
     if(expect_true(ns_ringbuf_init(NULL, storage, (int32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_ringbuf_init(&invalid, NULL, (int32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_ringbuf_init(&invalid, storage, 0) == NS_E_INVAL) != 0) return 1;
@@ -94,5 +102,12 @@ int main(void)
     if(expect_true(ns_ringbuf_read_skip(&invalid, 1) == 0) != 0) return 1;
     ns_ringbuf_clear(&invalid);
 
+    return 0;
+}
+
+int main(void)
+{
+    if(test_basic_ops() != 0) return 1;
+    if(test_invalid_inputs() != 0) return 1;
     return 0;
 }

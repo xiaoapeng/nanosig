@@ -34,7 +34,7 @@ static int expect_order(ns_slist_t *list, const int *expected, int count)
     return index == count ? 0 : 1;
 }
 
-int main(void)
+static int test_basic_ops(void)
 {
     ns_slist_t list = NS_SLIST_INITIALIZER;
     ns_slist_t other = NS_SLIST_INITIALIZER;
@@ -46,8 +46,6 @@ int main(void)
     const int after_remove[] = { 1, 3 };
     const int after_append[] = { 1, 3, 4 };
     ns_slist_node_t *node;
-
-    if(expect_true(ns_slist_empty(&list)) != 0) return 1;
 
     ns_slist_push_back(&list, &a.node);
     ns_slist_push_back(&list, &b.node);
@@ -69,8 +67,22 @@ int main(void)
     if(expect_true(node == &c.node) != 0) return 1;
     node = ns_slist_pop_front(&list);
     if(expect_true(node == &d.node) != 0) return 1;
+
+    return 0;
+}
+
+static int test_invalid_inputs(void)
+{
+    ns_slist_t list = NS_SLIST_INITIALIZER;
+    if(expect_true(ns_slist_empty(&list)) != 0) return 1;
     if(expect_true(ns_slist_pop_front(&list) == NULL) != 0) return 1;
     if(expect_true(ns_slist_empty(&list)) != 0) return 1;
+    return 0;
+}
 
+int main(void)
+{
+    if(test_basic_ops() != 0) return 1;
+    if(test_invalid_inputs() != 0) return 1;
     return 0;
 }

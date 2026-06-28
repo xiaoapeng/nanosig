@@ -41,6 +41,44 @@ static inline int expect_true(int condition)
         } \
     } while(0)
 
+/**
+ * @brief Non-fatal EXPECT_OK — accumulates error count instead of returning.
+ *
+ * Usage:
+ *   int test_foo(void) {
+ *       int err = 0;
+ *       EXPECT_OK_CONT(ns_init() == NS_OK, err);
+ *       EXPECT_OK_CONT(ns_shutdown() == NS_OK, err);
+ *       return err > 0;   // report as failure if any assertion failed
+ *   }
+ */
+#define EXPECT_OK_CONT(expr, err_count) \
+    do { \
+        if(expect_true((expr)) != 0){ \
+            fprintf(stderr, "EXPECT failed at %s:%d: %s\n", __FILE__, __LINE__, #expr); \
+            (err_count)++; \
+        } \
+    } while(0)
+
+/**
+ * @brief Non-fatal EXPECT_EQ — accumulates error count instead of returning.
+ *
+ * Usage:
+ *   int test_foo(void) {
+ *       int err = 0;
+ *       EXPECT_EQ_CONT(actual, expected, err);
+ *       return err > 0;
+ *   }
+ */
+#define EXPECT_EQ_CONT(a, b, err_count) \
+    do { \
+        if(expect_true((a) == (b)) != 0){ \
+            fprintf(stderr, "EXPECT failed at %s:%d: %s == %s (%lld != %lld)\n", \
+                __FILE__, __LINE__, #a, #b, (long long)(a), (long long)(b)); \
+            (err_count)++; \
+        } \
+    } while(0)
+
 #ifdef __cplusplus
 }
 #endif

@@ -10,6 +10,9 @@
  * #included into test_layer3.c
  */
 
+#include "test_macros.h"
+#include "integration_helpers.h"
+
 #define CKTL_NUM_TYPES 4u
 #define CKTL_SLOTS_PER_TYPE 3u
 #define CKTL_EMITS_PER_TYPE (500u * integration_test_scale())
@@ -156,3 +159,7 @@ static int scenario_cocktail(void)
 #undef CKTL_EMITS_PER_TYPE
 #undef CKTL_LARGE_SIZE
 #undef CKTL_MAGIC
+
+#ifdef SCENARIO_MAIN
+int main(void) { return scenario_cocktail(); }
+#endif

@@ -11,16 +11,9 @@
 #include <string.h>
 
 #include <nanosig/nanosig_port.h>
-#include "test_helpers.h"
-static int expect_ok(int rc)
-{
-    return rc == NS_OK ? 0 : 1;
-}
 
-static int expect_true(int condition)
-{
-    return condition ? 0 : 1;
-}
+#include "test_helpers.h"
+#include "test_macros.h"
 
 /* ------------------------------------------------------------------ */
 /*  basic tests                                                          */
@@ -41,10 +34,10 @@ static int test_mutex(void)
 {
     ns_platform_mutex_t *mutex = NULL;
 
-    if(expect_ok(ns_platform_mutex_create(&mutex, "test-mutex")) != 0) return 1;
-    if(expect_ok(ns_platform_mutex_lock(mutex)) != 0) return 1;
-    if(expect_ok(ns_platform_mutex_unlock(mutex)) != 0) return 1;
-    if(expect_ok(ns_platform_mutex_destroy(mutex)) != 0) return 1;
+    EXPECT_OK(ns_platform_mutex_create(&mutex, "test-mutex") == NS_OK);
+    EXPECT_OK(ns_platform_mutex_lock(mutex) == NS_OK);
+    EXPECT_OK(ns_platform_mutex_unlock(mutex) == NS_OK);
+    EXPECT_OK(ns_platform_mutex_destroy(mutex) == NS_OK);
 
     return 0;
 }
@@ -54,13 +47,13 @@ static int test_wakeup(void)
     ns_platform_wakeup_t *wakeup = NULL;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_SIGNALED;
 
-    if(expect_ok(ns_platform_wakeup_create(&wakeup, "test-wakeup")) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_wait(wakeup, 0u, &wait_result)) != 0) return 1;
-    if(expect_true(wait_result == NS_PLATFORM_WAIT_TIMEOUT) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_signal(wakeup)) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_wait(wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result)) != 0) return 1;
-    if(expect_true(wait_result == NS_PLATFORM_WAIT_SIGNALED) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_destroy(wakeup)) != 0) return 1;
+    EXPECT_OK(ns_platform_wakeup_create(&wakeup, "test-wakeup") == NS_OK);
+    EXPECT_OK(ns_platform_wakeup_wait(wakeup, 0u, &wait_result) == NS_OK);
+    EXPECT_OK(wait_result == NS_PLATFORM_WAIT_TIMEOUT);
+    EXPECT_OK(ns_platform_wakeup_signal(wakeup) == NS_OK);
+    EXPECT_OK(ns_platform_wakeup_wait(wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result) == NS_OK);
+    EXPECT_OK(wait_result == NS_PLATFORM_WAIT_SIGNALED);
+    EXPECT_OK(ns_platform_wakeup_destroy(wakeup) == NS_OK);
 
     return 0;
 }
@@ -70,9 +63,9 @@ static int test_clock(void)
     ns_platform_time_us_t first = 0u;
     ns_platform_time_us_t second = 0u;
 
-    if(expect_ok(ns_platform_clock_monotonic_us(&first)) != 0) return 1;
-    if(expect_ok(ns_platform_clock_monotonic_us(&second)) != 0) return 1;
-    if(expect_true(second >= first) != 0) return 1;
+    EXPECT_OK(ns_platform_clock_monotonic_us(&first) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&second) == NS_OK);
+    EXPECT_OK(second >= first);
 
     return 0;
 }
@@ -97,9 +90,9 @@ static int test_thread(void)
 
     if(ns_platform_thread_create(NULL, test_thread_entry, &ctx, "bad-thread") != NS_E_INVAL) return 1;
     if(ns_platform_thread_create(&thread, NULL, &ctx, "bad-thread") != NS_E_INVAL) return 1;
-    if(expect_ok(ns_platform_thread_create(&thread, test_thread_entry, &ctx, "test-thread")) != 0) return 1;
-    if(expect_ok(ns_platform_thread_join(thread)) != 0) return 1;
-    if(expect_true(ctx.value == 42) != 0) return 1;
+    EXPECT_OK(ns_platform_thread_create(&thread, test_thread_entry, &ctx, "test-thread") == NS_OK);
+    EXPECT_OK(ns_platform_thread_join(thread) == NS_OK);
+    EXPECT_OK(ctx.value == 42);
     if(ns_platform_thread_join(NULL) != NS_E_INVAL) return 1;
 
     return 0;
@@ -116,9 +109,9 @@ static int test_waitset_lifecycle(void)
 {
     ns_platform_waitset_t *ws = NULL;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
-    if(expect_true(ws != NULL) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
+    EXPECT_OK(ws != NULL);
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -131,23 +124,23 @@ static int test_wakeup_waitable(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_wakeup_create(&wakeup, "test-wakeup-waitable")) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_wakeup_create(&wakeup, "test-wakeup-waitable") == NS_OK);
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
 
     w = ns_platform_wakeup_get_waitable(wakeup);
     w.events = NS_WAITABLE_EVENT_IN;
     w.user_data = (void *)0x1234;
 
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_signal(wakeup)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4u, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
-    if(expect_true(cc[0].waitable == &w) != 0) return 1;
-    if(expect_true(cc[0].waitable->user_data == (void *)0x1234) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
+    EXPECT_OK(ns_platform_wakeup_signal(wakeup) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4u, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK(cc[0].waitable == &w);
+    EXPECT_OK(cc[0].waitable->user_data == (void *)0x1234);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
-    if(expect_ok(ns_platform_wakeup_destroy(wakeup)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
+    EXPECT_OK(ns_platform_wakeup_destroy(wakeup) == NS_OK);
 
     return 0;
 }
@@ -164,7 +157,7 @@ static int test_waitset_null_params(void)
     if(ns_platform_waitset_create(NULL) != NS_E_INVAL) return 1;
     if(ns_platform_waitset_destroy(NULL) != NS_E_INVAL) return 1;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     if(ns_platform_waitset_add(ws, NULL) != NS_E_INVAL) return 1;
     if(ns_platform_waitset_add(ws, &w) != NS_E_INVAL) return 1;
     if(ns_platform_waitset_remove(ws, NULL) != NS_E_INVAL) return 1;
@@ -174,7 +167,7 @@ static int test_waitset_null_params(void)
     if(ns_platform_waitset_wait(ws, 0u, NULL, 1, &cnt) != NS_E_INVAL) return 1;
     if(ns_platform_waitset_wait(ws, 0u, cc, 1, NULL) != NS_E_INVAL) return 1;
 
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -184,18 +177,18 @@ static int test_waitset_add_remove(void)
     ns_platform_waitset_t *ws = NULL;
     ns_platform_waitable_t w;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
 
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
     if(ns_platform_waitset_add(ws, &w) != NS_E_EXISTS) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     if(ns_platform_waitset_remove(ws, &w) != NS_E_INVAL) return 1;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
 
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -205,24 +198,24 @@ static int test_waitset_add_signaled(void)
     ns_platform_waitset_t *ws = NULL;
     ns_platform_waitable_t w;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
 
     test_signal_raw_waitable(w);
     w.user_data = (void *)0xAA;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     {
         ns_platform_waitset_completion_t cc[4];
         size_t cnt = 0u;
-        if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-        if(expect_true(cnt >= 1u) != 0) return 1;
-        if(expect_true(cc[0].waitable->user_data == (void *)0xAA) != 0) return 1;
+        EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+        EXPECT_OK(cnt >= 1u);
+        EXPECT_OK(cc[0].waitable->user_data == (void *)0xAA);
     }
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -236,21 +229,21 @@ static int test_waitset_multi_signal(void)
     int i;
     int created = 0;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) goto fail;
+    if(ns_platform_waitset_create(&ws) != NS_OK) goto fail;
 
     for(i = 0; i < 3; i++){
         w[i] = test_create_raw_waitable();
         w[i].user_data = (void *)(intptr_t)i;
         created++;
-        if(expect_ok(ns_platform_waitset_add(ws, &w[i])) != 0) goto fail;
+        if(ns_platform_waitset_add(ws, &w[i]) != NS_OK) goto fail;
     }
 
     for(i = 0; i < 3; i++){
         test_signal_raw_waitable(w[i]);
     }
 
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) goto fail;
-    if(expect_true(cnt >= 1u) != 0) goto fail;
+    if(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) != NS_OK) goto fail;
+    if(cnt < 1u) goto fail;
 
     for(i = 0; i < created; i++){
         (void)ns_platform_waitset_remove(ws, &w[i]);
@@ -275,18 +268,18 @@ static int test_waitset_max_completions_zero(void)
     ns_platform_waitset_completion_t cc[1];
     size_t cnt = 99u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
 
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 0u, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 0u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 0u, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 0u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -296,18 +289,18 @@ static int test_waitset_destroy_with_entries(void)
     ns_platform_waitset_t *ws = NULL;
     ns_platform_waitable_t w[2];
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
 
     w[0] = test_create_raw_waitable();
     w[1] = test_create_raw_waitable();
 
-    if(expect_ok(ns_platform_waitset_add(ws, &w[0])) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_add(ws, &w[1])) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w[0]) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_add(ws, &w[1]) == NS_OK);
 
     if(ns_platform_waitset_destroy(ws) != NS_E_EXISTS) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w[0])) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w[1])) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w[0]) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w[1]) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     test_destroy_raw_waitable(w[0]);
     test_destroy_raw_waitable(w[1]);
@@ -321,12 +314,12 @@ static int test_waitset_wait_timeout(void)
     ns_platform_waitset_completion_t completions[4];
     size_t count = 99u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
 
-    if(expect_ok(ns_platform_waitset_wait(ws, 0u, completions, 4, &count)) != 0) return 1;
-    if(expect_true(count == 0u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, completions, 4, &count) == NS_OK);
+    EXPECT_OK(count == 0u);
 
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -338,19 +331,19 @@ static int test_waitset_wait_signal(void)
     ns_platform_waitset_completion_t completions[4];
     size_t count = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.user_data = (void *)0x42;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, completions, 4, &count)) != 0) return 1;
-    if(expect_true(count == 1u) != 0) return 1;
-    if(expect_true(completions[0].waitable->user_data == (void *)0x42) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, completions, 4, &count) == NS_OK);
+    EXPECT_OK(count == 1u);
+    EXPECT_OK(completions[0].waitable->user_data == (void *)0x42);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -365,23 +358,23 @@ static int test_waitset_multi(void)
     int found = 0;
     int created = 0;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) goto fail;
+    if(ns_platform_waitset_create(&ws) != NS_OK) goto fail;
 
     for(i = 0; i < 3; i++){
         w[i] = test_create_raw_waitable();
         w[i].user_data = (void *)(intptr_t)i;
         created++;
-        if(expect_ok(ns_platform_waitset_add(ws, &w[i])) != 0) goto fail;
+        if(ns_platform_waitset_add(ws, &w[i]) != NS_OK) goto fail;
     }
 
     test_signal_raw_waitable(w[1]);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, completions, 4, &count)) != 0) goto fail;
-    if(expect_true(count >= 1u) != 0) goto fail;
+    if(ns_platform_waitset_wait(ws, 1000000u, completions, 4, &count) != NS_OK) goto fail;
+    if(count < 1u) goto fail;
 
     for(i = 0; i < (int)count; i++){
         if(completions[i].waitable->user_data == (void *)(intptr_t)1) found++;
     }
-    if(expect_true(found >= 1) != 0) goto fail;
+    if(found < 1) goto fail;
 
     for(i = 0; i < created; i++){
         (void)ns_platform_waitset_remove(ws, &w[i]);
@@ -411,18 +404,18 @@ static int test_waitset_double_signal(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -435,31 +428,31 @@ static int test_waitset_signal_after_wait(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
     /* remove + re-add 只重置 waitset 注册，不消费底层 readiness。 */
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     cnt = 99u;
-    if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt) == NS_OK);
     /* POSIX fd/kqueue readiness 仍然可读，remove/add 不能清除。
        Windows auto-reset event: signal 已被消费，返回 0。 */
 #ifdef _WIN32
-    if(expect_true(cnt == 0u) != 0) return 1;
+    EXPECT_OK(cnt == 0u);
 #else
-    if(expect_true(cnt >= 1u) != 0) return 1;
+    EXPECT_OK(cnt >= 1u);
 #endif
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -473,20 +466,20 @@ static int test_waitset_timeout_actual(void)
     size_t cnt = 99u;
     ns_platform_time_us_t t0, t1;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
-    if(expect_ok(ns_platform_clock_monotonic_us(&t0)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_wait(ws, 50000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_ok(ns_platform_clock_monotonic_us(&t1)) != 0) return 1;
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 50000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
 
-    if(expect_true(cnt == 0u) != 0) return 1;
-    if(expect_true((t1 - t0) >= 40000u) != 0) return 1; /* 至少 ~40ms */
+    EXPECT_OK(cnt == 0u);
+    EXPECT_OK((t1 - t0) >= 40000u); /* 至少 ~40ms */
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -500,22 +493,22 @@ static int test_waitset_signal_before_timeout(void)
     size_t cnt = 0u;
     ns_platform_time_us_t t0, t1;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_clock_monotonic_us(&t0)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_ok(ns_platform_clock_monotonic_us(&t1)) != 0) return 1;
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
 
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(cnt == 1u);
     /* 应该远小于 1s */
-    if(expect_true((t1 - t0) < 500000u) != 0) return 1;
+    EXPECT_OK((t1 - t0) < 500000u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -532,22 +525,22 @@ static int test_waitset_pointer_identity(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.user_data = (void *)0x99;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
     /* 指针必须完全一致 */
-    if(expect_true(cc[0].waitable == &w) != 0) return 1;
-    if(expect_true(cc[0].waitable->user_data == (void *)0x99) != 0) return 1;
+    EXPECT_OK(cc[0].waitable == &w);
+    EXPECT_OK(cc[0].waitable->user_data == (void *)0x99);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -562,28 +555,28 @@ static int test_waitset_multi_pointer_identity(void)
     int i, found0 = 0, found2 = 0;
     int created = 0;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) goto fail;
+    if(ns_platform_waitset_create(&ws) != NS_OK) goto fail;
 
     for(i = 0; i < 3; i++){
         w[i] = test_create_raw_waitable();
         w[i].user_data = (void *)(intptr_t)i;
         created++;
-        if(expect_ok(ns_platform_waitset_add(ws, &w[i])) != 0) goto fail;
+        if(ns_platform_waitset_add(ws, &w[i]) != NS_OK) goto fail;
     }
 
     /* signal w[0] 和 w[2]，不 signal w[1] */
     test_signal_raw_waitable(w[0]);
     test_signal_raw_waitable(w[2]);
 
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) goto fail;
-    if(expect_true(cnt >= 1u) != 0) goto fail;
+    if(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) != NS_OK) goto fail;
+    if(cnt < 1u) goto fail;
 
     for(i = 0; i < (int)cnt; i++){
         if(cc[i].waitable == &w[0]) found0++;
         if(cc[i].waitable == &w[2]) found2++;
     }
     /* Windows WFMO 只返回 1 个；POSIX waitsets 可能返回 2 个 */
-    if(expect_true(found0 + found2 >= 1) != 0) goto fail;
+    if(found0 + found2 < 1) goto fail;
 
     for(i = 0; i < created; i++){
         (void)ns_platform_waitset_remove(ws, &w[i]);
@@ -622,7 +615,7 @@ static int test_waitset_capacity(void)
     limit = 64;
 #endif
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) goto fail;
+    if(ns_platform_waitset_create(&ws) != NS_OK) goto fail;
 
     for(i = 0; i < limit + 1; i++){
         w[i] = test_create_raw_waitable();
@@ -662,20 +655,20 @@ static int test_waitset_max_completions_truncate(void)
     int i;
     int created = 0;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) goto fail;
+    if(ns_platform_waitset_create(&ws) != NS_OK) goto fail;
 
     for(i = 0; i < 3; i++){
         w[i] = test_create_raw_waitable();
         created++;
-        if(expect_ok(ns_platform_waitset_add(ws, &w[i])) != 0) goto fail;
+        if(ns_platform_waitset_add(ws, &w[i]) != NS_OK) goto fail;
     }
 
     for(i = 0; i < 3; i++){
         test_signal_raw_waitable(w[i]);
     }
 
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 1, &cnt)) != 0) goto fail;
-    if(expect_true(cnt == 1u) != 0) goto fail;
+    if(ns_platform_waitset_wait(ws, 1000000u, cc, 1, &cnt) != NS_OK) goto fail;
+    if(cnt != 1u) goto fail;
 
     for(i = 0; i < created; i++){
         (void)ns_platform_waitset_remove(ws, &w[i]);
@@ -702,19 +695,19 @@ static int test_waitset_events_zero(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.events = 0u; /* 不关注任何事件 */
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     test_signal_raw_waitable(w);
     /* timeout=0 非阻塞，events=0 不应触发 */
-    if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 0u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 0u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -726,16 +719,16 @@ static int test_waitset_two_waitsets(void)
     ns_platform_waitset_t *ws1 = NULL, *ws2 = NULL;
     ns_platform_waitable_t w;
 
-    if(expect_ok(ns_platform_waitset_create(&ws1)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_create(&ws2)) != 0) goto fail2;
+    if(ns_platform_waitset_create(&ws1) != NS_OK) return 1;
+    if(ns_platform_waitset_create(&ws2) != NS_OK) goto fail2;
 
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws1, &w)) != 0) goto fail;
+    if(ns_platform_waitset_add(ws1, &w) != NS_OK) goto fail;
     if(ns_platform_waitset_add(ws2, &w) != NS_E_EXISTS) goto fail;
 
-    if(expect_ok(ns_platform_waitset_remove(ws1, &w)) != 0) goto fail;
-    if(expect_ok(ns_platform_waitset_add(ws2, &w)) != 0) goto fail;
-    if(expect_ok(ns_platform_waitset_remove(ws2, &w)) != 0) goto fail;
+    if(ns_platform_waitset_remove(ws1, &w) != NS_OK) goto fail;
+    if(ns_platform_waitset_add(ws2, &w) != NS_OK) goto fail;
+    if(ns_platform_waitset_remove(ws2, &w) != NS_OK) goto fail;
     test_destroy_raw_waitable(w);
     (void)ns_platform_waitset_destroy(ws1);
     (void)ns_platform_waitset_destroy(ws2);
@@ -763,29 +756,29 @@ static int test_waitset_lifecycle_readd(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.user_data = (void *)0xBB;
 
     /* 第一轮 */
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
-    if(expect_true(cc[0].waitable->user_data == (void *)0xBB) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK(cc[0].waitable->user_data == (void *)0xBB);
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
 
     /* 第二轮 */
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
     test_signal_raw_waitable(w);
     cnt = 0u;
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
-    if(expect_true(cc[0].waitable->user_data == (void *)0xBB) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK(cc[0].waitable->user_data == (void *)0xBB);
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
 
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -796,13 +789,13 @@ static int test_waitset_destroy_then_ops(void)
     ns_platform_waitset_t *ws = NULL;
     ns_platform_waitable_t w;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     if(ns_platform_waitset_destroy(ws) != NS_E_EXISTS) return 1;
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     test_destroy_raw_waitable(w);
     return 0;
@@ -817,30 +810,30 @@ static int test_waitset_edge_triggered(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.edge_triggered = 1;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     /* 第一次 signal + wait → 触发 */
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
     /* 不 signal，直接 wait → 不触发（ET 模式，需要新的边沿） */
     cnt = 99u;
-    if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 0u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 0u);
 
     /* 再次 signal + wait → 触发 */
     test_signal_raw_waitable(w);
     cnt = 0u;
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -853,24 +846,24 @@ static int test_waitset_level_triggered(void)
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
 
-    if(expect_ok(ns_platform_waitset_create(&ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.edge_triggered = 0;
-    if(expect_ok(ns_platform_waitset_add(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
 
     /* signal → wait → 触发 */
     test_signal_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt == 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
 
     /* 再 wait → 仍触发（电平触发：eventfd 未 drain，epoll 仍报告 ready） */
     cnt = 0u;
-    if(expect_ok(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt)) != 0) return 1;
-    if(expect_true(cnt >= 1u) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt >= 1u);
 
-    if(expect_ok(ns_platform_waitset_remove(ws, &w)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
     test_destroy_raw_waitable(w);
-    if(expect_ok(ns_platform_waitset_destroy(ws)) != 0) return 1;
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
     return 0;
 }
@@ -882,7 +875,7 @@ static int test_waitset_level_triggered(void)
 
 int main(void)
 {
-    if(expect_ok(ns_platform_init()) != 0){ fprintf(stderr, "ns_platform_init failed\n"); return 1; }
+    EXPECT_OK(ns_platform_init() == NS_OK);
     if(test_alloc() != 0){ fprintf(stderr, "test_alloc failed\n"); return 1; }
     if(test_mutex() != 0){ fprintf(stderr, "test_mutex failed\n"); return 1; }
     if(test_wakeup() != 0){ fprintf(stderr, "test_wakeup failed\n"); return 1; }
@@ -917,7 +910,7 @@ int main(void)
     if(test_waitset_edge_triggered() != 0){ fprintf(stderr, "test_waitset_edge_triggered failed\n"); return 1; }
     if(test_waitset_level_triggered() != 0){ fprintf(stderr, "test_waitset_level_triggered failed\n"); return 1; }
 #endif
-    if(expect_ok(ns_platform_shutdown()) != 0){ fprintf(stderr, "ns_platform_shutdown failed\n"); return 1; }
+    EXPECT_OK(ns_platform_shutdown() == NS_OK);
 
     return 0;
 }

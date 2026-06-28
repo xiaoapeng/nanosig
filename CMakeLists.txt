@@ -17,6 +17,7 @@ configure_file(
 
 include(cmake/CompileWarnings.cmake)
 include(cmake/Sanitizers.cmake)
+include(cmake/Coverage.cmake)
 include(cmake/ApiCompileChecks.cmake)
 
 if(UNIX)
@@ -81,6 +82,7 @@ endif()
 
 nanosig_apply_private_warnings(nanosig)
 nanosig_apply_sanitizers(nanosig)
+nanosig_apply_coverage(nanosig)
 
 enable_testing()
 
@@ -103,8 +105,15 @@ function(nanosig_add_unit_test name source)
 endfunction()
 
 if(NANOSIG_BUILD_TESTS)
-    nanosig_add_unit_test(nanosig_test_broker test/unit/test_broker.c)
-    target_compile_definitions(nanosig_test_broker PRIVATE NANOSIG_TEST)
+    # Event broker tests — split by concern for faster parallel builds
+    nanosig_add_unit_test(nanosig_test_broker_lifecycle test/unit/test_broker_lifecycle.c)
+    target_compile_definitions(nanosig_test_broker_lifecycle PRIVATE NANOSIG_TEST)
+    nanosig_add_unit_test(nanosig_test_broker_event test/unit/test_broker_event.c)
+    target_compile_definitions(nanosig_test_broker_event PRIVATE NANOSIG_TEST)
+    nanosig_add_unit_test(nanosig_test_broker_consume_fn test/unit/test_broker_consume_fn.c)
+    target_compile_definitions(nanosig_test_broker_consume_fn PRIVATE NANOSIG_TEST)
+    nanosig_add_unit_test(nanosig_test_broker_multi test/unit/test_broker_multi.c)
+    target_compile_definitions(nanosig_test_broker_multi PRIVATE NANOSIG_TEST)
     target_compile_definitions(nanosig PRIVATE NANOSIG_TEST)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
@@ -116,6 +125,14 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
     nanosig_add_unit_test(nanosig_test_ds_hashtable test/unit/test_ds_hashtable.c)
     nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
+
+    # ── P0 高危 API 缺口补齐 ──────────────────────────────────────
+    # 单一文件、单一关注点；每文件对应报告 §2.1 表格中的一行。
+    nanosig_add_unit_test(nanosig_test_signal_null_slot test/unit/test_signal_null_slot.c)
+    nanosig_add_unit_test(nanosig_test_signal_double_deinit test/unit/test_signal_double_deinit.c)
+    nanosig_add_unit_test(nanosig_test_loop_reuse test/unit/test_loop_reuse.c)
+    nanosig_add_unit_test(nanosig_test_timer_deinit_use test/unit/test_timer_deinit_use.c)
+    nanosig_add_unit_test(nanosig_test_broker_concurrent_remove test/unit/test_broker_concurrent_remove.c)
 
     # Previously unregistered stress test
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)
@@ -140,6 +157,19 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_integration_hive test/integration/test_hive.c)
     set_tests_properties(nanosig_test_integration_hive PROPERTIES
         LABELS "integration;nightly;long-stability" TIMEOUT 1500)
+
+    # ── Individual scenarios — each is also a standalone test ──
+    foreach(scenario_name
+        cascade cleanup_verify cocktail dual_loop idle
+        lifecycle_chaos lifecycle_marathon multi_route
+        random_chaos reentrant_race signal_storm
+        timer_precision timer_storm watchdog)
+        nanosig_add_unit_test(nanosig_test_scenario_${scenario_name}
+            test/integration/scenario_${scenario_name}.c)
+        target_compile_definitions(nanosig_test_scenario_${scenario_name} PRIVATE SCENARIO_MAIN)
+        set_tests_properties(nanosig_test_scenario_${scenario_name}
+            PROPERTIES LABELS "integration;quick" TIMEOUT 30)
+    endforeach()
 endif()
 
 if(NANOSIG_BUILD_DEMOS)
@@ -192,3 +222,23 @@ add_custom_target(sanitize-all
     COMMAND ${CMAKE_COMMAND} -E echo "sanitize-all: no sanitizer/audit targets yet"
     VERBATIM
 )
+
+# ── Coverage report ──────────────────────────────────────────────────
+if(NANOSIG_ENABLE_COVERAGE)
+    find_program(LCOV lcov)
+    find_program(GENHTML genhtml)
+    if(LCOV AND GENHTML)
+        add_custom_target(coverage
+            COMMAND ${LCOV} --capture --ignore-errors gcov,negative --directory . --output-file coverage.info
+            COMMAND ${LCOV} --remove coverage.info --ignore-errors unused '/usr/*' '*/test/*' '*/include/nanosig/internal/*' --output-file coverage.info
+            COMMAND ${GENHTML} coverage.info --output-directory coverage_report
+            COMMAND ${CMAKE_COMMAND} -E echo "Coverage report: file://${CMAKE_BINARY_DIR}/coverage_report/index.html"
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+            COMMENT "Generating code coverage report..."
+        )
+    else()
+        add_custom_target(coverage
+            COMMAND ${CMAKE_COMMAND} -E echo "lcov and/or genhtml not found — install with: sudo apt install lcov"
+        )
+    endif()
+endif()
