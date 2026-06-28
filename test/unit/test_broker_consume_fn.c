@@ -461,11 +461,25 @@ static void pipe_consume_slot(void *user_data, const void *payload)
     pipe_consume_ctx_t *ctx_ptr = (pipe_consume_ctx_t *)user_data;
     const ns_watcher_event_t *ev = (const ns_watcher_event_t *)payload;
 
-    EXPECT_OK(ev->consume_handle == ctx_ptr);
-    EXPECT_OK(ctx_ptr->bytes_read == 5);
-    EXPECT_OK(ctx_ptr->buf[0] == 'h' && ctx_ptr->buf[1] == 'e' &&
-              ctx_ptr->buf[2] == 'l' && ctx_ptr->buf[3] == 'l' &&
-              ctx_ptr->buf[4] == 'o');
+    /*
+     * Slot callbacks must return void (typedef void (*ns_slot_fn) in
+     * nanosig_signal.h), so EXPECT_OK is not usable here — its body contains
+     * `return 1`. Use plain if-checks that log failures instead.
+     */
+    if(ev->consume_handle != ctx_ptr){
+        fprintf(stderr, "EXPECT failed at %s:%d: ev->consume_handle == ctx_ptr\n",
+                __FILE__, __LINE__);
+    }
+    if(ctx_ptr->bytes_read != 5){
+        fprintf(stderr, "EXPECT failed at %s:%d: ctx_ptr->bytes_read == 5\n",
+                __FILE__, __LINE__);
+    }
+    if(ctx_ptr->buf[0] != 'h' || ctx_ptr->buf[1] != 'e' ||
+       ctx_ptr->buf[2] != 'l' || ctx_ptr->buf[3] != 'l' ||
+       ctx_ptr->buf[4] != 'o'){
+        fprintf(stderr, "EXPECT failed at %s:%d: ctx_ptr->buf == \"hello\"\n",
+                __FILE__, __LINE__);
+    }
 
     ns_atomic_store_explicit(&ctx_ptr->slot_called, 1, ns_memory_order_release);
     (void)ns_loop_quit(ctx_ptr->loop);
