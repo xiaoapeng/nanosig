@@ -6,10 +6,9 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig_ringbuf.h>
-
 #include <string.h>
 
+#include <nanosig/nanosig_ringbuf.h>
 #define ns_ringbuf_fix(ringbuf, pos) ((pos) % ((uint32_t)((ringbuf)->size << 1)))
 
 int ns_ringbuf_init(ns_ringbuf_t *ringbuf, uint8_t *buf, int32_t size)

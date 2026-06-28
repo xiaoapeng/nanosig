@@ -1,7 +1,6 @@
-#include <nanosig/nanosig.h>
-
 #include <stdint.h>
 
+#include <nanosig/nanosig.h>
 static void broker_contract_check_types(void)
 {
     ns_event_broker_t *broker = NULL;
@@ -12,16 +11,17 @@ static void broker_contract_check_types(void)
     watcher.waitable.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR;
     watcher.waitable.edge_triggered = 1;
     watcher.waitable.user_data = &watcher;
-    watcher.waitable.fd = 0;
-    watcher.waitable.handle = (void *)0;
-    watcher.waitable.event_bit = 0;
+    watcher.waitable.primitive.fd = 0;
+    watcher.waitable.primitive.handle = (void *)0;
+    watcher.waitable.primitive.event_bit = 0;
 
     event.triggered_events = NS_WAITABLE_EVENT_IN;
+    event.consume_handle = NULL;
 
     (void)broker;
     (void)event;
-    (void)ns_watcher_init_fd(&watcher, 0, NS_WAITABLE_EVENT_IN, 0);
-    (void)ns_watcher_init_handle(&watcher, (void *)(uintptr_t)1u, NS_WAITABLE_EVENT_IN, 0);
+    { ns_waitable_handle_t h = {.fd = 0}; (void)ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL); }
+    { ns_waitable_handle_t h = {.handle = (void *)(uintptr_t)1u}; (void)ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL); }
     (void)ns_watcher_deinit(&watcher);
     (void)ns_broker_add(&watcher);
     (void)ns_broker_remove(&watcher);

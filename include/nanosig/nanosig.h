@@ -66,6 +66,6 @@ extern int ns_is_initialized(void);
 #include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_timer.h>
-#include <nanosig/nanosig_waitable.h>
+#include <nanosig/nanosig_port.h>
 
 #endif /* NANOSIG_H */

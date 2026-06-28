@@ -114,8 +114,8 @@ macOS backend 与 Linux 结构相同（kqueue 替代 epoll、pthread 相同）�
 
 | 文件 | 行号 | 内容 |
 | --- | --- | --- |
-| `platform/port.h:89` | 声明 | `void *ns_platform_alloc(size_t size)` |
-| `platform/port.h:96` | 声明 | `void ns_platform_free(void *ptr)` |
+| `nanosig/nanosig_port.h:89` | 声明 | `void *ns_platform_alloc(size_t size)` |
+| `nanosig/nanosig_port.h:96` | 声明 | `void ns_platform_free(void *ptr)` |
 | Linux/macOS/Windows `port.c` | 各 2 行 | `malloc` / `free` 包装实现 |
 
 ## 严重度等级

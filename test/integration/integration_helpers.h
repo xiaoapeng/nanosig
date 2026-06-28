@@ -12,14 +12,14 @@
 #ifndef NANOSIG_INTEGRATION_HELPERS_H
 #define NANOSIG_INTEGRATION_HELPERS_H
 
-#include "test_macros.h"
-#include "test_helpers.h"
-
-#include <nanosig/nanosig.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#include <nanosig/nanosig.h>
+
+#include "test_macros.h"
+#include "test_helpers.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

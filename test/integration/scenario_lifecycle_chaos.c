@@ -142,11 +142,7 @@ static int scenario_lifecycle_chaos(void)
     for(i = 0u; i < CHAOS_NUM_WATCHERS; i++){
         g_chaos_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_chaos_raw[i]));
-#if defined(_WIN32)
-        rc = ns_watcher_init_handle(&g_chaos_watchers[i], g_chaos_raw[i].handle, NS_WAITABLE_EVENT_IN, 1);
-#else
-        rc = ns_watcher_init_fd(&g_chaos_watchers[i], g_chaos_raw[i].fd, NS_WAITABLE_EVENT_IN, 1);
-#endif
+        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_chaos_raw[i]); rc = ns_watcher_init(&g_chaos_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL); }
         EXPECT_OK(rc == NS_OK);
         EXPECT_OK(ns_signal_connect(&g_chaos_watchers[i].signal, chaos_dummy_slot,
                                     g_chaos_loop, NULL, &g_chaos_wconns[i]) == NS_OK);

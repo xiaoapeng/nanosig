@@ -8,8 +8,6 @@
 
 #define _GNU_SOURCE
 
-#include "platform/port.h"
-
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -20,6 +18,8 @@
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <nanosig/nanosig_port.h>
 
 struct ns_platform_wakeup {
     int fd;
@@ -170,7 +170,7 @@ ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wak
     ns_waitable_init(&waitable);
 
     if(wakeup != NULL){
-        waitable.fd = wakeup->fd;
+        waitable.primitive.fd = wakeup->fd;
     }
 
     return waitable;
@@ -392,7 +392,7 @@ int ns_platform_waitset_add(
 {
     struct epoll_event ev;
 
-    if((waitset == NULL) || (waitable == NULL) || (waitable->fd < 0)) return NS_E_INVAL;
+    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive.fd < 0)) return NS_E_INVAL;
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= NS_WAITSET_MAX_ENTRIES) return NS_E_TOO_MANY_HANDLES;
 
@@ -400,7 +400,7 @@ int ns_platform_waitset_add(
     if(waitable->edge_triggered) ev.events |= EPOLLET;
     ev.data.ptr = (void *)waitable; /* 零拷贝：直接引用 caller 的 waitable */
 
-    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->fd, &ev) < 0){
+    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->primitive.fd, &ev) < 0){
         if(errno == EEXIST) return NS_E_EXISTS;
         return NS_E_INVAL;
     }
@@ -414,10 +414,10 @@ int ns_platform_waitset_remove(
     ns_platform_waitset_t *waitset,
     ns_platform_waitable_t *waitable)
 {
-    if((waitset == NULL) || (waitable == NULL) || (waitable->fd < 0)) return NS_E_INVAL;
+    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive.fd < 0)) return NS_E_INVAL;
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
-    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->fd, NULL) < 0){
+    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->primitive.fd, NULL) < 0){
         return NS_E_INVAL;
     }
 

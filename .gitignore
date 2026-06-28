@@ -6,3 +6,7 @@ build-linux*
 .omc/
 .claude/
 .codegraph/
+.vscode/settings.json
+.clawbench/
+.codex
+Testing/

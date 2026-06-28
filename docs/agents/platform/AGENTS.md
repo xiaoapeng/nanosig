@@ -34,7 +34,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 - Waitset tests use platform primitives directly, not wakeup: Windows event, Linux eventfd, and macOS kqueue user event. Tests: lifecycle, add/remove semantics, timeout, single signal, multi waitable.
 
 ### Common Patterns
-- Public core code should consume `platform/port.h` without OS-specific preprocessor branches.
+- Public core code should consume `nanosig/nanosig_port.h` without OS-specific preprocessor branches.
 
 ## Dependencies
 

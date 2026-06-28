@@ -6,10 +6,9 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig_hashtable.h>
-
 #include <string.h>
 
+#include <nanosig/nanosig_hashtable.h>
 static int ns_hashtable_is_valid(const ns_hashtable_t *table)
 {
     return (table != NULL) &&

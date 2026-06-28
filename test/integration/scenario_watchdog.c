@@ -62,13 +62,8 @@ static int scenario_watchdog(void)
     for(i = 0u; i < WATCHDOG_NUM_WATCHERS; i++){
         g_wd_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_wd_raw[i]));
-#if defined(_WIN32)
-        EXPECT_OK(ns_watcher_init_handle(&g_wd_watchers[i], g_wd_raw[i].handle,
-                                         NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#else
-        EXPECT_OK(ns_watcher_init_fd(&g_wd_watchers[i], g_wd_raw[i].fd,
-                                     NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#endif
+        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_wd_raw[i]);
+          EXPECT_OK(ns_watcher_init(&g_wd_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
         EXPECT_OK(ns_signal_connect(&g_wd_watchers[i].signal, wd_watcher_slot,
                                     g_wd_loop, (void *)(intptr_t)i,
                                     &g_wd_watcher_conns[i]) == NS_OK);

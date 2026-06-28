@@ -34,7 +34,7 @@ Guidance for source directory `src/`, which contains nanosig implementation sour
 ## Dependencies
 
 ### Internal
-- Depends on `include/nanosig/` and `platform/port.h`.
+- Depends on `include/nanosig/` and `nanosig/nanosig_port.h`.
 
 ### External
 - Standard C and platform abstraction only.

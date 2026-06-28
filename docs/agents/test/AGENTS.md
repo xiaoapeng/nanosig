@@ -10,7 +10,7 @@ Guidance for source directory `test/`, which contains nanosig unit, integration,
 | File | Description |
 |------|-------------|
 | `unit/test_macro_expansion.c` | Compile-only check for the public signal/slot macro matrix. |
-| `unit/test_platform_contract_compile.c` | Compile-only check for `platform/port.h` and internal atomic contract. |
+| `unit/test_platform_contract_compile.c` | Compile-only check for `nanosig/nanosig_port.h` and internal atomic contract. |
 | `unit/test_platform_backend.c` | Runtime smoke test for the platform backend. |
 | `unit/test_loop.c` | Loop lifecycle runtime tests. |
 | `unit/test_signal.c` | Signal/slot runtime tests. |

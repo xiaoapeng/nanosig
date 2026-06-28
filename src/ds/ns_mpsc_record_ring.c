@@ -6,12 +6,11 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig_mpsc_record_ring.h>
-
 #include <stddef.h>
 #include <string.h>
 #include <stdbool.h>
 
+#include <nanosig/nanosig_mpsc_record_ring.h>
 typedef struct ns_mpsc_record_header {
     atomic_size_t meta;
 } ns_mpsc_record_header_t;

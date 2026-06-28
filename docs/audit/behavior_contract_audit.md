@@ -46,13 +46,13 @@
 | `sanitize-all` 占位目标存在 | P0 验收 | `CMakeLists.txt` 中 `add_custom_target(sanitize-all ...)` | 已覆盖 |
 | `api-compile-checks` 和 CTest syntax-only 检查存在 | P0 验收 | CMake 中 `add_custom_target(api-compile-checks ...)`；6 个 compile-check 测试目标 | 已覆盖 |
 
-### P1a：`platform/port.h` 接口冻结
+### P1a：`nanosig/nanosig_port.h` 接口冻结
 
 | 承诺 | 类别 | 测试 / 代码证据 | 覆盖度 |
 | --- | --- | --- | --- |
-| 定义 OS 无关接口 | P1a 产物 | `platform/port.h` 存在且被循环包含 | 已覆盖 |
+| 定义 OS 无关接口 | P1a 产物 | `nanosig/nanosig_port.h` 存在且被循环包含 | 已覆盖 |
 | 引入公开 `nanosig_atomic.h` | P1a 产物 | `include/nanosig/nanosig_atomic.h` 存在 | 已覆盖 |
-| loop 模型改为显式传参，TLS 已移除 | P1a 目标 | `platform/port.h` 中无 TLS 相关接口 | 已覆盖 |
+| loop 模型改为显式传参，TLS 已移除 | P1a 目标 | `nanosig/nanosig_port.h` 中无 TLS 相关接口 | 已覆盖 |
 | `platform/README.md` 存在 | P1a 产物 | `platform/README.md` 存在 | 已覆盖 |
 | `test/unit/test_platform_contract_compile.c` 看接口编译 | P1a 产物 | 测试包含 `ns_platform_*` 类型编译检查 | 已覆盖 |
 
@@ -119,7 +119,7 @@
 
 | 承诺 | 类别 | 测试 / 代码证据 | 覆盖度 |
 | --- | --- | --- | --- |
-| waitset 契约追加到 `platform/port.h` | P5b 目标 | `platform/port.h` 中包含 `ns_platform_waitable_t`, `ns_platform_waitset_t`, `ns_platform_waitset_completion_t` | 已覆盖 |
+| waitset 契约追加到 `nanosig/nanosig_port.h` | P5b 目标 | `nanosig/nanosig_port.h` 中包含 `ns_platform_waitable_t`, `ns_platform_waitset_t`, `ns_platform_waitset_completion_t` | 已覆盖 |
 | `test/unit/test_platform_contract_compile.c` 覆盖新增契约 | P5b 验收 | `test_platform_contract_compile.c` 中有 waitset 编译检查 | 已覆盖 |
 | `test/unit/test_platform_backend.c` 追加 waitset 运行时测试 | P5b 验收 | 22+ waitset 运行时场景 | 已覆盖 |
 
@@ -222,7 +222,7 @@
 | 首字段 `signal` | 结构体定义验证 | 已覆盖 |
 | watcher 事件触发 emit，payload `ns_watcher_event_t` | `test_watcher_event_reaches_loop` 验证 `triggered_events` | 已覆盖 |
 | `ns_watcher_event_t` 含 `triggered_events` | `nanosig_broker.h` 定义 | 已覆盖 |
-| `NS_WAITABLE_EVENT_IN/OUT/ERR` 公开 | `nanosig_waitable.h` 定义 | 已覆盖 |
+| `NS_WAITABLE_EVENT_IN/OUT/ERR` 公开 | `nanosig_port.h` 定义 | 已覆盖 |
 | init_fd / init_handle API | `test_watcher_invalid_paths` | 已覆盖 |
 | edge_triggered 参数 | `test_watcher_event_reaches_loop` 使用边沿触发 | **部分覆盖** |
 | `init_*` 内部调用 init_raw | 代码验证 | 已覆盖 |
@@ -311,8 +311,8 @@
 | `ns_broker()` | ✓ | -- | -- | -- | ✓ (before init → NULL) | ✓ (after shutdown → NULL) |
 | `ns_broker_add()` | ✓ | -- | ✓ | -- | ✓ (NULL/NULL) | -- |
 | `ns_broker_remove()` | ✓ | -- | ✓ (double → E_INVAL) | -- | ✓ (NULL/NULL) | ✓ (shutdown auto-remove) |
-| `ns_watcher_init_fd()` | ✓ | -- | -- | -- | ✓ (NULL, -1, invalid events) | ✓ (before init → E_SHUTDOWN) |
-| `ns_watcher_init_handle()` | ✓ | -- | -- | -- | ✓ (NULL handle) | ✓ (before init → E_SHUTDOWN) |
+| `ns_watcher_init()` | ✓ | -- | -- | -- | ✓ (NULL, -1, invalid events) | ✓ (before init → E_SHUTDOWN) |
+| `ns_watcher_init()` | ✓ | -- | -- | -- | ✓ (NULL handle) | ✓ (before init → E_SHUTDOWN) |
 | `ns_watcher_deinit()` | ✓ | -- | ✓ | -- | ✓ (NULL, zero_watcher) | ✓ (deinit uninit → E_INVAL) |
 
 ---
@@ -397,7 +397,7 @@
 
 ### "invariant: platform 层 wakeup 接口已精简（无 wakeup_reset）"
 - **状态**: 已覆盖
-- **证据**: `platform/port.h` 无 `ns_platform_wakeup_reset` 声明
+- **证据**: `nanosig/nanosig_port.h` 无 `ns_platform_wakeup_reset` 声明
 
 ### "invariant: head-only helper 用 static inline；其他公开函数显式 extern"
 - **状态**: 已覆盖

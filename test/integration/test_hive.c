@@ -7,16 +7,16 @@
  * Standalone CMake target with TIMEOUT 1500 and LABELS "integration;long-stability".
  */
 
-#include "test_macros.h"
-#include "test_helpers.h"
-#include "integration_helpers.h"
-
-#include <nanosig/nanosig.h>
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#include <nanosig/nanosig.h>
+
+#include "test_macros.h"
+#include "test_helpers.h"
+#include "integration_helpers.h"
 
 #if !defined(_WIN32)
 #include <pthread.h>
@@ -87,15 +87,10 @@ static int setup_watchers(void)
             INTEGRATION_PHASE("hive: failed to create raw waitable %zu", i);
             return -1;
         }
-#if defined(_WIN32)
-        rc = ns_watcher_init_handle(&g_watchers[i], g_raw_waitables[i].handle,
-                                    NS_WAITABLE_EVENT_IN, 1);
-#else
-        rc = ns_watcher_init_fd(&g_watchers[i], g_raw_waitables[i].fd,
-                                NS_WAITABLE_EVENT_IN, 1);
-#endif
+        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_raw_waitables[i]);
+          rc = ns_watcher_init(&g_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL); }
         if(rc != NS_OK){
-            INTEGRATION_PHASE("hive: ns_watcher_init_fd failed for %zu (rc=%d)", i, rc);
+            INTEGRATION_PHASE("hive: ns_watcher_init failed for %zu (rc=%d)", i, rc);
             return -1;
         }
         rc = ns_signal_connect(&g_watchers[i].signal, hive_watcher_slot,

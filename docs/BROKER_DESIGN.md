@@ -15,7 +15,7 @@ broker 是全局单例，随 `ns_init()` 初始化，随 `ns_shutdown()` 销毁�
 
 ```
 用户层：
-  ns_watcher_init_fd / init_handle / deinit
+  ns_watcher_init / deinit
   ns_signal_connect(&watcher->signal, slot, ...)
   ns_broker_add(broker, watcher)
   ns_broker_remove(broker, watcher)
@@ -56,7 +56,7 @@ MPSC ring；所有投递通过 signal emit 完成。
 
 ### 事件位
 
-从 `platform/port.h` 提升到公开头文件：
+从 `nanosig/nanosig_port.h` 提升到公开头文件：
 
 ```c
 #define NS_WAITABLE_EVENT_IN   (1u << 0)  /* 可读 / signaled */
@@ -92,7 +92,7 @@ typedef struct ns_watcher {
 
 当前实现选择直接内嵌 `ns_platform_waitable_t`，不再额外包一层 opaque
 私有结构，也不把 waitable 从 `ns_watcher_t` 中隐藏。公开 watcher API
-通过 `ns_watcher_init_fd` / `ns_watcher_init_handle` 封装常规初始化路径；
+通过 `ns_watcher_init` 封装常规初始化路径；
 调用方通常不需要直接改平台句柄成员，但结构布局保持直接可见。
 
 ## 公开 API
@@ -100,31 +100,26 @@ typedef struct ns_watcher {
 ### watcher 生命周期
 
 ```c
-int ns_watcher_init_fd(
+int ns_watcher_init(
     ns_watcher_t *watcher,
-    int fd,
+    ns_waitable_handle_t handle,
     uint32_t events,
-    int edge_triggered);
-
-int ns_watcher_init_handle(
-    ns_watcher_t *watcher,
-    void *handle,
-    uint32_t events,
-    int edge_triggered);
+    int edge_triggered,
+    ns_watcher_consume_fn consume_fn);
 
 int ns_watcher_deinit(ns_watcher_t *watcher);
 ```
 
-- `init_fd`：Linux/macOS 文件描述符。内部调 `ns_signal_init_raw`（payload_size
-  = `sizeof(ns_watcher_event_t)`），填充 `watcher->waitable`（fd、events、
-  edge_triggered），初始化 `broker_node`。
-- `init_handle`：Windows HANDLE。同上，填充 `handle` 字段。
-- 两个 init 函数都是正常公开初始化入口，不引入 `NS_E_UNSUPPORTED` 或按
-  平台隐藏符号。参数有效时应完成 signal、waitable 和 broker_node 初始化；
-  调用方负责在当前平台传入能被对应 waitset 后端等待的 fd 或 HANDLE。
+- `init`：统一初始化入口，接受 `ns_waitable_handle_t`（Linux/macOS 填 `.fd`，
+  Windows 填 `.handle`）和可选 `consume_fn`。内部调 `ns_signal_init_raw`
+  （payload_size = `sizeof(ns_watcher_event_t)`），通过 `NS_WAITABLE_SET` 填充
+  `watcher->waitable.primitive`（events、edge_triggered），初始化 `broker_node`。
+- `init` 是正常公开初始化入口，不引入 `NS_E_UNSUPPORTED` 或按平台隐藏符号。
+  参数有效时应完成 signal、waitable 和 broker_node 初始化；调用方负责在当前
+  平台传入能被对应 waitset 后端等待的 fd 或 HANDLE。
 - `deinit`：释放 signal 内部资源，重置 waitable。调用前必须已
   `ns_broker_remove`。
-- `deinit` 只对成功初始化的 watcher 返回成功。`ns_watcher_init_*`
+- `deinit` 只对成功初始化的 watcher 返回成功。`ns_watcher_init`
   失败时会把 watcher 重置为空未初始化状态；随后调用 `deinit` 返回
   `NS_E_INVAL`，不静默伪装成成功清理。
 - `events` 是 `NS_WAITABLE_EVENT_IN/OUT/ERR` 的位组合。

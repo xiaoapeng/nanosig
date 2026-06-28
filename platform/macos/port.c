@@ -6,8 +6,6 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include "platform/port.h"
-
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -17,6 +15,8 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <nanosig/nanosig_port.h>
 
 struct ns_platform_wakeup {
     int kq;
@@ -191,7 +191,7 @@ ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wak
     ns_waitable_init(&waitable);
 
     if(wakeup != NULL){
-        waitable.fd = wakeup->kq;
+        waitable.primitive.fd = wakeup->kq;
     }
 
     return waitable;
@@ -358,7 +358,7 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
 
 static int ns_macos_waitable_fd_is_invalid(const ns_platform_waitable_t *waitable)
 {
-    return (waitable == NULL) || (waitable->fd < 0);
+    return (waitable == NULL) || (waitable->primitive.fd < 0);
 }
 
 static size_t ns_macos_waitset_make_changes(
@@ -425,7 +425,7 @@ int ns_platform_waitset_add(
 
     change_count = ns_macos_waitset_make_changes(
         changes,
-        waitable->fd,
+        waitable->primitive.fd,
         waitable->events,
         waitable->edge_triggered,
         EV_ADD | EV_ENABLE);
@@ -451,7 +451,7 @@ int ns_platform_waitset_remove(
 
     change_count = ns_macos_waitset_make_changes(
         changes,
-        waitable->fd,
+        waitable->primitive.fd,
         waitable->events,
         0,
         EV_DELETE);

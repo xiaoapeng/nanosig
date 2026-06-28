@@ -1,23 +1,160 @@
 /**
- * @file port.h
- * @brief nanosig 内部平台抽象层接口。
- * @date 2026-05-16
+ * @file nanosig_port.h
+ * @brief nanosig 平台端口 — 唯一的平台相关公开头文件。
+ * @date 2026-06-14
+ *
+ * 本文件集中所有平台检测宏、平台原语类型、waitable 事件描述符、
+ * 平台抽象层函数声明。nanosig 公开头文件中，只有本文件允许出现
+ * `#if defined(_WIN32)` 等平台检测代码。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#ifndef NANOSIG_PLATFORM_PORT_H
-#define NANOSIG_PLATFORM_PORT_H
+#ifndef NANOSIG_PORT_H
+#define NANOSIG_PORT_H
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <nanosig/nanosig_status.h>
-#include <nanosig/nanosig_waitable.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ================================================================== */
+/*  平台判定                                                            */
+/* ================================================================== */
+
+/** @brief 当前编译目标为 Windows。 */
+#if defined(_WIN32)
+#define NANOSIG_PLATFORM_WINDOWS 1
+#elif defined(__APPLE__)
+#define NANOSIG_PLATFORM_APPLE 1
+#elif defined(__linux__) || defined(__unix__)
+#define NANOSIG_PLATFORM_POSIX 1
+#endif
+
+/* ================================================================== */
+/*  ns_waitable_handle_t — 平台可等待原语联合体                          */
+/* ================================================================== */
+
+/**
+ * @brief 平台可等待原语联合体。
+ *
+ * 调用方根据当前平台填充对应成员，通过本文件提供的辅助宏访问。
+ */
+typedef union ns_waitable_handle {
+    int     fd;         /**< Linux/macOS: 文件描述符 */
+    void   *handle;     /**< Windows: HANDLE */
+    int     event_bit;  /**< RTOS: event bit index（v2） */
+} ns_waitable_handle_t;
+
+/* ================================================================== */
+/*  可等待事件位                                                         */
+/* ================================================================== */
+
+#define NS_WAITABLE_EVENT_IN   (1u << 0) /**< 可读 / signaled */
+#define NS_WAITABLE_EVENT_OUT  (1u << 1) /**< 可写 */
+#define NS_WAITABLE_EVENT_ERR  (1u << 2) /**< 错误 */
+
+/* ================================================================== */
+/*  ns_platform_waitable_t — 可等待事件描述符                             */
+/* ================================================================== */
+
+/**
+ * @brief 可等待事件描述符。
+ *
+ * `primitive` 字段存储平台原语（fd / HANDLE / event_bit），调用方通过
+ * `ns_watcher_init` 或平台层 API 填充，不应直接修改。
+ *
+ * 本结构体直接内嵌在 `ns_watcher_t` 中。
+ *
+ * - Linux/macOS：`primitive.fd`，eventfd / kqueue / socket / pipe fd。
+ * - Windows：`primitive.handle`，HANDLE。
+ * - RTOS（v2）：`primitive.event_bit`，event group 中的 bit 位置。
+ */
+typedef struct ns_platform_waitable {
+    ns_waitable_handle_t primitive;        /**< 平台原语（fd / HANDLE / event_bit） */
+    void                *user_data;        /**< 关联的用户标签，completion 中原样返回 */
+    void                *registered_waitset; /**< 已注册的 waitset，平台层内部维护 */
+    uint32_t             events;           /**< 关注的事件位（NS_WAITABLE_EVENT_*） */
+    int                  edge_triggered;   /**< 1 = 边沿触发，0 = 电平触发 */
+} ns_platform_waitable_t;
+
+/**
+ * @brief 初始化 waitable 为未注册的无效状态。
+ *
+ * @thread-safety unsafe 只应在初始化线程单线程调用。
+ *
+ * 本函数把 `primitive` 初始化为全 1 位无效值：Windows 对应
+ * `INVALID_HANDLE_VALUE`，Linux/macOS fd 对应 `-1`。
+ *
+ * @param w 待初始化的 waitable，可为 `NULL`。
+ */
+static inline void ns_waitable_init(ns_platform_waitable_t *w)
+{
+    if(w == NULL) return;
+
+    (void)memset(&w->primitive, 0xFF, sizeof(w->primitive));
+    w->user_data = NULL;
+    w->registered_waitset = NULL;
+    w->events = 0u;
+    w->edge_triggered = 0;
+}
+
+/* ================================================================== */
+/*  辅助宏 — ns_waitable_handle_t ↔ ns_platform_waitable_t 转换        */
+/* ================================================================== */
+
+/**
+ * @brief 检查 `ns_waitable_handle_t` 在当前平台是否有效。
+ *
+ * Windows：`.handle != NULL`；其他平台：`.fd >= 0`。
+ *
+ * @param h `ns_waitable_handle_t` 值。
+ * @return 非零表示有效，零表示无效。
+ */
+#if defined(_WIN32)
+#define ns_waitable_handle_is_valid(h) ((h).handle != NULL)
+#else
+#define ns_waitable_handle_is_valid(h) ((h).fd >= 0)
+#endif
+
+/**
+ * @brief 把平台句柄值写入 `ns_platform_waitable_t::primitive`。
+ *
+ * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
+ * @param handle_val   `ns_waitable_handle_t` 值。
+ */
+#if defined(_WIN32)
+#define NS_WAITABLE_SET(waitable_ptr, handle_val) \
+    ((waitable_ptr)->primitive.handle = (handle_val).handle)
+#else
+#define NS_WAITABLE_SET(waitable_ptr, handle_val) \
+    ((waitable_ptr)->primitive.fd = (handle_val).fd)
+#endif
+
+/**
+ * @brief 从 `ns_platform_waitable_t::primitive` 提取 `ns_waitable_handle_t`。
+ *
+ * 供 `consume_fn` 内部使用，从 watcher waitable 中取出平台句柄。
+ *
+ * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
+ * @return 对应平台的 `ns_waitable_handle_t` 值。
+ */
+#if defined(_WIN32)
+#define NS_WAITABLE_GET(waitable_ptr) \
+    ((ns_waitable_handle_t){.handle = (waitable_ptr)->primitive.handle})
+#else
+#define NS_WAITABLE_GET(waitable_ptr) \
+    ((ns_waitable_handle_t){.fd = (waitable_ptr)->primitive.fd})
+#endif
+
+/* ================================================================== */
+/*  平台抽象层 — 类型                                                    */
+/* ================================================================== */
 
 /**
  * @brief 无限等待的超时值，单位为微秒。
@@ -59,6 +196,36 @@ typedef enum ns_platform_wait_result {
     NS_PLATFORM_WAIT_SIGNALED = 0,
     NS_PLATFORM_WAIT_TIMEOUT = 1
 } ns_platform_wait_result_t;
+
+/* ================================================================== */
+/*  平台抽象层 — waitset                                                 */
+/* ================================================================== */
+
+/**
+ * @brief waitset 完成事件。
+ *
+ * 由 `ns_platform_waitset_wait` 填写。`waitable` 指向注册时的 waitable
+ * （含 `user_data`），`triggered_events` 是实际触发的事件位。
+ */
+typedef struct ns_platform_waitset_completion {
+    const ns_platform_waitable_t *waitable;         /**< 指向注册时的 waitable */
+    uint32_t                      triggered_events; /**< 实际触发的事件位 */
+} ns_platform_waitset_completion_t;
+
+/**
+ * @brief 平台 waitset 句柄。
+ *
+ * waitset 是一次等待多个事件源的容器。
+ * - Linux：epoll，`data.ptr` 直接指向 caller 的 waitable（零拷贝）。
+ * - macOS：kqueue，`udata` 直接指向 caller 的 waitable（零拷贝）。
+ * - Windows：WaitForMultipleObjects + 内部数组映射。
+ * - RTOS（v2）：event group。
+ */
+typedef struct ns_platform_waitset ns_platform_waitset_t;
+
+/* ================================================================== */
+/*  平台抽象层 — 函数声明                                                */
+/* ================================================================== */
 
 /**
  * @brief 初始化平台层全局状态。
@@ -216,32 +383,6 @@ int ns_platform_thread_create(
  */
 int ns_platform_thread_join(ns_platform_thread_t *thread);
 
-/* ------------------------------------------------------------------ */
-/*  waitset                                                              */
-/* ------------------------------------------------------------------ */
-
-/**
- * @brief waitset 完成事件。
- *
- * 由 `ns_platform_waitset_wait` 填写。`waitable` 指向注册时的 waitable
- * （含 `user_data`），`triggered_events` 是实际触发的事件位。
- */
-typedef struct ns_platform_waitset_completion {
-    const ns_platform_waitable_t *waitable;         /**< 指向注册时的 waitable */
-    uint32_t                      triggered_events; /**< 实际触发的事件位 */
-} ns_platform_waitset_completion_t;
-
-/**
- * @brief 平台 waitset 句柄。
- *
- * waitset 是一次等待多个事件源的容器。
- * - Linux：epoll，`data.ptr` 直接指向 caller 的 waitable（零拷贝）。
- * - macOS：kqueue，`udata` 直接指向 caller 的 waitable（零拷贝）。
- * - Windows：WaitForMultipleObjects + 内部数组映射。
- * - RTOS（v2）：event group。
- */
-typedef struct ns_platform_waitset ns_platform_waitset_t;
-
 /**
  * @brief 创建 waitset。
  *
@@ -313,4 +454,4 @@ int ns_platform_waitset_wait(
 }
 #endif
 
-#endif /* NANOSIG_PLATFORM_PORT_H */
+#endif /* NANOSIG_PORT_H */

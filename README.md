@@ -71,7 +71,7 @@ int main(void)
 | `nanosig_signal.h` | signal init / connect / disconnect / emit |
 | `nanosig_timer.h` | timer create / start / cancel / restart / destroy |
 | `nanosig_broker.h` | watcher / broker 注册与注销 |
-| `nanosig_waitable.h` | waitable 类型与事件位 |
+| `nanosig_port.h` | waitable 类型与事件位 |
 | `nanosig_status.h` | 状态码（`NS_OK`, `NS_E_*`） |
 | `nanosig_types.h` | 通用宏（`NS_CONTAINER_OF`, `NS_STATIC_ASSERT`） |
 | `nanosig_atomic.h` | 原子操作 |

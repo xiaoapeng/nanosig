@@ -112,7 +112,7 @@
 - `nanosig.h`: `extern int ns_init(void)`, `ns_shutdown`, `ns_is_initialized`
 - `nanosig_signal.h`: `extern int ns_signal_init_raw`, `ns_signal_connect`, `ns_signal_disconnect`, `ns_signal_disconnect_all`, `ns_signal_emit_raw`, `ns_signal_deinit_raw`
 - `nanosig_loop.h`: `extern int ns_loop_init`, `ns_loop_deinit`, `ns_loop_run`, `ns_loop_quit`, `ns_loop_start`, `ns_loop_stop`
-- `nanosig_broker.h`: `extern int ns_watcher_init_fd`, `ns_watcher_init_handle`, `ns_watcher_deinit`, `extern ns_event_broker_t *ns_broker`, `extern int ns_broker_add`, `ns_broker_remove`
+- `nanosig_broker.h`: `extern int ns_watcher_init`, `ns_watcher_init`, `ns_watcher_deinit`, `extern ns_event_broker_t *ns_broker`, `extern int ns_broker_add`, `ns_broker_remove`
 - `nanosig_timer.h`: `extern int ns_timer_init`, `ns_timer_start`, `ns_timer_cancel`, `ns_timer_restart`, `ns_timer_deinit`
 - `nanosig_rbtree.h`: 17 个 `extern` 函数
 - `nanosig_ringbuf.h`: 13 个 `extern` 函数
@@ -129,7 +129,7 @@
 | --- | --- | --- |
 | `nanosig_list.h` | 13 个（`ns_list_init`, `ns_list_empty`, `ns_list_push_front`, ...） | intr. 双向链表，纯内联 |
 | `nanosig_slist.h` | 22 个（`ns_slist_init`, `ns_slist_push_front`, ...） | intr. 单向链表，纯内联 |
-| `nanosig_waitable.h` | 1 个（`ns_waitable_init`） | waitable 初始化，纯内联 |
+| `nanosig_port.h` | 1 个（`ns_waitable_init`） | waitable 初始化，纯内联 |
 | `nanosig_types.h` | 2 个（`ns_ctz_u32`, `ns_clz_u32`） | 平台类型辅助，纯内联 |
 
 没有任何 `extern` 函数被错误地声明为 `static inline`。
@@ -217,8 +217,8 @@
 
 | 函数 | 参数顺序 | 一致性 |
 | --- | --- | --- |
-| `ns_watcher_init_fd(watcher, fd, events, edge_triggered)` | 对象先行 | PASS |
-| `ns_watcher_init_handle(watcher, handle, events, edge_triggered)` | 对象先行 | PASS |
+| `ns_watcher_init(watcher, fd, events, edge_triggered)` | 对象先行 | PASS |
+| `ns_watcher_init(watcher, handle, events, edge_triggered)` | 对象先行 | PASS |
 | `ns_watcher_deinit(watcher)` | 单一参数 | PASS |
 | `ns_broker()` | 无参 | PASS |
 | `ns_broker_add(broker, watcher)` | broker 先行 | PASS |
@@ -332,7 +332,7 @@
 | `ns_signal_t` | `ns_signal_init_raw` / `ns_signal_init`（宏） | `ns_signal_deinit_raw` / `ns_signal_deinit`（宏） | 调用方拥有存储，alloc mutex |
 | `ns_loop_t` | `ns_loop_init` | `ns_loop_deinit` | 不透明句柄，堆分配 |
 | `ns_timer_t` | `ns_timer_init` | `ns_timer_deinit` | 调用方拥有存储，alloc mutex（内嵌 signal） |
-| `ns_watcher_t` | `ns_watcher_init_fd` / `ns_watcher_init_handle` | `ns_watcher_deinit` | 调用方拥有存储，alloc mutex（内嵌 signal） |
+| `ns_watcher_t` | `ns_watcher_init` / `ns_watcher_init` | `ns_watcher_deinit` | 调用方拥有存储，alloc mutex（内嵌 signal） |
 | `ns_ringbuf_t` | `ns_ringbuf_init` | (无，调用方管理存储) | 纯初始化，无 alloc |
 | `ns_hashtable_t` | `ns_hashtable_init` | (无，调用方管理存储) | 纯初始化，无 alloc |
 | `ns_rbtree_t` | `ns_rbtree_init` | (无) | 纯初始化，无 alloc |
@@ -341,7 +341,7 @@
 | 问题 | 严重度 | 说明 |
 | --- | --- | --- |
 | timer 和 signal 都是调用方拥有存储且都分配 mutex，但 timer 用 `_create`/`_destroy`，signal 用 `_init`/`_deinit` | Info | `ns_timer_init` 覆盖 init+start 准备状态，语义上比 `ns_signal_init_raw` 更重；但两者基础模式相同。建议在 API 设计文档中明确区分规则。 |
-| watcher 使用 `ns_watcher_init_fd` / `ns_watcher_init_handle` 而非 `ns_watcher_create_fd`，但使用 `ns_watcher_deinit` 而非 `destroy` | Info | init 前缀一致（与 signal 对齐），`deinit` 与 init 对称。合理但值得注意。 |
+| watcher 使用 `ns_watcher_init` / `ns_watcher_init` 而非 `ns_watcher_create_fd`，但使用 `ns_watcher_deinit` 而非 `destroy` | Info | init 前缀一致（与 signal 对齐），`deinit` 与 init 对称。合理但值得注意。 |
 
 ### 6.4 公开头中无 `__safety` 注解
 
@@ -356,12 +356,12 @@
 
 ### 6.5 无 C++ 保留命名冲突
 
-所有 `extern "C"` 块正确包裹除 `nanosig_status.h`、`nanosig_waitable.h`、`nanosig_safety.h` 外的所有头文件。
+所有 `extern "C"` 块正确包裹除 `nanosig_status.h`、`nanosig_port.h`、`nanosig_safety.h` 外的所有头文件。
 
 | 文件 | `extern "C"` 包裹 | 备注 |
 | --- | --- | --- |
 | `nanosig_status.h` | 无 | 仅有 enum 定义，C++ 兼容，无函数声明 |
-| `nanosig_waitable.h` | 有 | 含 `static inline` |
+| `nanosig_port.h` | 有 | 含 `static inline` |
 | `nanosig_safety.h` | 有 | 纯注释占位 |
 
 ### 6.6 DS `_write` / `_read` 命名冲突
@@ -390,7 +390,7 @@
 
 1. `ns_timer_init`/`ns_timer_deinit` vs `ns_signal_init_raw`/`ns_signal_deinit_raw` 命名模式不一致：两者都是调用方拥有存储 + 内部 alloc mutex，但一对用 create/destroy，另一对用 init/deinit。
 
-2. `ns_watcher_init_fd`/`ns_watcher_init_handle` 使用 `init_*` 而非 `create_*` 做前置动作，但对应的析构是 `deinit`（而非 `destroy`）。内部一致但与其他模块比对有差异。
+2. `ns_watcher_init`/`ns_watcher_init` 使用 `init_*` 而非 `create_*` 做前置动作，但对应的析构是 `deinit`（而非 `destroy`）。内部一致但与其他模块比对有差异。
 
 3. 公开头中未使用 `@warning` / `@note` 标签。建议在 `ns_signal_emit_raw`（emit 路径零分配承诺）、`ns_loop_deinit`（销毁前需断开连接等约束）等场合加入 `@warning` 提升可见性。
 

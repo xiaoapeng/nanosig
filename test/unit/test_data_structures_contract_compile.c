@@ -6,11 +6,10 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig_ds.h>
-
 #include <stddef.h>
 #include <stdint.h>
 
+#include <nanosig/nanosig_ds.h>
 typedef struct ds_contract_item {
     int value;
     ns_list_node_t list_node;

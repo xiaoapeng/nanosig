@@ -6,10 +6,9 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig_ringbuf.h>
-
 #include <string.h>
 
+#include <nanosig/nanosig_ringbuf.h>
 static int expect_true(int condition)
 {
     return condition ? 0 : 1;

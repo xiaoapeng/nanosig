@@ -1,18 +1,17 @@
 /**
  * @file test_platform_contract_compile.c
- * @brief platform/port.h and nanosig_atomic.h syntax-only contract check.
+ * @brief nanosig_port.h and nanosig_atomic.h syntax-only contract check.
  * @date 2026-05-16
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include "platform/port.h"
-#include <nanosig/nanosig_atomic.h>
-
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <nanosig/nanosig_port.h>
+#include <nanosig/nanosig_atomic.h>
 #if NS_PLATFORM_WAIT_INFINITE_US != UINT64_MAX
 #error "NS_PLATFORM_WAIT_INFINITE_US must be UINT64_MAX"
 #endif
@@ -92,9 +91,9 @@ static void platform_contract_check_waitset_types(void)
     ns_platform_waitset_t *ws = NULL;
 
     ns_waitable_init(&w);
-    w.fd = 0;
-    w.handle = NULL;
-    w.event_bit = 0;
+    w.primitive.fd = 0;
+    w.primitive.handle = NULL;
+    w.primitive.event_bit = 0;
     w.user_data = NULL;
     w.registered_waitset = NULL;
     w.events = NS_WAITABLE_EVENT_IN;

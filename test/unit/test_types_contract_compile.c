@@ -1,7 +1,6 @@
-#include <nanosig/nanosig_types.h>
-
 #include <stdint.h>
 
+#include <nanosig/nanosig_types.h>
 typedef struct ns_types_contract_node {
     int value;
 } ns_types_contract_node_t;

@@ -1,6 +1,6 @@
 # nanosig 平台抽象层
 
-`platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `platform/port.h`
+`platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `nanosig/nanosig_port.h`
 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS 头文件或写平台分支。
 
 三后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
@@ -9,7 +9,7 @@ Windows（WaitForMultipleObjects + SRWLOCK）。后端必须同步推进，不�
 
 ## loop-only 原语
 
-`platform/port.h` 冻结以下能力：
+`nanosig/nanosig_port.h` 冻结以下能力：
 
 - 平台生命周期：`ns_platform_init`、`ns_platform_shutdown`。
 - 内存：`ns_platform_alloc`、`ns_platform_free`。
@@ -20,7 +20,7 @@ Windows（WaitForMultipleObjects + SRWLOCK）。后端必须同步推进，不�
 
 ## waitset 原语
 
-`platform/port.h` 追加以下 waitset 能力：
+`nanosig/nanosig_port.h` 追加以下 waitset 能力：
 
 - waitable：可等待描述符，包含平台句柄、用户标签、注册状态和事件配置。
 - waitset：一次等待多个事件源的容器。
@@ -104,7 +104,7 @@ completion 数组由调用方提供，`out_count` 返回实际触发数。Window
 ## v2 扩展路径
 
 v1 不创建空 RTOS 或 MCU 后端目录。未来 v2 如果需要 ISR / RTOS 支持，应先扩展
-`platform/port.h` 的契约并补齐文档，再增加对应后端目录。
+`nanosig/nanosig_port.h` 的契约并补齐文档，再增加对应后端目录。
 
 RTOS 前向兼容：`ns_platform_waitable_t` 的 `event_bit` 字段为 RTOS 预留，waitset
 可映射为 event group（FreeRTOS `xEventGroupWaitBits`、Zephyr `k_poll`）。
@@ -114,7 +114,7 @@ RTOS ISR 安全是 v2 课题，v1 不承诺。
 
 新增一个平台后端时，需要：
 
-1. **实现文件**：在 `platform/` 下创建 `<platform>/port.c`，实现 `platform/port.h` 中所有 `extern` 函数（`ns_platform_*`）。
+1. **实现文件**：在 `platform/` 下创建 `<platform>/port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。
 2. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。
 3. **编译检查**：`cmake --build` 零警告通过。
 4. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
@@ -123,5 +123,5 @@ RTOS ISR 安全是 v2 课题，v1 不承诺。
 
 新增后端**不允许**：
 - 在 `src/` 或 `include/nanosig/` 中新增 OS 分支。
-- 修改 `platform/port.h` 的接口签名（只能新增扩展点）。
+- 修改 `nanosig/nanosig_port.h` 的接口签名（只能新增扩展点）。
 - 修改其他后端的实现文件。

@@ -13,7 +13,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
   - loop：`ns_loop_init` ↔ `ns_loop_deinit`
   - signal：`ns_signal_init[_raw]` ↔ `ns_signal_deinit[_raw]`（含 `connect` ↔ `disconnect`、`disconnect_all`）
   - timer：`ns_timer_init` ↔ `ns_timer_deinit`
-  - watcher：`ns_watcher_init_fd / _handle` ↔ `ns_watcher_deinit` + broker：`ns_broker_add` ↔ `ns_broker_remove`
+  - watcher：`ns_watcher_init / _handle` ↔ `ns_watcher_deinit` + broker：`ns_broker_add` ↔ `ns_broker_remove`
 - **资源对象统计**：
   - 调用方自持对象：4 类（`ns_loop_t` / `ns_signal_t` / `ns_timer_t` / `ns_watcher_t`）
   - 库拥有对象：1 类（`ns_event_broker_t` 全局单例）
@@ -35,7 +35,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 | signal | `ns_signal_init(signal, type)` 宏 ↔ `ns_signal_init_raw(signal, payload_size, slot_capacity, debug_name)` | `ns_signal_deinit(signal)` 宏 ↔ `ns_signal_deinit_raw(signal)` | 调用方 | 宏展开为 `_raw`；`init_raw` 不检测"已初始化"；重复 init 行为未文档化（现状：会再创建新 mutex，旧 mutex 句柄泄漏——见"关键发现"） | `deinit_raw` 在 `mutex == NULL` 时直接返回 `NS_OK`（`src/nanosig.c:312`），符合"已 deinit 后再 deinit 幂等"；未 init 时 `mutex` 为 `NULL` 走幂等分支 | 内部状态：`payload_size` / `slot_capacity` / `slot_list` / `mutex`。`init_raw` 失败回滚：不创建 mutex 时 `mutex` 保持 `NULL`，无泄漏。`deinit_raw` 不释放 `slot_list` 中 connection 节点（已 `ns_list_init`），由调用方保证 disconnect 在前。 |
 | signal connection | `ns_signal_connect` | `ns_signal_disconnect` / `ns_signal_disconnect_all` | 调用方（`ns_connection_t` 栈/堆由调用方自持） | 不允许重复 connect 同一 connection：未检测，但 `signal_node` 已自环，重复 push 不会自检（依赖调用方约束） | disconnect 幂等：二次调用 `ns_list_remove_init` 已自环后再次 `remove_init` 不报错（无显式 guard） | `disconnect` 不释放 connection 内存（`include/nanosig/nanosig_signal.h:248` 明确 "断开连接后可安全释放 connection"）。 |
 | timer | `ns_timer_init(timer, interval_us, attr)` | `ns_timer_deinit(timer)` | 调用方（`ns_timer_t` 自持） | 重复 init：未显式 guard；现存 timer 已 `start` 状态下再次 `create` 会清零 `expire_us` / `attr`，旧 rbtree 节点不会移除（隐患——见"关键发现"） | `destroy` 内部先 `ns_timer_cancel`（`src/ns_timer.c:379`），所以即使未 start 也不会误删；deinit signal 释放 mutex | 内部状态：`signal` / `rb_node` / `interval_us` / `expire_us` / `attr`。`create` 失败路径：mutex 创建失败时已 `ns_signal_init_raw` 成功——见"关键发现"是否成立（实际：`init_raw` 内先置 `mutex=NULL`，创建失败时 mutex 仍为 `NULL` 不算泄漏）。 |
-| watcher | `ns_watcher_init_fd(w, fd, ev, edge)` / `ns_watcher_init_handle(w, h, ev, edge)` | `ns_watcher_deinit(w)` | 调用方（`ns_watcher_t` 自持） | 重复 init 会通过 `ns_watcher_reset_empty` 重置 `signal.mutex=NULL` 释放旧 mutex 句柄吗？实际：仅置字段为 `NULL`（`src/ns_broker.c:58-67`），**不销毁旧 mutex**——见"关键发现"。 | `deinit` 拒绝：未 init 返回 `NS_E_INVAL`，已 link 到 broker 返回 `NS_E_EXISTS`（`src/ns_broker.c:131-133`） | `init_fd` / `init_handle` 区分 fd-vs-handle 模式；二者 `reset_empty` 后再调 `init_common`。 |
+| watcher | `ns_watcher_init(w, fd, ev, edge)` / `ns_watcher_init(w, h, ev, edge)` | `ns_watcher_deinit(w)` | 调用方（`ns_watcher_t` 自持） | 重复 init 会通过 `ns_watcher_reset_empty` 重置 `signal.mutex=NULL` 释放旧 mutex 句柄吗？实际：仅置字段为 `NULL`（`src/ns_broker.c:58-67`），**不销毁旧 mutex**——见"关键发现"。 | `deinit` 拒绝：未 init 返回 `NS_E_INVAL`，已 link 到 broker 返回 `NS_E_EXISTS`（`src/ns_broker.c:131-133`） | `init_fd` / `init_handle` 区分 fd-vs-handle 模式；二者 `reset_empty` 后再调 `init_common`。 |
 | broker 节点 | `ns_broker_add(broker, watcher)` | `ns_broker_remove(broker, watcher)` | broker 拥有 `watcher_head` 链表与 `waitset` 注册 | 重复 add：检测 `broker_node` 已 link 则返回 `NS_E_EXISTS`（`src/ns_broker.c:220-223`） | 重复 remove：未 link 则返回 `NS_E_INVAL`（`src/ns_broker.c:250-253`）；成功后 `waitable.user_data = NULL` + `ns_list_remove_init` | broker `add` 后通过 `ns_broker_notify` 唤醒 broker 线程（`src/ns_broker.c:235`），`remove` 同理（`:263`）。 |
 
 ## 失败路径清理
@@ -117,7 +117,7 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 先 `ns_timer_cancel(timer)`，再 `ns_signal_deinit_raw(&timer->signal)`，最后 `ns_rbtree_node_init`。
 `cancel` 本身幂等（`is_running` 检测），`deinit_raw` 幂等（`mutex == NULL` 时 `NS_OK`）。OK。
 
-### `ns_watcher_init_fd()` / `ns_watcher_init_handle()`（`src/ns_broker.c:97` / `:112`）
+### `ns_watcher_init()` / `ns_watcher_init()`（`src/ns_broker.c:97` / `:112`）
 
 入口先 `ns_watcher_reset_empty(watcher)` 重置字段；失败路径（参数 / events / runtime）：
 - `init_fd` / `init_handle` 在调用 `init_common` 前已重置 watcher 状态；
@@ -274,7 +274,7 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
   2. 或要求 `init_raw` 前显式 `deinit_raw`，文档明示。
 - **文档现状**：`include/nanosig/nanosig_signal.h:223-240` 提到 "`init_raw` 是 `init` 宏的底层入口"，未提及重复 init 行为。
 
-### F2. `ns_watcher_init_fd` / `ns_watcher_init_handle` 重复 init 不检测且不释放旧 signal mutex（Major）
+### F2. `ns_watcher_init` / `ns_watcher_init` 重复 init 不检测且不释放旧 signal mutex（Major）
 
 - **位置**：`src/ns_broker.c:97-125`
 - **问题**：`init_fd` / `init_handle` 入口 `ns_watcher_reset_empty(watcher)`（`:102`、`:117`）仅将

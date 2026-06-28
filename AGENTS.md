@@ -52,6 +52,7 @@ nanosig is a new C11 signal/slot library being built with explicit-passing event
 
 ### Common Patterns
 - **源码中禁止出现阶段计划编号。** 源文件（`.c`、`.h`、`CMakeLists.txt`、`demos/`、`test/`）的注释、字符串和标识符中不得包含 `P0`、`P1a`、`P1b`、`P2`、`P3`、`P4`、`P5b`、`P6`、`P7`、`PD`、`phase-1`、`phase-2` 等计划阶段引用。这些信息只属于 `docs/` 目录下的设计文档。新代码和修改后的代码必须遵守此规则。
+- **头文件包含顺序。** 除非逻辑限制，头文件包含顺序应为：系统头文件和稳定的头文件在前，其次是其他库的头文件，然后是用户的通用头文件，最后才是业务相关的头文件。各组之间用空行分隔。
 - Public symbols use `ns_*`, public constants use `NS_*`, function-wrapper signal connect/emit macros use lowercase `ns_signal_*`, and declaration/definition/initializer/type-only macros use uppercase `NS_*`.
 - Signal connect macros must provide the payload/no-payload and current-loop/explicit-loop matrix without adding a separate `0` function family; no-payload signals use `ns_no_payload_t` and `NS_NO_PAYLOAD`, and typed variants use compile-time slot signature checks.
 - Zero tolerance for duplicate internal/public-low-level functions that only differ by default-vs-explicit parameters. Use a parameter such as nullable `target_loop` instead; wrapper macros may keep ergonomic names but must call the single underlying function.

@@ -46,6 +46,6 @@ is the single connect function. `target_loop` must be non-NULL.
 早期设计使用 TLS 绑定 loop 到线程，但这增加了平台复杂度（需要 TLS API）
 且限制了灵活性（一个线程只能有一个 loop）。改为显式传参后：
 
-- 平台层不再需要 TLS 接口，简化了 `platform/port.h`。
+- 平台层不再需要 TLS 接口，简化了 `nanosig/nanosig_port.h`。
 - 调用方可以自由决定 loop 和线程的映射关系。
 - broker 等内部组件也可以更灵活地使用 loop。

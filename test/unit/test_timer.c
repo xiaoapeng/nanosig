@@ -6,13 +6,11 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig.h>
-
-#include "nanosig/internal/ns_timer_mgr.h"
-
-#include "test_macros.h"
 #include <stdio.h>
 
+#include <nanosig/nanosig.h>
+#include "nanosig/internal/ns_timer_mgr.h"
+#include "test_macros.h"
 static int test_invalid_and_empty_paths(void)
 {
     ns_timer_t timer;

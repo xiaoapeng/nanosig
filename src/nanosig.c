@@ -6,13 +6,10 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
-
-#include <platform/port.h>
-
 #include "nanosig/internal/ns_broker.h"
-
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;
     ns_loop_config_t config;
@@ -36,7 +33,6 @@ typedef struct ns_slot_call {
     size_t payload_size;
 } ns_slot_call_t;
 
-/* ns_connection is now defined in nanosig_signal.h */
 
 static int ns_signal_lock(ns_signal_t *signal)
 {

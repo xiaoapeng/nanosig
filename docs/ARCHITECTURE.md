@@ -30,7 +30,7 @@ nanosig 是一个 C11 线程安全 signal/slot 库，面向 Linux、macOS 和 Wi
 **耦合约束**：
 
 - `src/` 和 `include/nanosig/` 不得包含 OS 头文件或写 `#ifdef _WIN32` 分支。
-- 所有 OS 耦合集中在 `platform/port.h` 的声明和 `platform/*/port.c` 的实现。
+- 所有 OS 耦合集中在 `nanosig/nanosig_port.h` 的声明和 `platform/*/port.c` 的实现。
 - 运行时通过 `ns_platform_*` 接口使用 OS 能力，不直接依赖 pthread / Win32 API。
 
 ---
@@ -241,7 +241,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `nanosig_signal.h` | `ns_signal_t`, `ns_connection_t` | signal/slot |
 | `nanosig_timer.h` | `ns_timer_t` | 定时器 |
 | `nanosig_broker.h` | `ns_event_broker_t`, `ns_watcher_t` | 事件 broker |
-| `nanosig_waitable.h` | `ns_platform_waitable_t` | waitable 类型 |
+| `nanosig_port.h` | `ns_platform_waitable_t` | waitable 类型 |
 | `nanosig_status.h` | `NS_OK`, `NS_E_*` | 状态码 |
 | `nanosig_types.h` | 通用宏 | `NS_CONTAINER_OF`, `NS_STATIC_ASSERT` |
 | `nanosig_atomic.h` | 原子操作 | `ns_atomic_load`, `ns_atomic_store` |

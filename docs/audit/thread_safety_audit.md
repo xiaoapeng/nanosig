@@ -22,7 +22,7 @@ API 总数计算口径：
 - `nanosig_signal.h` 公开函数 5 + 宏 6 + 类型与辅助宏若干（按"对外产生调用的入口"计 5）
 - `nanosig_timer.h` 5
 - `nanosig_broker.h` 公开 6
-- `nanosig_waitable.h` 1 inline
+- `nanosig_port.h` 1 inline
 - 数据结构（`nanosig_ds.h` 聚合）共约 38（mpsc ring 6 / rbtree 16 / hashtable 7 / ringbuf 11 / slist / list 大量 inline）
 - `nanosig_atomic.h` 10+ 宏
 
@@ -80,8 +80,8 @@ API 总数计算口径：
 
 | API | 并发类 | 理由 | 调用方约束 |
 | --- | --- | --- | --- |
-| `ns_watcher_init_fd` (`nanosig_broker.h:72`) | 需要序列化 | `src/ns_broker.c:97` 调 `ns_signal_init_raw`（建 mutex）+ 写 `waitable.fd` + 初始化 `broker_node` | 同一 watcher 串行；需 `ns_init()` 已调用 |
-| `ns_watcher_init_handle` (`nanosig_broker.h:87`) | 需要序列化 | `src/ns_broker.c:112` 同上，写 `waitable.handle` | 同上 |
+| `ns_watcher_init` (`nanosig_broker.h:72`) | 需要序列化 | `src/ns_broker.c:97` 调 `ns_signal_init_raw`（建 mutex）+ 写 `waitable.fd` + 初始化 `broker_node` | 同一 watcher 串行；需 `ns_init()` 已调用 |
+| `ns_watcher_init` (`nanosig_broker.h:87`) | 需要序列化 | `src/ns_broker.c:112` 同上，写 `waitable.handle` | 同上 |
 | `ns_watcher_deinit` (`nanosig_broker.h:98`) | 需要序列化 | `src/ns_broker.c:127` 校验未注册，`ns_signal_deinit_raw` + `ns_waitable_init` | 串行；须先 `ns_broker_remove` |
 | `ns_broker` (`nanosig_broker.h:107`) | MPM-safe | `src/ns_broker.c:141` 返回静态 `g_broker` 指针。读 `g_broker` 是裸指针读，无原子，但只在 `ns_init` 后有效且 `ns_shutdown` 前调用方约定不会并发改变 | 任意线程；不可在 `ns_init` 前 / `ns_shutdown` 后调用 |
 | `ns_broker_add` (`nanosig_broker.h:119`) | MPM-safe | `src/ns_broker.c:209` 在 `broker->watcher_mutex` 保护下 `ns_platform_waitset_add` + `ns_list_push_back` | 任意线程；调用前 watcher 已 init |
@@ -112,7 +112,7 @@ API 总数计算口径：
 1. **未发现 Critical**：所有已声称"可多线程"的接口在实现中确实由 mutex / 原子 / MPSC 守护。`ns_signal_emit_raw` 的 slot 列表遍历在 `signal->mutex` 内执行，向 `conn->target_loop->queue`（MPSC）的 `try_pushv` 是 lock-free 但属于"多生产者对单消费者"，与 mutex 不冲突。
 2. **Major-1（`ns_broker` 返回指针无文档）**：`ns_broker()` 在 `src/ns_broker.c:141` 是裸指针读 `g_broker`，调用方无法从公开头判断这是不是 lock-free / atomic。建议在头加 `@thread-safety` 标签，写明"必须在 `ns_init` 与 `ns_shutdown` 之间调用，返回值在生命周期内恒定"。
 3. **Major-2（`ns_loop_stop` 多次调用未定义）**：`ns_loop_stop` (`src/nanosig.c:271`) 在 `async_thread == NULL` 时返回 `NS_E_INVAL`，但头文件 `@pre` 未声明此约束；二次 stop 会返回错误。
-4. **Major-3（`ns_watcher_init_fd/handle` 与 `deinit` 串行但未在头声明）**：`src/ns_broker.c:97-125` 在 init 时无条件 `ns_watcher_reset_empty` 再 `ns_signal_init_raw`，不持有 mutex；并发 init/deinit 与 slot 访问会破坏内嵌 signal。
+4. **Major-3（`ns_watcher_init` 与 `deinit` 串行但未在头声明）**：`src/ns_broker.c:97-125` 在 init 时无条件 `ns_watcher_reset_empty` 再 `ns_signal_init_raw`，不持有 mutex；并发 init/deinit 与 slot 访问会破坏内嵌 signal。
 5. **Major-4（DS 公共 API 完全没有 `@thread-safety`）**：除 `nanosig_mpsc_record_ring.h` 在 `try_push` / `try_pushv` / `try_acquire` 显式声明线程语义外，`nanosig_rbtree.h` / `nanosig_hashtable.h` / `nanosig_ringbuf.h` / `nanosig_slist.h` / `nanosig_list.h` 完全没有同步约束说明，调用方需自行阅读实现。
 6. **Info-1（命名）**：`ns_signal_lock` / `ns_signal_unlock` (`src/nanosig.c:41/47`) 是 static，命名带 ns_ 前缀但实为内部 helper，建议改名 `signal_lock_internal` 避免误以为是公开 API。
 7. **Info-2（reset 命名）**：`ns_ringbuf_reset` 头注释 "单读单写不安全" 应升级为显式 `@warning not thread-safe even in SPSC`，与 `ns_ringbuf_clear` 区分。
@@ -145,7 +145,7 @@ v1 线程安全契约**整体成立**：
 
 1. 多个头文件（`nanosig_rbtree.h` / `nanosig_hashtable.h` / `nanosig_ringbuf.h` / `nanosig_slist.h` / `nanosig_list.h`）缺乏 `@thread-safety` 注释，调用方需自己翻实现。
 2. `ns_broker()` 裸指针读的并发语义未在头声明。
-3. `ns_loop_stop` / `ns_watcher_init_fd|handle|deinit` 的串行约束未在 `@pre` 写明。
+3. `ns_loop_stop` / `ns_watcher_init|deinit` 的串行约束未在 `@pre` 写明。
 
 **建议**：
 

@@ -6,13 +6,12 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include "platform/port.h"
-#include "test_helpers.h"
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
+#include <nanosig/nanosig_port.h>
+#include "test_helpers.h"
 static int expect_ok(int rc)
 {
     return rc == NS_OK ? 0 : 1;

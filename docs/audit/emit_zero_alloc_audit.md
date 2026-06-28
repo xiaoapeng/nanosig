@@ -222,7 +222,7 @@ static void ns_mpsc_record_ring_write_parts(
 
 ### 发现 2：port.h 注释明确要求 wakeup_signal 零分配
 
-`platform/port.h` 第 118 行注释：
+`nanosig/nanosig_port.h` 第 118 行注释：
 > `ns_platform_wakeup_signal` — 本函数可从跨线程 emit 或控制路径调用，**不允许分配内存**。
 
 该约束在所有三个平台后端都被正确遵守。

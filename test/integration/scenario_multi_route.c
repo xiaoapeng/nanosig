@@ -116,11 +116,7 @@ static int scenario_multi_route(void)
     /* Create watcher */
     g_mr_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_mr_raw));
-#if defined(_WIN32)
-    EXPECT_OK(ns_watcher_init_handle(&g_mr_watcher, g_mr_raw.handle, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#else
-    EXPECT_OK(ns_watcher_init_fd(&g_mr_watcher, g_mr_raw.fd, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#endif
+    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_mr_raw); EXPECT_OK(ns_watcher_init(&g_mr_watcher, h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
     /* Watcher signal → trigger slot on loop-0 */
     EXPECT_OK(ns_signal_connect(&g_mr_watcher.signal, mr_trigger_slot,
                                 g_mr_loops[0], NULL, &g_mr_watcher_conn) == NS_OK);

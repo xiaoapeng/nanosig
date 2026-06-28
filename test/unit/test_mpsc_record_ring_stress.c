@@ -8,13 +8,13 @@
  *   NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=5 ./build/stress.exe
  */
 
-#include <nanosig/nanosig_mpsc_record_ring.h>
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#include <nanosig/nanosig_mpsc_record_ring.h>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

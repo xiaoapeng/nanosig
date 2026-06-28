@@ -61,11 +61,7 @@ static int scenario_lifecycle_marathon(void)
         for(i = 0u; i < LM_NUM_WATCHERS; i++){
             raw[i] = test_create_raw_waitable();
             EXPECT_OK(test_raw_waitable_is_valid(raw[i]));
-#if defined(_WIN32)
-            EXPECT_OK(ns_watcher_init_handle(&watchers[i], raw[i].handle, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#else
-            EXPECT_OK(ns_watcher_init_fd(&watchers[i], raw[i].fd, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#endif
+            { ns_waitable_handle_t h = NS_WAITABLE_GET(&raw[i]); EXPECT_OK(ns_watcher_init(&watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
             EXPECT_OK(ns_signal_connect(&watchers[i].signal, dummy_slot, loop, NULL, &watcher_conns[i]) == NS_OK);
             EXPECT_OK(ns_broker_add(&watchers[i]) == NS_OK);
         }

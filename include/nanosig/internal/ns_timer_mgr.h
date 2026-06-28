@@ -9,8 +9,7 @@
 #ifndef NANOSIG_NS_TIMER_MGR_H
 #define NANOSIG_NS_TIMER_MGR_H
 
-#include <platform/port.h>
-#include <nanosig/nanosig_status.h>
+#include <nanosig/nanosig_port.h>
 
 #ifdef __cplusplus
 extern "C" {

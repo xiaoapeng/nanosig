@@ -128,11 +128,7 @@ static int scenario_random_chaos(void)
 
     g_rc_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_rc_raw));
-#if defined(_WIN32)
-    EXPECT_OK(ns_watcher_init_handle(&g_rc_watcher, g_rc_raw.handle, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#else
-    EXPECT_OK(ns_watcher_init_fd(&g_rc_watcher, g_rc_raw.fd, NS_WAITABLE_EVENT_IN, 1) == NS_OK);
-#endif
+    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rc_raw); EXPECT_OK(ns_watcher_init(&g_rc_watcher, h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
     EXPECT_OK(ns_signal_connect(&g_rc_watcher.signal, rc_dummy_slot, g_rc_loop, NULL, &g_rc_wconn) == NS_OK);
     EXPECT_OK(ns_broker_add(&g_rc_watcher) == NS_OK);
 

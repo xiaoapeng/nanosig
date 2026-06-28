@@ -6,13 +6,13 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
-#include <nanosig/nanosig.h>
-
-#include "test_macros.h"
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+
+#include <nanosig/nanosig.h>
+
+#include "test_macros.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

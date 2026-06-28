@@ -28,7 +28,7 @@ eventhub_os uses a strict C prefix convention:
 | Public types | `eh_*_t` | `ns_*_t` |
 | Public constants | `EH_*` | `NS_*` |
 | Internal helpers | `_eh_*`, `__*`, or unexported `static` helpers | `_ns_*` or `static` helpers |
-| Platform implementation functions | `platform_*` | `ns_platform_*` in nanosig `platform/port.h` |
+| Platform implementation functions | `platform_*` | `ns_platform_*` in nanosig `nanosig/nanosig_port.h` |
 | Config macros | `EH_CONFIG_*` | `NS_CONFIG_*` only if needed |
 
 Function and variable names are snake_case. Struct names normally keep the
@@ -278,7 +278,7 @@ Linux, Windows, macOS, and MCU targets.
 
 For nanosig:
 
-- `platform/port.h` should be the only OS-coupling point.
+- `nanosig/nanosig_port.h` should be the only OS-coupling point.
 - Keep Linux/Windows backend names parallel.
 - Do not add empty MCU backend directories in v1; document the extension path.
 

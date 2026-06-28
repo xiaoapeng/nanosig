@@ -9,7 +9,7 @@
 #ifndef NANOSIG_TEST_HELPERS_H
 #define NANOSIG_TEST_HELPERS_H
 
-#include "platform/port.h"
+#include <nanosig/nanosig_port.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -84,11 +84,11 @@ static ns_platform_waitable_t test_create_raw_waitable(void)
 
     ns_waitable_init(&w);
 #ifdef _WIN32
-    w.handle = CreateEventA(NULL, FALSE, FALSE, NULL);
+    w.primitive.handle = CreateEventA(NULL, FALSE, FALSE, NULL);
 #elif defined(__APPLE__)
-    w.fd = test_create_macos_user_event();
+    w.primitive.fd = test_create_macos_user_event();
 #else
-    w.fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
+    w.primitive.fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
 #endif
     w.events = NS_WAITABLE_EVENT_IN;
     return w;
@@ -97,9 +97,9 @@ static ns_platform_waitable_t test_create_raw_waitable(void)
 static void test_destroy_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32
-    if(w.handle != NULL) CloseHandle((HANDLE)w.handle);
+    if(w.primitive.handle != NULL) CloseHandle((HANDLE)w.primitive.handle);
 #else
-    if(w.fd >= 0) close(w.fd);
+    if(w.primitive.fd >= 0) close(w.primitive.fd);
 #endif
 }
 
@@ -109,15 +109,15 @@ __attribute__((unused))
 static void test_signal_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32
-    (void)SetEvent((HANDLE)w.handle);
+    (void)SetEvent((HANDLE)w.primitive.handle);
 #elif defined(__APPLE__)
-    (void)test_signal_macos_user_event(w.fd);
+    (void)test_signal_macos_user_event(w.primitive.fd);
 #else
     {
         uint64_t val = 1u;
         ssize_t n;
         do {
-            n = write(w.fd, &val, sizeof(val));
+            n = write(w.primitive.fd, &val, sizeof(val));
         } while(n < 0 && errno == EINTR);
         (void)n;
     }
@@ -131,9 +131,9 @@ static void test_signal_raw_waitable(ns_platform_waitable_t w)
 static inline int test_raw_waitable_is_valid(ns_platform_waitable_t w)
 {
 #if defined(_WIN32)
-    return w.handle != NULL;
+    return w.primitive.handle != NULL;
 #else
-    return w.fd >= 0;
+    return w.primitive.fd >= 0;
 #endif
 }
 

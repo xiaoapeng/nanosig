@@ -8,11 +8,11 @@
 
 #define WIN32_LEAN_AND_MEAN
 
-#include "platform/port.h"
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <windows.h>
+
+#include <nanosig/nanosig_port.h>
 
 struct ns_platform_wakeup {
     HANDLE event;
@@ -132,7 +132,7 @@ ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wak
     ns_waitable_init(&waitable);
 
     if(wakeup != NULL){
-        waitable.handle = wakeup->event;
+        waitable.primitive.handle = wakeup->event;
     }
 
     return waitable;
@@ -306,8 +306,8 @@ static int ns_waitable_handle_is_invalid(const ns_platform_waitable_t *waitable)
 {
     if(waitable == NULL) return 1;
 
-    return (waitable->handle == NULL)
-        || (waitable->handle == INVALID_HANDLE_VALUE);
+    return (waitable->primitive.handle == NULL)
+        || (waitable->primitive.handle == INVALID_HANDLE_VALUE);
 }
 
 int ns_platform_waitset_add(
@@ -318,10 +318,10 @@ int ns_platform_waitset_add(
         return NS_E_INVAL;
     }
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
-    if(ns_waitset_find(waitset, (HANDLE)waitable->handle) >= 0) return NS_E_EXISTS;
+    if(ns_waitset_find(waitset, (HANDLE)waitable->primitive.handle) >= 0) return NS_E_EXISTS;
     if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;
 
-    waitset->handles[waitset->count] = (HANDLE)waitable->handle;
+    waitset->handles[waitset->count] = (HANDLE)waitable->primitive.handle;
     waitset->waitables[waitset->count] = waitable;
     waitset->count++;
     waitable->registered_waitset = waitset;
@@ -340,7 +340,7 @@ int ns_platform_waitset_remove(
     }
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
-    idx = ns_waitset_find(waitset, (HANDLE)waitable->handle);
+    idx = ns_waitset_find(waitset, (HANDLE)waitable->primitive.handle);
     if(idx < 0) return NS_E_INVAL;
 
     last = waitset->count - 1u;

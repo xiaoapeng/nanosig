@@ -6,13 +6,10 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <nanosig/nanosig_port.h>
+#include <nanosig/nanosig.h>
 #include "nanosig/internal/ns_broker.h"
 #include "nanosig/internal/ns_timer_mgr.h"
-
-#include <nanosig/nanosig.h>
-
-#include <platform/port.h>
-
 #ifdef NANOSIG_TEST
 /* Test hook: non-NS_OK value injects waitset_wait failure.
  * Set before ns_init() to verify broker thread survives waitset errors. */
@@ -66,6 +63,8 @@ static void ns_watcher_reset_empty(ns_watcher_t *watcher)
     ns_list_init(&watcher->signal.slot_list);
     ns_waitable_init(&watcher->waitable);
     ns_list_init(&watcher->broker_node);
+    watcher->consume_fn = NULL;
+    watcher->pending_consume_handle = NULL;
 }
 
 static int ns_watcher_is_initialized(const ns_watcher_t *watcher)
@@ -96,33 +95,22 @@ static int ns_watcher_init_common(ns_watcher_t *watcher, uint32_t events, int ed
     return NS_OK;
 }
 
-int ns_watcher_init_fd(ns_watcher_t *watcher, int fd, uint32_t events, int edge_triggered)
+int ns_watcher_init(ns_watcher_t *watcher, ns_waitable_handle_t handle,
+                    uint32_t events, int edge_triggered,
+                    ns_watcher_consume_fn consume_fn)
 {
     int rc;
 
     if(watcher == NULL) return NS_E_INVAL;
     ns_watcher_reset_empty(watcher);
-    if(fd < 0) return NS_E_INVAL;
+
+    if(!ns_waitable_handle_is_valid(handle)) return NS_E_INVAL;
 
     rc = ns_watcher_init_common(watcher, events, edge_triggered);
     if(rc != NS_OK) return rc;
 
-    watcher->waitable.fd = fd;
-    return NS_OK;
-}
-
-int ns_watcher_init_handle(ns_watcher_t *watcher, void *handle, uint32_t events, int edge_triggered)
-{
-    int rc;
-
-    if(watcher == NULL) return NS_E_INVAL;
-    ns_watcher_reset_empty(watcher);
-    if(handle == NULL) return NS_E_INVAL;
-
-    rc = ns_watcher_init_common(watcher, events, edge_triggered);
-    if(rc != NS_OK) return rc;
-
-    watcher->waitable.handle = handle;
+    NS_WAITABLE_SET(&watcher->waitable, handle);
+    watcher->consume_fn = consume_fn;
     return NS_OK;
 }
 
@@ -138,6 +126,22 @@ int ns_watcher_deinit(ns_watcher_t *watcher)
     ns_waitable_init(&watcher->waitable);
     ns_list_init(&watcher->broker_node);
     return rc;
+}
+
+ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher)
+{
+    if(watcher == NULL){
+        ns_waitable_handle_t invalid;
+        (void)memset(&invalid, 0xFF, sizeof(invalid));
+        return invalid;
+    }
+
+    return NS_WAITABLE_GET(&watcher->waitable);
+}
+
+void ns_watcher_set_consume_handle(ns_watcher_t *watcher, void *handle)
+{
+    if(watcher != NULL) watcher->pending_consume_handle = handle;
 }
 
 ns_event_broker_t *ns_broker(void)
@@ -165,6 +169,14 @@ static void ns_broker_emit_completion(const ns_platform_waitset_completion_t *co
     if(watcher == NULL) return;
 
     event.triggered_events = completion->triggered_events;
+    event.consume_handle = NULL;
+
+    if(watcher->consume_fn != NULL){
+        int rc = watcher->consume_fn(watcher);
+        if(rc <= 0) return;
+        event.consume_handle = watcher->pending_consume_handle;
+    }
+
     (void)ns_signal_emit_raw(&watcher->signal, &event, sizeof(event));
 }
 
