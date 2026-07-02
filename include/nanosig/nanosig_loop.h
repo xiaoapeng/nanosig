@@ -50,14 +50,19 @@ typedef struct ns_loop_config {
 /**
  * @brief 返回默认 loop 配置。
  *
- * @return `ns_loop_config_t` 复合字面量，适合用作局部变量初始化值。
+ * @return `ns_loop_config_t` 聚合初始化值，适合用作局部变量初始化值。
  */
+#ifdef __cplusplus
+#define NS_LOOP_CONFIG_DEFAULT() \
+    ns_loop_config_t{ NS_CAPACITY_1024, 0u, nullptr }
+#else
 #define NS_LOOP_CONFIG_DEFAULT() \
     ((ns_loop_config_t){ \
         .queue_byte_capacity = NS_CAPACITY_1024, \
         .flags = 0u, \
         .debug_name = NULL \
     })
+#endif
 
 /**
  * @brief 创建事件循环。

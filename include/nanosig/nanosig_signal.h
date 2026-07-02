@@ -100,6 +100,23 @@ typedef struct ns_no_payload {
  */
 #define NS_NO_PAYLOAD ((const ns_no_payload_t *)NULL)
 
+#ifdef __cplusplus
+}  /* extern "C" — template helper requires C++ linkage */
+
+namespace nanosig_detail {
+template<typename T>
+struct ns_payload_size_of {
+    static constexpr size_t value = sizeof(T);
+};
+template<>
+struct ns_payload_size_of<ns_no_payload_t> {
+    static constexpr size_t value = 0u;
+};
+}  /* namespace nanosig_detail */
+
+extern "C" {
+#endif
+
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 /**
  * @brief 计算 payload 类型对应的入队字节数。
@@ -128,6 +145,33 @@ typedef struct ns_no_payload {
 
 NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u, "ns_no_payload_t payload size must be 0");
 NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD payload size must be 0");
+
+#elif defined(__cplusplus)
+/**
+ * @brief C++ payload size via template specialization (no _Generic).
+ *
+ * @param payload_type signal 的 payload 类型。
+ * @return payload 入队字节数。
+ */
+#define NS_SIGNAL_PAYLOAD_SIZE(payload_type) \
+    ((size_t)::nanosig_detail::ns_payload_size_of<payload_type>::value)
+
+/**
+ * @brief C++ payload pointer size via template + decltype.
+ *
+ * @param payload_ptr 指向 payload 的指针，或 `NS_NO_PAYLOAD`。
+ * @return payload 入队字节数。
+ */
+#define NS_SIGNAL_PAYLOAD_PTR_SIZE(payload_ptr) \
+    ((size_t)::nanosig_detail::ns_payload_size_of< \
+        typename std::remove_cv< \
+            typename std::remove_pointer<decltype(payload_ptr)>::type>::type>::value)
+
+static_assert(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u,
+    "ns_no_payload_t payload size must be 0");
+static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
+    "NS_NO_PAYLOAD payload size must be 0");
+
 #else
 #define NS_SIGNAL_PAYLOAD_SIZE(payload_type) ((size_t)sizeof(payload_type))
 #define NS_SIGNAL_PAYLOAD_PTR_SIZE(payload_ptr) ((size_t)sizeof(*(payload_ptr)))

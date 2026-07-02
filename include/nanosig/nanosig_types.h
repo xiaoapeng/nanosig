@@ -12,6 +12,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+#include <type_traits>
+/* typeof 是 GCC 扩展，非 C++ 标准关键字；遍历宏中使用裸 typeof，
+   此处统一收口为 __typeof__ 以兼容严格 C++ 模式。 */
+#if !defined(typeof) && (defined(__GNUC__) || defined(__clang__))
+#define typeof(...) __typeof__(__VA_ARGS__)
+#endif
+#endif
+
 #if defined(__has_attribute)
 #define NS_HAS_ATTRIBUTE(attr) __has_attribute(attr)
 #else
@@ -41,13 +50,18 @@
 #define ns_offsetof(type, member) offsetof(type, member)
 #endif
 
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#if defined(__cplusplus) && (__cplusplus >= 201112L)
+#define NS_STATIC_ASSERT(expr, msg) static_assert((expr), msg)
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define NS_STATIC_ASSERT(expr, msg) _Static_assert((expr), msg)
 #else
 #define NS_STATIC_ASSERT(expr, msg)
 #endif
 
-#if NS_HAS_GNU_TYPEOF
+#if defined(__cplusplus)
+/* C++ 没有 __builtin_types_compatible_p；NS_CONTAINER_OF 的类型检查退化为 no-op */
+#define ns_same_type(a, b) 1
+#elif NS_HAS_GNU_TYPEOF
 #define ns_same_type(a, b) __builtin_types_compatible_p(__typeof__(a), __typeof__(b))
 #else
 #define ns_same_type(a, b) 0
@@ -71,10 +85,30 @@
         ((type *)((char *)ns_container_ptr - ns_offsetof(type, member))); \
     })
 
+#ifdef __cplusplus
+/* C++: _Generic 不可用，用模板函数实现 const 感知的 container_of */
+template<typename NS_T, typename NS_U>
+static inline auto ns_container_of_const_impl(NS_T *ns_ptr, NS_U *, size_t ns_off)
+    -> typename std::conditional<std::is_const<NS_T>::value,
+        const NS_U *, NS_U *>::type
+{
+    using NS_Ret = typename std::conditional<std::is_const<NS_T>::value,
+        const NS_U *, NS_U *>::type;
+    using NS_CharPtr = typename std::conditional<std::is_const<NS_T>::value,
+        const char *, char *>::type;
+    return reinterpret_cast<NS_Ret>(
+        reinterpret_cast<NS_CharPtr>(ns_ptr) - ns_off);
+}
+
+#define NS_CONTAINER_OF_CONST(ptr, type, member) \
+    ns_container_of_const_impl((ptr), static_cast<type *>(nullptr), \
+        ns_offsetof(type, member))
+#else
 #define NS_CONTAINER_OF_CONST(ptr, type, member) \
     _Generic((ptr), \
         const __typeof__(*(ptr)) *: ((const type *)NS_CONTAINER_OF((ptr), type, member)), \
         default: ((type *)NS_CONTAINER_OF((ptr), type, member)))
+#endif
 
 #define NS_CONTAINER_OF_SAFE(ptr, type, member) \
     ({ \

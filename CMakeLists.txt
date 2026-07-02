@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(nanosig
     VERSION 0.1.0
     DESCRIPTION "C11 thread-based signal/slot library"
-    LANGUAGES C
+    LANGUAGES C CXX
 )
 
 # ── 版本头文件生成 ──────────────────────────────────────────────
@@ -208,6 +208,10 @@ if(NANOSIG_BUILD_API_CHECKS)
         test/unit/test_types_contract_compile.c
     )
 
+    nanosig_add_cpp_compat_check(nanosig_api_check_cpp_compat
+        test/unit/test_cpp_compat_compile.cpp
+    )
+
     add_custom_target(api-compile-checks
         DEPENDS
             nanosig_api_check_macro_matrix
@@ -215,6 +219,7 @@ if(NANOSIG_BUILD_API_CHECKS)
             nanosig_api_check_broker_contract
             nanosig_api_check_data_structures
             nanosig_api_check_types
+            nanosig_api_check_cpp_compat
     )
 endif()
 
