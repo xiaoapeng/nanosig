@@ -283,14 +283,15 @@ size_t ns_mpsc_record_ring_capacity(const ns_mpsc_record_ring_t *ring)
  */
 size_t ns_mpsc_record_ring_free_capacity(const ns_mpsc_record_ring_t *ring)
 {
+    ns_mpsc_record_ring_t *nc_ring = (ns_mpsc_record_ring_t *)(void *)ring;
     size_t reserve_pos;
     size_t read_pos;
     size_t used;
 
     if(!ns_mpsc_record_ring_is_valid(ring)) return 0u;
 
-    reserve_pos = ns_atomic_load_explicit(&ring->reserve_pos, ns_memory_order_relaxed);
-    read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
+    reserve_pos = ns_atomic_load_explicit(&nc_ring->reserve_pos, ns_memory_order_relaxed);
+    read_pos = ns_atomic_load_explicit(&nc_ring->read_pos, ns_memory_order_relaxed);
 
     used = ns_mpsc_record_ring_used(reserve_pos, read_pos);
     if(used > ring->capacity) return 0u;
