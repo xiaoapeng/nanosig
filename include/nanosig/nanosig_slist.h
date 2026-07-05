@@ -419,10 +419,10 @@ static inline ns_slist_node_t *ns_slist_dequeue(ns_slist_t *list)
  * @param member 链表节点在外层结构体中的成员名。
  */
 #define ns_slist_for_each_entry_safe(pos, n, head, member) \
-    for((pos) = ns_slist_entry((head)->first, typeof(*(pos)), member), \
-        (n) = ns_slist_entry((pos)->member.next, typeof(*(pos)), member); \
-        NS_MEMBER_ADDRESS_IS_NONNULL((pos), member); \
-        (pos) = (n), (n) = ns_slist_entry((n)->member.next, typeof(*(n)), member))
+    for((pos) = ns_slist_entry_safe((head)->first, typeof(*(pos)), member), \
+        (n) = (pos) ? ns_slist_entry_safe((pos)->member.next, typeof(*(pos)), member) : NULL; \
+        (pos) != NULL; \
+        (pos) = (n), (n) = (pos) ? ns_slist_entry_safe((pos)->member.next, typeof(*(n)), member) : NULL)
 
 #ifdef __cplusplus
 }

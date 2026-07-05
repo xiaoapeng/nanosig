@@ -19,9 +19,65 @@
 
 ---
 
-## 现在打开的问题
+## 现在打开的问题（2026-07-05 review）
 
-(无——本轮 review 的所有未关闭问题均确认为合同约束、设计权衡或误报。)
+### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: design
+
+#### 问题描述
+macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执行合并逻辑（同 waitable 只产生一个 completion），Linux 和 Windows 依赖平台隐式合并。三平台当前结果一致，但建议在 `nanosig_port.h` 中将"同一 waitable 最多产生一个 completion"固化为契约。
+
+#### review 建议
+在 `nanosig_port.h` 的 `ns_platform_waitset_wait` Doxygen 注释中补充一句声明。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`platform/macos/port.c:522-543`, `include/nanosig/nanosig_port.h:432-451`
+
+---
+
+### PORT-015: Windows `ns_windows_timeout_ms` 在超大 timeout_us 下有 uint64 加法溢出
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`platform/windows/port.c:38` 中 `(timeout_us + 999u) / 1000u`，当 `timeout_us` 接近 `UINT64_MAX` 时加法溢出。Linux 路径有同样风险。实际触发条件极不常见，但作为平台原语应正确处理。
+
+#### review 建议
+改用不溢出的等价算术：`timeout_ms = timeout_us / 1000u + (timeout_us % 1000u != 0u ? 1u : 0u);`
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`platform/windows/port.c:38`, `platform/linux/port.c:141`
+
+---
+
+### PORT-016: 测试 `test_waitset_events_zero` 未覆盖 Windows 路径
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: test
+
+#### 问题描述
+`test_waitset_events_zero` 用 `#if defined(__linux__) || defined(__APPLE__)` 条件编译，仅在 POSIX 平台运行，Windows 路径未覆盖。
+
+#### review 建议
+去掉条件编译守卫，改为三平台通用测试。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`test/unit/test_platform_backend.c:690-714`
 
 ## 现在关闭的问题
 

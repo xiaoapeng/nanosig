@@ -76,7 +76,55 @@
 
 ## 现在打开的问题
 
-（无——本轮 review 的所有历史、仲裁与关闭记录见下方。后续 review 应重点检查文档-代码一致性及功能影响较大的问题。）
+### RINGBUF-023: `ns_ringbuf_peek` 不拒绝 `*len == 0`，与其他函数不一致
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: design
+
+#### 问题描述
+`ns_ringbuf_peek` 当调用方传入 `*len = 0` 时，函数不拒绝，而是返回内部缓冲区指针和可用连续字节数。这与 `ns_ringbuf_read`/`ns_ringbuf_peek_copy`/`ns_ringbuf_write` 的 `len == 0 → return 0` guard 不一致。头文件文档 `@param len [in] 需要读取的字节数` 暗示 `*len = 0` 应返回 NULL。
+
+#### review 建议
+在 `ns_ringbuf_peek` 中 `rl = *len;` 之后增加 `if(rl == 0u) return NULL;` guard。若"探测可用连续字节数"是有意设计，应在头文件中显式文档化。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+uint32_t want = 0;
+const uint8_t *p = ns_ringbuf_peek(&rb, 0, buf, &want);
+// 期望: p == NULL, want 不变
+// 实际: p != NULL (指向内部缓冲区), want = 5
+```
+
+#### 定位
+`src/ds/ns_ringbuf.c:223-224`
+
+---
+
+### RINGBUF-024: `peek`/`peek_copy` 绕回路径及 `draft_write` 非零 offset 路径无测试覆盖
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: test
+
+#### 问题描述
+以下关键路径完全未测试：
+1. `ns_ringbuf_peek` 绕回路径（`rl > read_size_first_max` 分支）
+2. `ns_ringbuf_peek_copy` 绕回路径
+3. `ns_ringbuf_draft_write` 非零 offset
+4. `ns_ringbuf_peek` 数据不足返回 NULL 路径
+
+#### review 建议
+在 `test_ds_ringbuf.c` 中增加绕回测试、数据不足测试、draft_write 非零 offset 测试。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`test/unit/test_ds_ringbuf.c`（缺失测试用例）；涉及 `src/ds/ns_ringbuf.c:220-238, 260-268, 128`
 
 ---
 

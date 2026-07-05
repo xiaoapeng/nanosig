@@ -13,7 +13,59 @@
 
 ## 现在打开的问题
 
-(无——本轮 review 的所有未关闭问题均确认为合同约束、设计权衡或误报。)
+### CORE-010: `ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 失败时泄漏 loop 内存
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+`ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 返回错误时提前返回（第 162 行），未调用 `ns_platform_free(loop)`。这导致 loop 结构体及其内嵌的 MPSC ring 存储区域泄漏。调用方无法重试——wakeup 句柄可能处于未定义状态，而 loop 指针指向的内存已不可恢复。
+
+#### review 建议
+无论 `ns_platform_wakeup_destroy` 是否成功，都应释放 loop 内存：
+```c
+rc = ns_platform_wakeup_destroy(loop->wakeup);
+ns_platform_free(loop);
+return rc;
+```
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+1. 调用 `ns_loop_init(&loop, NULL)` 成功创建 loop。
+2. 平台层 `ns_platform_wakeup_destroy` 因某种原因返回错误。
+3. `ns_loop_deinit(loop)` 返回错误码，但 `loop` 指向的内存未被释放。
+4. 调用方丢弃 loop 指针，内存永久泄漏。
+
+#### 定位
+`src/nanosig.c:161-165`
+
+---
+
+### CORE-011: `ns_signal_connect` 缺少"禁止重复连接"前置条件文档
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`ns_signal_connect` 未文档化"connection 必须处于未连接状态"这一前置条件。如果调用方对一个已经连接到某个 signal 的 `ns_connection_t` 再次调用 `ns_signal_connect`（未先 disconnect），`ns_list_init` 将 `signal_node` 重置为自引用，但不更新原链表中前后节点的指针，导致原 signal 的 slot_list 断链。
+
+#### review 建议
+在 `nanosig_signal.h` 的 `ns_signal_connect` docstring 中添加 `@pre` 前置条件。可在实现中添加防御性检查：如果 `connection->signal_node` 不是自引用状态，返回 `NS_E_INVAL`。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+1. `ns_signal_connect(&sig_a, ...)` 将 conn 连接到 sig_a。
+2. `ns_signal_connect(&sig_b, ...)` 将 conn 连接到 sig_b（未先 disconnect）。
+3. sig_a 的 slot_list 断链：遍历 sig_a 时无法到达原后继节点。
+
+#### 定位
+`src/nanosig.c:337-342`（实现），`include/nanosig/nanosig_signal.h:290-313`（docstring）
 
 ## 现在关闭的问题
 

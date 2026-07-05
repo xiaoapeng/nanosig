@@ -51,6 +51,44 @@
 
 ## 现在打开的问题
 
+### BROKER-031: `ns_broker_run` 在 `waitset_wait` 失败后将未初始化的 `completions`/`count` 传入 dispatch 路径
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+`ns_broker_run`（`ns_broker.c:489`）中，当 `ns_platform_waitset_wait` 返回错误时，代码跳过 completion 处理块但仍调用 `ns_broker_dispatch_pending_events(broker, completions, count)`。虽然 `count` 被初始化为 `0u` 保护了本次不遍历，但 `completions` 数组仍包含上一轮遗留的旧数据。如果平台后端在错误路径上将 `count` 写为非零值但未填充 `completions`，dispatch 会解引用旧 completion 条目，导致重复 signal emit。
+
+`ns_broker_drain_op_queue` 在错误后仍执行是正确的（保护 op_queue），但 `dispatch_pending_events` 在错误后执行是不必要的。
+
+#### review 建议
+将 `dispatch_pending_events` 调用放在 `rc == NS_OK` 的条件分支内，同时在错误路径上将 `count` 强制设为 `0u`：
+```c
+if(rc == NS_OK){
+    // ... wakeup handling ...
+} else {
+    count = 0u;
+}
+ns_broker_drain_op_queue(broker, completions, count);
+if(rc == NS_OK){
+    ns_broker_dispatch_pending_events(broker, completions, count);
+}
+```
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+1. 注册 watcher W1，W1 触发事件 → `waitset_wait` 成功，`completions[0]` 包含 W1。
+2. 下一轮：`waitset_wait` 被信号中断返回 EINTR，`count` 保持 0u。
+3. 若平台后端在错误路径上将 `count` 写为上一轮的值，`dispatch_pending_events` 读取旧 completion，W1 的 slot 被重复调用。
+
+#### 定位
+`src/ns_broker.c:534-535`
+
+---
+
 ### BROKER-018: `ns_broker_drain_op_queue_shutdown` 丢弃 `wakeup_signal` 返回值 `bug`
 
 - **状态**: 打开

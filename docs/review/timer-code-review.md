@@ -37,7 +37,43 @@
 
 ## 现在打开的问题
 
-（无）
+### TIMER-019: `fire_expired` 和 `restart` 中 `ns_rbtree_insert` 返回值未检查，与 `start_locked` 不一致
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`ns_timer_start_locked`（`src/ns_timer.c:125`）检查了 `ns_rbtree_insert` 返回值，但 `ns_timer_mgr_fire_expired`（第 296 行）和 `ns_timer_restart`（第 400 行）中的重新插入均未检查返回值。实际运行中不会失败（remove 后节点已重置），但三处不一致增加维护负担。
+
+#### review 建议
+统一三处错误处理风格：要么都检查，要么在 `start_locked` 处添加注释说明 NULL 检查是防御性编程。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`src/ns_timer.c:296`（fire_expired）、`src/ns_timer.c:400`（restart）；对比 `src/ns_timer.c:125`（start_locked）
+
+---
+
+### TIMER-020: `fire_expired` 文档中关于槽位回调死锁的描述不准确
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`ns_timer_mgr_fire_expired` 上方的 `@note` 注释声称"槽位回调中不得调用任何 timer API，否则会死锁"。但 `ns_signal_emit_raw` 仅将调用推入 MPSC 队列（非阻塞），槽位回调在 loop 线程排空队列时执行，此时 `g_timer_mgr.mutex` 未被持有。调用 timer API 不会死锁。
+
+#### review 建议
+将注释改为准确描述：本函数在 `g_timer_mgr.mutex` 下调用 `ns_signal_emit_raw`（非阻塞推送）。槽位回调执行时 mutex 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`src/ns_timer.c:246-249`
 
 ---
 

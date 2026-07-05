@@ -25,7 +25,52 @@
 
 ## 现在打开的问题
 
-无 — 全部已关闭。
+### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: doc
+
+#### 问题描述
+`nanosig_rbtree.h` 中 `ns_rbtree_insert` 的文档声称"如果插入后该节点成为最左节点，返回值即为该节点；否则返回 NULL"。但实际实现（`ns_rbtree.c:374`）在成功插入时**始终**返回 `node`，无论是否成为 leftmost。
+
+#### review 建议
+将 `@brief` 和 `@return` 改为一致描述："成功插入返回该节点；输入无效或节点已链接时返回 NULL。"删除矛盾描述。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`include/nanosig/nanosig_rbtree.h:106-114`
+
+---
+
+### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+`ns_rbtree_find_new_add` 在调用 `new_node(user_data)` 回调后，直接将返回的节点插入树中，未检查该节点是否已链接到某棵树。对比 `ns_rbtree_insert` 有 `ns_rbtree_node_is_linked` 防御性检查。如果 `new_node` 返回已链接节点，会同时损坏两棵树。
+
+#### review 建议
+在 `new_node` 返回值检查之后添加 `if(ns_rbtree_node_is_linked(node)) return NULL;`。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+static ns_rbtree_node_t *bad_new_node(void *user_data) {
+    return &global_existing_node;  /* 该节点已链接到 global_tree */
+}
+ns_rbtree_find_new_add(key, &tree, match_fn, NULL, bad_new_node);
+/* 结果：两棵树同时损坏 */
+```
+
+#### 定位
+`src/ds/ns_rbtree.c:572-579`
 
 ---
 

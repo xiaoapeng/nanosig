@@ -49,6 +49,28 @@
 - **修复方式**: 在 `nanosig_hashtable.h` 文件顶部添加 `@warning` 文档说明线程不安全约束。
 - **影响文件**: `include/nanosig/nanosig_hashtable.h`
 
+---
+
+## 现在打开的问题（2026-07-05 review）
+
+### HT-010: `ns_hashtable_remove` 中 `--table->size` 前缺失防御性 assert（HASHTABLE-004 回归）
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`docs/review/hashtable-code-review.md` 的修复历史中记录 HASHTABLE-004 已于 2026-07-04 修复（添加 `assert(table->size > 0u);`），但当前代码中 `ns_hashtable_remove` 函数（第 135-138 行）在 `--table->size` 之前没有该 assert。修复要么从未实际应用，要么在后续 commit 中被回退。
+
+#### review 建议
+在 `src/ds/ns_hashtable.c:137` 的 `--table->size` 之前添加 `assert(table->size > 0u);`。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`src/ds/ns_hashtable.c:137`
+
 ## 现在打开的问题
 
 （无）

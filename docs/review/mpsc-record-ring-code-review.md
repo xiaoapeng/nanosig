@@ -28,7 +28,23 @@
 
 ## 现在打开的问题
 
-(无——本轮 review 的所有未关闭问题均已确认无 fix 必要或为误报。)
+### MPSC-011: `MPSC_MEMORY_ORDER.md` 描述已删除的固定容量 MPSC 队列，未文档化 record ring 的内存序协议
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`docs/MPSC_MEMORY_ORDER.md` 描述的是已删除的固定容量 MPSC 队列（`nanosig_mpsc.h`），包括 `ns_mpsc_try_push` / `ns_mpsc_try_pop` 等已不存在的函数。当前仓库只有 MPSC record ring，其内存序协议（reserve_pos CAS + valid-bit release + consumer acquire）仅在内联代码注释中描述，无独立文档。
+
+#### review 建议
+创建 `docs/MPSC_RECORD_RING_MEMORY_ORDER.md` 或更新 `MPSC_MEMORY_ORDER.md` 添加 record ring 章节，文档化三阶段发布链。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+`docs/MPSC_MEMORY_ORDER.md:1-105`
 
 ## 现在关闭的问题
 
