@@ -209,6 +209,16 @@ static int ns_loop_run_impl(ns_loop_t *loop)
         (void)wait_result;
     }
 
+    /**
+     * 重置 quit_requested，使 loop 可被重新运行。
+     *
+     * @note 重置与并发 ns_loop_quit() 之间存在极小竞态窗口：
+     *       如果在 break 之后、reset 之前有另一线程调用了
+     *       ns_loop_quit()（设置 quit_requested = 1），
+     *       该请求会被覆盖，下一次 ns_loop_run 将正常启动而非立即退出。
+     *       这属于已知设计约束：loop 退出后准备重新运行，单线程驱动
+     *       loop 的使用模式不受影响。
+     */
     ns_atomic_store_explicit(&loop->quit_requested, 0, ns_memory_order_release);
     rc = NS_OK;
 
@@ -369,6 +379,16 @@ int ns_signal_disconnect_all(ns_signal_t *signal)
     return rc;
 }
 
+/**
+ * @brief 向 signal 的所有 slot 发送消息。
+ *
+ * 遍历 slot 列表，依次向每个目标 loop 的 MPSC ring 推送记录。
+ *
+ * @note 本函数是非阻塞的。如果第 N 个连接的推送失败（目标 loop 队列满），
+ *       函数立即返回 NS_E_QUEUE_FULL，但前 N-1 个连接已成功入队且无法回滚。
+ *       在广播场景下这意味着状态更新可能只传播到了部分接收者。
+ *       如需原子广播语义，应在调用前确认所有目标队列有空闲容量。
+ */
 int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_size)
 {
     ns_list_node_t *node;

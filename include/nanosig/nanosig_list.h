@@ -191,6 +191,7 @@ static inline void ns_list_splice_back_init(ns_list_node_t *head, ns_list_node_t
     ns_list_node_t *last;
 
     if(ns_list_empty(other)) return;
+    if(head == other) return;  /* 自拼接：跳过，否则头节点被清空而节点孤立 */
 
     first = other->next;
     last = other->prev;

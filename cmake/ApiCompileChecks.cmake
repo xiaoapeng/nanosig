@@ -85,7 +85,7 @@ function(nanosig_add_cpp_compat_check name)
     if(_msvc_frontend)
         set(_syntax_flags
             /nologo
-            /std:c++17
+            /std:c++11
             /Zs
             /W4
             /permissive-
@@ -96,7 +96,7 @@ function(nanosig_add_cpp_compat_check name)
         )
     else()
         set(_syntax_flags
-            -std=c++17
+            -std=c++11
             -fsyntax-only
             -Wall
             -Wextra

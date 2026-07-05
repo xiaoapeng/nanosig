@@ -6,6 +6,9 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <nanosig/nanosig_hashtable.h>
@@ -19,9 +22,10 @@ static int ns_hashtable_is_valid(const ns_hashtable_t *table)
 uint32_t ns_hash_string(const char *key)
 {
     uint32_t hash = 2166136261u;
-    const unsigned char *cursor = (const unsigned char *)key;
 
     if(key == NULL) return 0u;
+
+    const unsigned char *cursor = (const unsigned char *)key;
 
     while(*cursor != 0u){
         hash ^= (uint32_t)(*cursor);
@@ -54,6 +58,7 @@ int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t bucket_
 void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, void *value)
 {
     if(node == NULL) return;
+    if(key == NULL) return;
 
     ns_slist_node_init(&node->link);
     node->key = key;
@@ -64,13 +69,24 @@ void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, void *va
 int ns_hashtable_insert(ns_hashtable_t *table, ns_hashtable_node_t *node)
 {
     size_t index;
+    ns_slist_node_t *cursor;
 
     if(!ns_hashtable_is_valid(table) || (node == NULL) || (node->key == NULL)){
         return NS_E_INVAL;
     }
-    if(ns_hashtable_find(table, node->key) != NULL) return NS_E_EXISTS;
 
     index = (size_t)node->hash % table->bucket_count;
+
+    /* 走桶链检查重复：利用 node->hash 避免二次哈希计算 */
+    cursor = table->buckets[index].first;
+    while(cursor != NULL){
+        ns_hashtable_node_t *entry = ns_slist_entry(cursor, ns_hashtable_node_t, link);
+        if((entry->hash == node->hash) && (strcmp(entry->key, node->key) == 0)){
+            return NS_E_EXISTS;
+        }
+        cursor = cursor->next;
+    }
+
     ns_slist_push_front(&table->buckets[index], &node->link);
     ++table->size;
     return NS_OK;
@@ -135,10 +151,10 @@ void ns_hashtable_clear(ns_hashtable_t *table)
     if(!ns_hashtable_is_valid(table)) return;
 
     for(i = 0u; i < table->bucket_count; ++i){
-        ns_slist_node_t *node = ns_slist_pop_front(&table->buckets[i]);
-        while(node != NULL){
+        ns_slist_node_t *node;
+        do {
             node = ns_slist_pop_front(&table->buckets[i]);
-        }
+        } while(node != NULL);
     }
 
     table->size = 0u;

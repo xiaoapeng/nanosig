@@ -24,8 +24,12 @@ extern "C" {
  * 节点由调用方持有并嵌入用户结构体中。
  * `parent_and_color` 打包了父指针和颜色位：最低位为颜色（0=红，1=黑），
  * 高位为父指针。空节点（未插入任何树）的 `parent_and_color` 指向自身。
+ *
+ * @note 结构体按 `sizeof(long)` 对齐，保证地址低 bit 可用于颜色编码，
+ *       自指针 sentinel (`parent_and_color == self`) 与 RED/BLACK bit 不冲突。
+ *       嵌入 ns_rbtree_node_t 的用户结构体应避免以 packed 修饰导致奇数偏移。
  */
-typedef struct ns_rbtree_node {
+typedef struct NS_ALIGNED(sizeof(long)) ns_rbtree_node {
     uintptr_t parent_and_color;
     struct ns_rbtree_node *left;
     struct ns_rbtree_node *right;
@@ -192,6 +196,11 @@ extern ns_rbtree_node_t *ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t 
  *
  * 使用外部 `match` 函数查找。找到则返回已有节点；
  * 未找到则调用 `new_node(user_data)` 创建新节点并插入，返回新建节点。
+ *
+ * @attention `match` 和树的 `cmp` 必须保持一致的偏序关系 —— `match` 用于树下降（决定
+ *            key 的最左插入位置），`cmp` 用于 leftmost 缓存更新。如果两者的排序不一致，
+ *            leftmost 缓存可能错误，导致 `ns_rbtree_first()` 返回不正确的结果。
+ *           简单场景：直接传递 `cmp` 的包装作为 `match` 即可保证一致性。
  *
  * @param key       外部匹配用的 key。
  * @param tree      红黑树根。

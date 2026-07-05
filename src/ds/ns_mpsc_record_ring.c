@@ -31,7 +31,8 @@ _Static_assert(sizeof(ns_mpsc_record_header_t) == sizeof(size_t),
  *   [24   ] valid         ( 1 bit)
  *   [25   ] fake          ( 1 bit)
  */
-#if __SIZEOF_SIZE_T__ == 8u
+/* MSVC 不定义 __SIZEOF_SIZE_T__，使用标准 SIZE_MAX（来自 <stdint.h>）检测指针宽度 */
+#if SIZE_MAX > UINT32_MAX
 #define NS_MPSC_META_STRIDE_BITS   32u
 #define NS_MPSC_META_STRIDE_MASK   0xFFFFFFFFULL
 #define NS_MPSC_META_PAD_SHIFT     32u

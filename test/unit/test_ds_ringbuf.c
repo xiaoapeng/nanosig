@@ -25,9 +25,9 @@ static int test_basic_ops(void)
     uint8_t storage[5];
     uint8_t out[8];
     ns_ringbuf_t ringbuf;
-    int32_t len;
+    uint32_t len;
 
-    if(expect_true(ns_ringbuf_init(&ringbuf, storage, (int32_t)sizeof(storage)) == NS_OK) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(&ringbuf, storage, (uint32_t)sizeof(storage)) == NS_OK) != 0) return 1;
     if(expect_true(ns_ringbuf_total_size(&ringbuf) == 5) != 0) return 1;
     if(expect_true(ns_ringbuf_size(&ringbuf) == 0) != 0) return 1;
 
@@ -43,7 +43,7 @@ static int test_basic_ops(void)
     {
         const uint8_t *ptr = ns_ringbuf_peek(&ringbuf, 1, out, &len);
         if(ptr == NULL) return 1;
-        if(expect_bytes(ptr, "BC", len) != 0) return 1;
+        if(expect_bytes(ptr, "BC", (int32_t)len) != 0) return 1;
     }
 
     if(expect_true(ns_ringbuf_read(&ringbuf, out, 2) == 2) != 0) return 1;
@@ -89,10 +89,10 @@ static int test_invalid_inputs(void)
 
     memset(&invalid, 0, sizeof(invalid));
 
-    if(expect_true(ns_ringbuf_init(NULL, storage, (int32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_ringbuf_init(&invalid, NULL, (int32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_ringbuf_init(&invalid, storage, 0) == NS_E_INVAL) != 0) return 1;
-    if(expect_true(ns_ringbuf_total_size(NULL) == 0) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(NULL, storage, (uint32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(&invalid, NULL, (uint32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(&invalid, storage, 0u) == NS_E_INVAL) != 0) return 1;
+    if(expect_true(ns_ringbuf_total_size(NULL) == -1) != 0) return 1;
     if(expect_true(ns_ringbuf_total_size(&invalid) == 0) != 0) return 1;
     if(expect_true(ns_ringbuf_size(&invalid) == 0) != 0) return 1;
     if(expect_true(ns_ringbuf_free_size(&invalid) == 0) != 0) return 1;

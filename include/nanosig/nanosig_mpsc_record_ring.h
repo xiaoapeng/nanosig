@@ -159,11 +159,11 @@ extern int ns_mpsc_record_ring_try_push(
  *
  * @param[in,out] ring       已初始化的环。
  * @param[in]     parts      记录片段数组。
- * @param[in]     part_count 片段数量；必须大于 0。
+ * @param[in]     part_count 片段数量；允许为 0（推送零大小记录）。
  *
  * @retval NS_OK           推送成功。
- * @retval NS_E_INVAL      参数非法（ring/parts 为 NULL、part_count 为 0、
- *                          片段 data 为 NULL 且 size > 0、或总大小溢出）。
+ * @retval NS_E_INVAL      参数非法（ring/parts 为 NULL、片段 data 为 NULL
+ *                          且 size > 0、或总大小溢出）。
  * @retval NS_E_QUEUE_FULL 空间不足，记录未写入。
  */
 extern int ns_mpsc_record_ring_try_pushv(

@@ -4,6 +4,24 @@
  * @date 2026-05-17
  *
  * @copyright Copyright (c) 2026 nanosig contributors
+ *
+ * @section encoding 编码约定
+ * `ns_rbtree_node_t::parent_and_color` 打包父指针与颜色 bit：最低位是颜色
+ * （NS_RBTREE_RED=0，NS_RBTREE_BLACK=1），高位是父指针。结构体按
+ * `sizeof(long)` 对齐（见 nanosig_rbtree.h），保证地址低 bit 可用作颜色编码。
+ *
+ * 空节点（`ns_rbtree_node_init` 后未入树）使用自指针 sentinel：
+ * `parent_and_color == (uintptr_t)node`。自指针的最低位必然为 0（指针按
+ * `sizeof(long)` 对齐），因此 sentinel 自然编码为 RED。这与"空 = BLACK"的
+ * 直觉相反但安全（红色空节点不影响父侧黑色路径计数），与 Linux 内核 rbtree
+ * 的 NULL sentinel 在语义上等价但避免 NULL 解引用崩溃。
+ *
+ * @section match_vs_cmp match 与 cmp 的一致性
+ * `ns_rbtree_find_new_add` 用 `match()` 做树下降定位插入点，用 `tree->cmp`
+ * 维护 leftmost 缓存。如果两者偏序不一致，leftmost 缓存可能错误。
+ * 调用方必须保证 `match` 与 `cmp` 的语义一致（典型做法：直接用 cmp 的
+ * 包装作为 match）。头文件 `nanosig_rbtree.h` 中 `ns_rbtree_find_new_add`
+ * 处的 `@attention` 详细说明此约束。
  */
 
 #include <nanosig/nanosig_rbtree.h>
@@ -162,6 +180,18 @@ static void ns_rb_transplant(ns_rbtree_t *tree, ns_rbtree_node_t *old_node, ns_r
     if(new_node != NULL) ns_rb_set_parent(new_node, parent);
 }
 
+/* ns_rb_sibling_left / ns_rb_sibling_right: 取 sibling 的左右子节点，
+   sibling 为 NULL 时返回 NULL，避免在调用点重复写三元表达式 */
+static ns_rbtree_node_t *ns_rb_sibling_left(ns_rbtree_node_t *sibling)
+{
+    return (sibling != NULL) ? sibling->left : NULL;
+}
+
+static ns_rbtree_node_t *ns_rb_sibling_right(ns_rbtree_node_t *sibling)
+{
+    return (sibling != NULL) ? sibling->right : NULL;
+}
+
 static void ns_rb_delete_fixup(
     ns_rbtree_t *tree,
     ns_rbtree_node_t *node,
@@ -182,15 +212,15 @@ static void ns_rb_delete_fixup(
                 sibling = parent->right;
             }
 
-            if(ns_rb_is_black(sibling == NULL ? NULL : sibling->left) &&
-               ns_rb_is_black(sibling == NULL ? NULL : sibling->right)){
+            if(ns_rb_is_black(ns_rb_sibling_left(sibling)) &&
+               ns_rb_is_black(ns_rb_sibling_right(sibling))){
                 if(sibling != NULL) ns_rb_set_color(sibling, NS_RBTREE_RED);
                 node = parent;
                 parent = NS_RB_NODE_PARENT(node);
             } else {
-                if(ns_rb_is_black(sibling == NULL ? NULL : sibling->right)){
-                    if((sibling != NULL) && (sibling->left != NULL)){
-                        ns_rb_set_color(sibling->left, NS_RBTREE_BLACK);
+                if(ns_rb_is_black(ns_rb_sibling_right(sibling))){
+                    if(ns_rb_sibling_left(sibling) != NULL){
+                        ns_rb_set_color(ns_rb_sibling_left(sibling), NS_RBTREE_BLACK);
                     }
                     if(sibling != NULL){
                         ns_rb_set_color(sibling, NS_RBTREE_RED);
@@ -201,8 +231,8 @@ static void ns_rb_delete_fixup(
 
                 if(sibling != NULL) ns_rb_set_color(sibling, NS_RB_NODE_COLOR(parent));
                 ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                if((sibling != NULL) && (sibling->right != NULL)){
-                    ns_rb_set_color(sibling->right, NS_RBTREE_BLACK);
+                if(ns_rb_sibling_right(sibling) != NULL){
+                    ns_rb_set_color(ns_rb_sibling_right(sibling), NS_RBTREE_BLACK);
                 }
                 ns_rb_rotate_left(tree, parent);
                 node = tree->root;
@@ -218,15 +248,15 @@ static void ns_rb_delete_fixup(
                 sibling = parent->left;
             }
 
-            if(ns_rb_is_black(sibling == NULL ? NULL : sibling->right) &&
-               ns_rb_is_black(sibling == NULL ? NULL : sibling->left)){
+            if(ns_rb_is_black(ns_rb_sibling_right(sibling)) &&
+               ns_rb_is_black(ns_rb_sibling_left(sibling))){
                 if(sibling != NULL) ns_rb_set_color(sibling, NS_RBTREE_RED);
                 node = parent;
                 parent = NS_RB_NODE_PARENT(node);
             } else {
-                if(ns_rb_is_black(sibling == NULL ? NULL : sibling->left)){
-                    if((sibling != NULL) && (sibling->right != NULL)){
-                        ns_rb_set_color(sibling->right, NS_RBTREE_BLACK);
+                if(ns_rb_is_black(ns_rb_sibling_left(sibling))){
+                    if(ns_rb_sibling_right(sibling) != NULL){
+                        ns_rb_set_color(ns_rb_sibling_right(sibling), NS_RBTREE_BLACK);
                     }
                     if(sibling != NULL){
                         ns_rb_set_color(sibling, NS_RBTREE_RED);
@@ -237,8 +267,8 @@ static void ns_rb_delete_fixup(
 
                 if(sibling != NULL) ns_rb_set_color(sibling, NS_RB_NODE_COLOR(parent));
                 ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                if((sibling != NULL) && (sibling->left != NULL)){
-                    ns_rb_set_color(sibling->left, NS_RBTREE_BLACK);
+                if(ns_rb_sibling_left(sibling) != NULL){
+                    ns_rb_set_color(ns_rb_sibling_left(sibling), NS_RBTREE_BLACK);
                 }
                 ns_rb_rotate_right(tree, parent);
                 node = tree->root;
@@ -354,6 +384,10 @@ ns_rbtree_node_t *ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node)
     if(!ns_rb_node_can_remove(tree, node)) return NULL;
 
     successor = node;
+    /* original_color 记录被移除的"那个槽位"在操作前的颜色：
+       - 单子节点分支：successor == node，其原始颜色决定是否破坏黑高
+       - 双子节点分支：successor == node 中序后继，其原始颜色决定是否破坏黑高
+       后续 if(RED) 不修复，否则调用 delete_fixup 补偿 */
     original_color = NS_RB_NODE_COLOR(successor);
 
     if(node->left == NULL){
@@ -382,6 +416,8 @@ ns_rbtree_node_t *ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node)
         ns_rb_transplant(tree, node, successor);
         successor->left = node->left;
         ns_rb_set_parent(successor->left, successor);
+        /* successor 继承 node 的颜色，以保持红黑不变量。
+           此处只复制颜色 bit，不影响 original_color 的判断逻辑 */
         ns_rb_set_color(successor, NS_RB_NODE_COLOR(node));
     }
 

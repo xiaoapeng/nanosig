@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <windows.h>
+#include <process.h>
 
 #include <nanosig/nanosig_port.h>
 
@@ -197,7 +198,7 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
     return NS_OK;
 }
 
-static DWORD WINAPI ns_windows_thread_main(LPVOID arg)
+static unsigned int __stdcall ns_windows_thread_main(void *arg)
 {
     ns_platform_thread_t *thread = (ns_platform_thread_t *)arg;
 
@@ -223,7 +224,7 @@ int ns_platform_thread_create(
 
     thread->entry = entry;
     thread->arg = arg;
-    thread->thread = CreateThread(NULL, 0u, ns_windows_thread_main, thread, 0u, NULL);
+    thread->thread = (HANDLE)_beginthreadex(NULL, 0u, ns_windows_thread_main, thread, 0u, NULL);
     if(thread->thread == NULL){
         ns_platform_free(thread);
         return NS_E_NOMEM;
@@ -382,7 +383,7 @@ int ns_platform_waitset_wait(
 
     /* 从 waitables 构建临时 handles 数组 */
     for(i = 0u; i < waitset->count; i++){
-        handles[i] = (HANDLE)waitset->waitables[i]->handle;
+        handles[i] = (HANDLE)waitset->waitables[i]->primitive.handle;
     }
 
     /* arm timer 或设置 timeout */

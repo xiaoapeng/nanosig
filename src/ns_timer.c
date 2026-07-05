@@ -19,6 +19,16 @@ typedef struct ns_timer_mgr {
     int initialized;
 } ns_timer_mgr_t;
 
+/**
+ * @brief 全局 timer 管理器。
+ *
+ * @note 生命周期规则：
+ * - `global_init` 由 broker 在 ns_init 流程中单线程调用，不是线程安全的。
+ * - `global_shutdown` 在 ns_shutdown 流程中调用，必须保证此时没有其他线程
+ *   在执行 timer API（start/cancel/restart/deinit）。
+ * - 调用方必须在 shutdown 前完成所有 timer 的 deinit，否则定时器的信号
+ *   互斥锁会泄漏。
+ */
 static ns_timer_mgr_t g_timer_mgr;
 
 static int ns_timer_attr_is_valid(uint32_t attr)
@@ -112,7 +122,7 @@ static int ns_timer_start_locked(ns_timer_t *timer, int *out_should_notify)
 
     before_first = ns_rbtree_first(&g_timer_mgr.tree);
     timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
-    (void)ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
+    if(ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node) == NULL) return NS_E_CORRUPT;
     after_first = ns_rbtree_first(&g_timer_mgr.tree);
 
     *out_should_notify = (after_first == &timer->rb_node) && (before_first != after_first);
@@ -129,10 +139,23 @@ static int ns_timer_cancel_locked(ns_timer_t *timer, int *out_should_notify)
 
     before_first = ns_rbtree_first(&g_timer_mgr.tree);
     *out_should_notify = before_first == &timer->rb_node;
-    (void)ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
-    return NS_OK;
+    return (ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node) != NULL) ? NS_OK : NS_E_CORRUPT;
 }
 
+/**
+ * @brief 初始化全局 timer 管理器。
+ *
+ * 由 broker 在 ns_init 流程中调用。本函数**不是线程安全的**——调用方必须保证
+ * global_init 和 global_shutdown 之间不存在并发初始化/销毁。
+ *
+ * @note 调用方生命周期契约：
+ * - `ns_timer_mgr_global_shutdown` 必须在所有 timer 业务线程已停止、所有 timer
+ *   已 deinit 后才能调用。
+ * - 违反此约定会导致正在执行锁内操作的线程在已销毁的互斥锁上执行
+ *   `mutex_lock`，造成未定义行为。
+ * - 在 `ns_shutdown()` 前应确保所有 `ns_timer_t` 已完成 `ns_timer_deinit`，
+ *   否则 timer manager 清空树时不会自动释放定时器的信号资源。
+ */
 int ns_timer_mgr_global_init(ns_timer_notify_fn notify, void *ctx)
 {
     int rc;
@@ -162,19 +185,24 @@ void ns_timer_mgr_global_shutdown(void)
 
     if(!g_timer_mgr.initialized) return;
 
+    /* from this point on, every new caller to ns_timer_mgr_lock() will see
+       initialized == 0 and return NS_E_SHUTDOWN immediately */
+    g_timer_mgr.initialized = 0;
+
+    /* ② 等待正在执行锁内操作者完成，然后清空树 */
     if(ns_platform_mutex_lock(g_timer_mgr.mutex) == NS_OK){
         while((node = ns_rbtree_first(&g_timer_mgr.tree)) != NULL){
-            (void)ns_rbtree_remove(&g_timer_mgr.tree, node);
+            if(ns_rbtree_remove(&g_timer_mgr.tree, node) == NULL) break;
         }
         (void)ns_platform_mutex_unlock(g_timer_mgr.mutex);
     }
 
+    /* ③ 安全销毁 mutex — 所有潜在调用者已被 initialized==0 阻断 */
     (void)ns_platform_mutex_destroy(g_timer_mgr.mutex);
     g_timer_mgr.mutex = NULL;
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = NULL;
     g_timer_mgr.notify_ctx = NULL;
-    g_timer_mgr.initialized = 0;
     ns_rbtree_init(&g_timer_mgr.tree, ns_timer_cmp);
 }
 
@@ -209,6 +237,21 @@ out_unlock:
     return rc;
 }
 
+/**
+ * @brief 触发所有到期定时器。
+ *
+ * 遍历红黑树，对 expire_us ≤ now 的定时器调用 ns_signal_emit_raw。
+ * 对重复定时器按 reload 策略重新计算并插入。
+ *
+ * @note 本函数在 g_timer_mgr.mutex 下调用 ns_signal_emit_raw（非阻塞
+ *       MPSC 环推送）。由于锁被持有，槽位回调中**不得调用**任何 timer API
+ *       （如 ns_timer_start / ns_timer_cancel），否则会死锁。
+ *       ns_signal_emit_raw 仅为队列推送不会阻塞，但槽位回调本身应保持简短。
+ *
+ * @note 首次 emit 失败后后续失败被静默丢弃（first_error 仅记录第一个错误）。
+ *       这是有意取舍：批量触发场景下报告第一个错误，避免通过累积错误码
+ *       增加 API 复杂度。
+ */
 int ns_timer_mgr_fire_expired(void)
 {
     int first_error = NS_OK;
@@ -233,7 +276,7 @@ int ns_timer_mgr_fire_expired(void)
         if(remaining > 0) break;
 
         previous_expire = timer->expire_us;
-        (void)ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
 
         rc = ns_signal_emit_raw(&timer->signal, NS_NO_PAYLOAD, 0u);
         if((rc != NS_OK) && (first_error == NS_OK)) first_error = rc;
@@ -250,7 +293,7 @@ int ns_timer_mgr_fire_expired(void)
                 }
             }
 
-            (void)ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
+            ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
         }
     }
 
@@ -348,13 +391,13 @@ int ns_timer_restart(ns_timer_t *timer)
 
     was_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
     if(ns_timer_is_running(timer)){
-        (void)ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
     }
 
     rc = ns_timer_mgr_refresh_now();
     if(rc == NS_OK){
         timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
-        (void)ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
         became_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
     }
 

@@ -3,6 +3,8 @@
  * @brief nanosig 字符串键 intrusive 哈希表。
  * @date 2026-05-17
  *
+ * @warning 本数据结构不是线程安全的。同一数据结构上的并发操作需要外部同步。
+ *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
@@ -62,6 +64,9 @@ extern int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t 
 
 /**
  * @brief 初始化哈希表节点。
+ *
+ * @note 当 `key` 为 NULL 时，本函数不初始化任何字段，直接返回。
+ *       调用者有责任在后续操作前检查 key 是否为 NULL。
  *
  * @param node 节点对象。
  * @param key 字符串键；调用方负责保证其生命周期。

@@ -1,8 +1,8 @@
 /**
  * @file test_cpp_compat_compile.cpp
- * @brief Compile-only check: every public nanosig header must be includable from C++.
+ * @brief Compile-only check: every public nanosig header must be includable from C++11.
  *
- * This file is compiled with a C++ compiler in syntax-only mode.
+ * This file is compiled with a C++11 compiler in syntax-only mode.
  * It verifies that `extern "C"` guards and other preprocessor logic
  * do not break when the headers are processed by a C++ frontend.
  *

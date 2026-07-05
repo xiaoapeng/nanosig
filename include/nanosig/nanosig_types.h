@@ -58,8 +58,19 @@
 #define NS_STATIC_ASSERT(expr, msg)
 #endif
 
-#if defined(__cplusplus)
-/* C++ 没有 __builtin_types_compatible_p；NS_CONTAINER_OF 的类型检查退化为 no-op */
+/**
+ * @brief 编译期类型比较宏，判断两个表达式的类型是否兼容。
+ *
+ * 等价于 eventhub 的 `eh_same_type(a, b)`。
+ * C 模式下使用 `__builtin_types_compatible_p`；
+ * C++ 模式下使用 `std::is_same<__typeof__(a), __typeof__(b)>::value`。
+ * 用于宏中做编译期类型断言，防止使用者传入不兼容的指针类型。
+ */
+#if defined(__cplusplus) && (defined(__GNUC__) || defined(__clang__))
+/* C++ GCC/clang: 用 __typeof__（兼容表达式和类型名）+ std::is_same...::value 做编译期类型比较 */
+#define ns_same_type(a, b) std::is_same<__typeof__(a), __typeof__(b)>::value
+#elif defined(__cplusplus)
+/* C++ 其他编译器: 退化为恒真 */
 #define ns_same_type(a, b) 1
 #elif NS_HAS_GNU_TYPEOF
 #define ns_same_type(a, b) __builtin_types_compatible_p(__typeof__(a), __typeof__(b))

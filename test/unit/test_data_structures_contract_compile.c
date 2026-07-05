@@ -47,15 +47,15 @@ static void ds_contract_use_ringbuf(void)
 {
     uint8_t storage[8];
     uint8_t out[8];
-    int32_t len;
+    uint32_t len;
     ns_ringbuf_t ringbuf;
 
-    if(ns_ringbuf_init(&ringbuf, storage, (int32_t)sizeof(storage)) != NS_OK) return;
-    (void)ns_ringbuf_write(&ringbuf, storage, (int32_t)sizeof(storage));
-    len = (int32_t)sizeof(out);
-    (void)ns_ringbuf_peek(&ringbuf, 0, out, &len);
-    (void)ns_ringbuf_peek_copy(&ringbuf, 0, out, (int32_t)sizeof(out));
-    (void)ns_ringbuf_read(&ringbuf, out, (int32_t)sizeof(out));
+    if(ns_ringbuf_init(&ringbuf, storage, (uint32_t)sizeof(storage)) != NS_OK) return;
+    (void)ns_ringbuf_write(&ringbuf, storage, (uint32_t)sizeof(storage));
+    len = (uint32_t)sizeof(out);
+    (void)ns_ringbuf_peek(&ringbuf, 0u, out, &len);
+    (void)ns_ringbuf_peek_copy(&ringbuf, 0u, out, (uint32_t)sizeof(out));
+    (void)ns_ringbuf_read(&ringbuf, out, (uint32_t)sizeof(out));
 }
 
 static void ds_contract_use_mpsc_record_ring(void)

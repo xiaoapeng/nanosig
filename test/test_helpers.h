@@ -78,7 +78,13 @@ static int test_signal_macos_user_event(int kq)
 /*  Raw waitable helpers                                               */
 /* ------------------------------------------------------------------ */
 
-static ns_platform_waitable_t test_create_raw_waitable(void)
+#if defined(__GNUC__)
+#define NS_TEST_MAYBE_UNUSED __attribute__((unused))
+#else
+#define NS_TEST_MAYBE_UNUSED
+#endif
+
+static NS_TEST_MAYBE_UNUSED ns_platform_waitable_t test_create_raw_waitable(void)
 {
     ns_platform_waitable_t w;
 
@@ -94,7 +100,7 @@ static ns_platform_waitable_t test_create_raw_waitable(void)
     return w;
 }
 
-static void test_destroy_raw_waitable(ns_platform_waitable_t w)
+static NS_TEST_MAYBE_UNUSED void test_destroy_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32
     if(w.primitive.handle != NULL) CloseHandle((HANDLE)w.primitive.handle);

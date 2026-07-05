@@ -30,7 +30,10 @@ typedef struct ns_slist_node {
  * @brief 单向链表头。
  */
 typedef struct ns_slist {
-    ns_slist_node_t *first;
+    union{
+        ns_slist_node_t *first;
+        ns_slist_node_t *next;
+    };
     ns_slist_node_t *last;
 } ns_slist_t;
 
@@ -38,7 +41,7 @@ typedef struct ns_slist {
  * @brief 静态初始化一个空单向链表。
  */
 #define NS_SLIST_INITIALIZER \
-    { NULL, NULL }
+    { { NULL }, NULL }
 
 /**
  * @brief 定义并初始化一个单向链表头。
@@ -352,19 +355,27 @@ static inline ns_slist_node_t *ns_slist_dequeue(ns_slist_t *list)
 /**
  * @brief 正向遍历单向链表指针节点。
  *
+ * 接受 `ns_slist_t *` 或 `ns_slist_node_t *` 作为 head。
+ * 当 head 是链头时遍历全链表，是节点时从该节点开始遍历。
+ * ns_slist_t 与 ns_slist_node_t 的首字段类型相同且在相同偏移处，
+ * (head)->next 在任何 C/C++ 编译器下都正确解析。
+ *
  * @param pos  `ns_slist_node_t *` 迭代变量。
  * @param head `ns_slist_t *` 或 `ns_slist_node_t *`（从某节点开始遍历）。
  */
 #define ns_slist_for_each(pos, head) \
-    for((pos) = (head) ? ((const ns_slist_t *)(head) == (const ns_slist_t *)(head) \
-            ? ((ns_slist_t *)(head))->first \
-            : ((ns_slist_node_t *)(head))->next) \
-            : NULL; \
+    for((pos) = (head) != NULL ? (head)->next : NULL; \
         (pos) != NULL; \
         (pos) = (pos)->next)
 
+
 /**
  * @brief 正向遍历单向链表，允许遍历期间删除当前节点。
+ *
+ * @note 本宏将 head 强制转换为 ns_slist_node_t * 用于迭代状态。
+ *       ns_slist_t 和 ns_slist_node_t 的首字段类型相同且在相同偏移处，
+ *       访问 `->first` / `->next` 读取的是同一成员。主流编译器均不会
+ *       因此产生错误的别名分析。
  *
  * @param prev `ns_slist_node_t *` 前驱迭代变量。
  * @param pos  `ns_slist_node_t *` 当前节点迭代变量。

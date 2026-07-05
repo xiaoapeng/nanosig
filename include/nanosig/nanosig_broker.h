@@ -50,7 +50,9 @@ typedef struct ns_watcher_event {
  * - `< 0`：错误，broker 跳过 emit。
  *
  * @warning 此函数在 broker 线程执行，必须非阻塞。阻塞会卡住所有 watcher。
- * @warning 此函数内不得持有 loop 的锁（避免死锁）。
+ * @warning 此函数只应做消费动作（如 `read(fd, buf, ...)`），**不得调用
+ *          任何 nanosig API**（如 `ns_signal_emit_raw`、`ns_broker_add/remove`
+ *          、`ns_loop_quit` 等），否则会破坏 broker 内部循环一致性。
  *
  * @param watcher 触发的 watcher，可从中取 fd 和设置 consume_handle。
  * @return `> 0` 继续 emit，`0` 或负数跳过 emit。
@@ -124,6 +126,8 @@ extern int ns_watcher_deinit(ns_watcher_t *watcher);
  *
  * 必须在 `ns_init()` 之后、`ns_shutdown()` 之前调用。
  *
+ * @warning 不得与 `ns_shutdown()` 并发调用。
+ *
  * @param watcher 已初始化的 watcher。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -134,6 +138,8 @@ extern int ns_broker_add(ns_watcher_t *watcher);
  *
  * 注销不会撤销已经入队的 slot 调用；调用方仍需保证相关 `user_data`
  * 生命周期覆盖任何 in-flight emit。
+ *
+ * @warning 不得与 `ns_shutdown()` 并发调用。
  *
  * @param watcher 已注册的 watcher。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
@@ -152,15 +158,20 @@ extern int ns_broker_remove(ns_watcher_t *watcher);
 extern ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher);
 
 /**
- * @brief 设置 consume_handle（仅在 consume_fn 内调用）。
+ * @brief 设置 consume_handle。
  *
- * `consume_fn` 消费 fd 后调用此函数设置一个用户数据句柄。该句柄会通过
- * `ns_watcher_event_t.consume_handle` 传递给 slot。
+ * `pending_consume_handle` 是 watcher 的持久句柄，可在一早（如初始化后）设置，
+ * 跨多次 dispatch 有效，生命周期由调用方保证。`consume_fn` 内也可更新。
  *
- * @warning 本函数仅在 `consume_fn` 内调用，非线程安全。
+ * 每次 emit 时，`pending_consume_handle` 的当前值会填入
+ * `ns_watcher_event_t.consume_handle` 传递给 slot。若不设值则为 NULL。
+ *
+ * @note 不设值（保持 NULL）或设值为 NULL 的语义相同：slot 收到 NULL consume_handle。
+ *
+ * @warning 本函数非线程安全。通常仅在 `consume_fn` 内或初始化阶段串行调用。
  *
  * @param watcher 触发的 watcher。
- * @param handle 用户数据句柄。
+ * @param handle 用户数据句柄，可为 NULL。
  */
 extern void ns_watcher_set_consume_handle(ns_watcher_t *watcher, void *handle);
 
