@@ -1,626 +1,766 @@
 /**
  * @file ns_rbtree.c
  * @brief nanosig intrusive 红黑树实现。
- * @date 2026-05-17
+ * @date 2026-07-06
+ *
+ * 移植自 eventhub_os eh_rbtree.c，仅修改 API 前缀 (eh_ → ns_)，逻辑未变。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
- *
- * @section encoding 编码约定
- * `ns_rbtree_node_t::parent_and_color` 打包父指针与颜色 bit：最低位是颜色
- * （NS_RBTREE_RED=0，NS_RBTREE_BLACK=1），高位是父指针。结构体按
- * `sizeof(long)` 对齐（见 nanosig_rbtree.h），保证地址低 bit 可用作颜色编码。
- *
- * 空节点（`ns_rbtree_node_init` 后未入树）使用自指针 sentinel：
- * `parent_and_color == (uintptr_t)node`。自指针的最低位必然为 0（指针按
- * `sizeof(long)` 对齐），因此 sentinel 自然编码为 RED。这与"空 = BLACK"的
- * 直觉相反但安全（红色空节点不影响父侧黑色路径计数），与 Linux 内核 rbtree
- * 的 NULL sentinel 在语义上等价但避免 NULL 解引用崩溃。
- *
- * @section match_vs_cmp match 与 cmp 的一致性
- * `ns_rbtree_find_new_add` 用 `match()` 做树下降定位插入点，用 `tree->cmp`
- * 维护 leftmost 缓存。如果两者偏序不一致，leftmost 缓存可能错误。
- * 调用方必须保证 `match` 与 `cmp` 的语义一致（典型做法：直接用 cmp 的
- * 包装作为 match）。头文件 `nanosig_rbtree.h` 中 `ns_rbtree_find_new_add`
- * 处的 `@attention` 详细说明此约束。
  */
 
+#include <stddef.h>
+#include <stdbool.h>
 #include <nanosig/nanosig_rbtree.h>
 
-/* ---- 内部辅助 ---- */
-
-static int ns_rb_is_red(const ns_rbtree_node_t *node)
+static inline void ns_rb_set_parent(ns_rbtree_node_t *rb, ns_rbtree_node_t *p)
 {
-    return (node != NULL) && NS_RB_NODE_IS_RED(node);
+    rb->parent_and_color = ns_rb_color(rb) + (ns_rb_parent_node_t)p;
 }
 
-static int ns_rb_is_black(const ns_rbtree_node_t *node)
+static inline void ns_rb_set_parent_color(ns_rbtree_node_t *rb,
+                       ns_rbtree_node_t *p, int color)
 {
-    return !ns_rb_is_red(node);
+    rb->parent_and_color = (ns_rb_parent_node_t)p + (ns_rb_parent_node_t)color;
 }
 
-static void ns_rb_set_parent(ns_rbtree_node_t *node, ns_rbtree_node_t *parent)
+static inline void __ns_rb_change_child(ns_rbtree_node_t *old, ns_rbtree_node_t *new,
+          ns_rbtree_node_t *parent, ns_rbtree_t *root)
 {
-    node->parent_and_color = (uintptr_t)parent | (node->parent_and_color & (uintptr_t)1u);
+    if (parent) {
+        if (parent->rb_left == old)
+            parent->rb_left = new;
+        else
+            parent->rb_right = new;
+    } else
+        root->rb_node = new;
 }
 
-static void ns_rb_set_color(ns_rbtree_node_t *node, int color)
+static ns_rbtree_node_t *ns_rb_left_deepest_node(const ns_rbtree_node_t *node)
 {
-    node->parent_and_color = (node->parent_and_color & ~(uintptr_t)1u) | (uintptr_t)color;
-}
-
-static ns_rbtree_node_t *ns_rb_minimum(ns_rbtree_node_t *node)
-{
-    if(node == NULL) return NULL;
-    while(node->left != NULL) node = node->left;
-    return node;
-}
-
-static ns_rbtree_node_t *ns_rb_maximum(ns_rbtree_node_t *node)
-{
-    if(node == NULL) return NULL;
-    while(node->right != NULL) node = node->right;
-    return node;
-}
-
-static int ns_rb_node_can_remove(const ns_rbtree_t *tree, const ns_rbtree_node_t *node)
-{
-    if((tree == NULL) || (node == NULL)) return 0;
-    if(ns_rbtree_node_is_empty(node)) return 0;
-    if(tree->root == NULL) return 0;
-    if((NS_RB_NODE_PARENT(node) == NULL) && (tree->root != node)) return 0;
-    return 1;
-}
-
-static void ns_rb_rotate_left(ns_rbtree_t *tree, ns_rbtree_node_t *node)
-{
-    ns_rbtree_node_t *right = node->right;
-    ns_rbtree_node_t *parent = NS_RB_NODE_PARENT(node);
-
-    node->right = right->left;
-    if(right->left != NULL) ns_rb_set_parent(right->left, node);
-
-    ns_rb_set_parent(right, parent);
-    if(parent == NULL){
-        tree->root = right;
-    } else if(node == parent->left){
-        parent->left = right;
-    } else {
-        parent->right = right;
+    for (;;) {
+        if (node->rb_left)
+            node = node->rb_left;
+        else if (node->rb_right)
+            node = node->rb_right;
+        else
+            return (ns_rbtree_node_t *)node;
     }
-
-    right->left = node;
-    ns_rb_set_parent(node, right);
 }
 
-static void ns_rb_rotate_right(ns_rbtree_t *tree, ns_rbtree_node_t *node)
+static inline void ns_rb_set_black(ns_rbtree_node_t *rb)
 {
-    ns_rbtree_node_t *left = node->left;
-    ns_rbtree_node_t *parent = NS_RB_NODE_PARENT(node);
-
-    node->left = left->right;
-    if(left->right != NULL) ns_rb_set_parent(left->right, node);
-
-    ns_rb_set_parent(left, parent);
-    if(parent == NULL){
-        tree->root = left;
-    } else if(node == parent->right){
-        parent->right = left;
-    } else {
-        parent->left = left;
-    }
-
-    left->right = node;
-    ns_rb_set_parent(node, left);
+    rb->parent_and_color |= NS_RBTREE_BLACK;
 }
 
-static void ns_rb_insert_fixup(ns_rbtree_t *tree, ns_rbtree_node_t *node)
+static inline ns_rbtree_node_t *ns_rb_red_parent(ns_rbtree_node_t *red)
 {
-    while(ns_rb_is_red(NS_RB_NODE_PARENT(node))){
-        ns_rbtree_node_t *parent = NS_RB_NODE_PARENT(node);
-        ns_rbtree_node_t *grand = NS_RB_NODE_PARENT(parent);
+    return (ns_rbtree_node_t *)red->parent_and_color;
+}
 
-        if(parent == grand->left){
-            ns_rbtree_node_t *uncle = grand->right;
-            if(ns_rb_is_red(uncle)){
-                ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                ns_rb_set_color(uncle, NS_RBTREE_BLACK);
-                ns_rb_set_color(grand, NS_RBTREE_RED);
-                node = grand;
+static inline void ns_rb_link_node(ns_rbtree_node_t *node, ns_rbtree_node_t *parent,
+                ns_rbtree_node_t **rb_link)
+{
+    node->parent_and_color = (ns_rb_parent_node_t)parent;
+    node->rb_left = node->rb_right = NULL;
+
+    *rb_link = node;
+}
+
+
+/*
+ * Helper function for rotations:
+ * - old's parent and color get assigned to new
+ * - old gets assigned new as a parent and 'color' as a color.
+ */
+static inline void
+__ns_rb_rotate_set_parents(ns_rbtree_node_t *old, ns_rbtree_node_t *new,
+            ns_rbtree_t *root, int color)
+{
+    ns_rbtree_node_t *parent = ns_rb_parent(old);
+    new->parent_and_color = old->parent_and_color;
+    ns_rb_set_parent_color(old, new, color);
+    __ns_rb_change_child(old, new, parent, root);
+}
+
+static void
+__ns_rb_insert(ns_rbtree_node_t *node, ns_rbtree_t *root)
+{
+    ns_rbtree_node_t *parent = ns_rb_red_parent(node), *gparent, *tmp;
+
+    while (true) {
+        /*
+         * Loop invariant: node is red.
+         */
+        if (NS_UNLIKELY(!parent)) {
+            /*
+             * The inserted node is root. Either this is the
+             * first node, or we recursed at Case 1 below and
+             * are no longer violating 4).
+             */
+            ns_rb_set_parent_color(node, NULL, NS_RBTREE_BLACK);
+            break;
+        }
+
+        /*
+         * If there is a black parent, we are done.
+         * Otherwise, take some corrective action as,
+         * per 4), we don't want a red root or two
+         * consecutive red nodes.
+         */
+        if(ns_rb_is_black(parent))
+            break;
+
+        gparent = ns_rb_red_parent(parent);
+
+        tmp = gparent->rb_right;
+        if (parent != tmp) {    /* parent == gparent->rb_left */
+            if (tmp && ns_rb_is_red(tmp)) {
+                /*
+                 * Case 1 - node's uncle is red (color flips).
+                 *
+                 *       G            g
+                 *      / \          / \
+                 *     p   u  -->   P   U
+                 *    /            /
+                 *   n            n
+                 *
+                 * However, since g's parent might be red, and
+                 * 4) does not allow this, we need to recurse
+                 * at g.
+                 */
+                ns_rb_set_parent_color(tmp, gparent, NS_RBTREE_BLACK);
+                ns_rb_set_parent_color(parent, gparent, NS_RBTREE_BLACK);
+                node = gparent;
+                parent = ns_rb_parent(node);
+                ns_rb_set_parent_color(node, parent, NS_RBTREE_RED);
                 continue;
             }
 
-            if(node == parent->right){
-                node = parent;
-                ns_rb_rotate_left(tree, node);
-                parent = NS_RB_NODE_PARENT(node);
-                grand = NS_RB_NODE_PARENT(parent);
+            tmp = parent->rb_right;
+            if (node == tmp) {
+                /*
+                 * Case 2 - node's uncle is black and node is
+                 * the parent's right child (left rotate at parent).
+                 *
+                 *      G             G
+                 *     / \           / \
+                 *    p   U  -->    n   U
+                 *     \           /
+                 *      n         p
+                 *
+                 * This still leaves us in violation of 4), the
+                 * continuation into Case 3 will fix that.
+                 */
+                tmp = node->rb_left;
+                parent->rb_right = tmp;
+                node->rb_left = parent;
+                if (tmp)
+                    ns_rb_set_parent_color(tmp, parent,
+                                NS_RBTREE_BLACK);
+                ns_rb_set_parent_color(parent, node, NS_RBTREE_RED);
+                parent = node;
+                tmp = node->rb_right;
             }
 
-            ns_rb_set_color(parent, NS_RBTREE_BLACK);
-            ns_rb_set_color(grand, NS_RBTREE_RED);
-            ns_rb_rotate_right(tree, grand);
+            /*
+             * Case 3 - node's uncle is black and node is
+             * the parent's left child (right rotate at gparent).
+             *
+             *        G           P
+             *       / \         / \
+             *      p   U  -->  n   g
+             *     /                 \
+             *    n                   U
+             */
+            gparent->rb_left = tmp;
+            parent->rb_right = gparent;
+            if (tmp)
+                ns_rb_set_parent_color(tmp, gparent, NS_RBTREE_BLACK);
+            __ns_rb_rotate_set_parents(gparent, parent, root, NS_RBTREE_RED);
+            break;
         } else {
-            ns_rbtree_node_t *uncle = grand->left;
-            if(ns_rb_is_red(uncle)){
-                ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                ns_rb_set_color(uncle, NS_RBTREE_BLACK);
-                ns_rb_set_color(grand, NS_RBTREE_RED);
-                node = grand;
+            tmp = gparent->rb_left;
+            if (tmp && ns_rb_is_red(tmp)) {
+                /* Case 1 - color flips */
+                ns_rb_set_parent_color(tmp, gparent, NS_RBTREE_BLACK);
+                ns_rb_set_parent_color(parent, gparent, NS_RBTREE_BLACK);
+                node = gparent;
+                parent = ns_rb_parent(node);
+                ns_rb_set_parent_color(node, parent, NS_RBTREE_RED);
                 continue;
             }
 
-            if(node == parent->left){
-                node = parent;
-                ns_rb_rotate_right(tree, node);
-                parent = NS_RB_NODE_PARENT(node);
-                grand = NS_RB_NODE_PARENT(parent);
+            tmp = parent->rb_left;
+            if (node == tmp) {
+                /* Case 2 - right rotate at parent */
+                tmp = node->rb_right;
+                parent->rb_left = tmp;
+                node->rb_right = parent;
+                if (tmp)
+                    ns_rb_set_parent_color(tmp, parent,
+                                NS_RBTREE_BLACK);
+                ns_rb_set_parent_color(parent, node, NS_RBTREE_RED);
+                parent = node;
+                tmp = node->rb_left;
             }
 
-            ns_rb_set_color(parent, NS_RBTREE_BLACK);
-            ns_rb_set_color(grand, NS_RBTREE_RED);
-            ns_rb_rotate_left(tree, grand);
+            /* Case 3 - left rotate at gparent */
+            gparent->rb_right = tmp;
+            parent->rb_left = gparent;
+            if (tmp)
+                ns_rb_set_parent_color(tmp, gparent, NS_RBTREE_BLACK);
+            __ns_rb_rotate_set_parents(gparent, parent, root, NS_RBTREE_RED);
+            break;
         }
     }
-
-    ns_rb_set_color(tree->root, NS_RBTREE_BLACK);
 }
 
-static void ns_rb_transplant(ns_rbtree_t *tree, ns_rbtree_node_t *old_node, ns_rbtree_node_t *new_node)
+/*
+ * Inline version for ns_rbtree_del() use - we want to be able to inline
+ * and eliminate the dummy_rotate callback there
+ */
+static void
+____ns_rb_erase_color(ns_rbtree_node_t *parent, ns_rbtree_t *root)
 {
-    ns_rbtree_node_t *parent = NS_RB_NODE_PARENT(old_node);
+    ns_rbtree_node_t *node = NULL, *sibling, *tmp1, *tmp2;
 
-    if(parent == NULL){
-        tree->root = new_node;
-    } else if(old_node == parent->left){
-        parent->left = new_node;
+    while (true) {
+        /*
+         * Loop invariants:
+         * - node is black (or NULL on first iteration)
+         * - node is not the root (parent is not NULL)
+         * - All leaf paths going through parent and node have a
+         *   black node count that is 1 lower than other leaf paths.
+         */
+        sibling = parent->rb_right;
+        if (node != sibling) {    /* node == parent->rb_left */
+            if (ns_rb_is_red(sibling)) {
+                /*
+                 * Case 1 - left rotate at parent
+                 *
+                 *     P               S
+                 *    / \             / \
+                 *   N   s    -->    p   Sr
+                 *      / \         / \
+                 *     Sl  Sr      N   Sl
+                 */
+                tmp1 = sibling->rb_left;
+                parent->rb_right = tmp1;
+                sibling->rb_left = parent;
+                ns_rb_set_parent_color(tmp1, parent, NS_RBTREE_BLACK);
+                __ns_rb_rotate_set_parents(parent, sibling, root,
+                            NS_RBTREE_RED);
+                sibling = tmp1;
+            }
+            tmp1 = sibling->rb_right;
+            if (!tmp1 || ns_rb_is_black(tmp1)) {
+                tmp2 = sibling->rb_left;
+                if (!tmp2 || ns_rb_is_black(tmp2)) {
+                    /*
+                     * Case 2 - sibling color flip
+                     * (p could be either color here)
+                     *
+                     *    (p)           (p)
+                     *    / \           / \
+                     *   N   S    -->  N   s
+                     *      / \           / \
+                     *     Sl  Sr        Sl  Sr
+                     *
+                     * This leaves us violating 5) which
+                     * can be fixed by flipping p to black
+                     * if it was red, or by recursing at p.
+                     * p is red when coming from Case 1.
+                     */
+                    ns_rb_set_parent_color(sibling, parent,
+                                NS_RBTREE_RED);
+                    if (ns_rb_is_red(parent))
+                        ns_rb_set_black(parent);
+                    else {
+                        node = parent;
+                        parent = ns_rb_parent(node);
+                        if (parent)
+                            continue;
+                    }
+                    break;
+                }
+                /*
+                 * Case 3 - right rotate at sibling
+                 * (p could be either color here)
+                 *
+                 *   (p)           (p)
+                 *   / \           / \
+                 *  N   S    -->  N   sl
+                 *     / \             \
+                 *    sl  Sr            S
+                 *                       \
+                 *                        Sr
+                 *
+                 * Note: p might be red, and then both
+                 * p and sl are red after rotation(which
+                 * breaks property 4). This is fixed in
+                 * Case 4 (in __ns_rb_rotate_set_parents()
+                 *         which set sl the color of p
+                 *         and set p NS_RBTREE_BLACK)
+                 *
+                 *   (p)            (sl)
+                 *   / \            /  \
+                 *  N   sl   -->   P    S
+                 *       \        /      \
+                 *        S      N        Sr
+                 *         \
+                 *          Sr
+                 */
+                tmp1 = tmp2->rb_right;
+                sibling->rb_left = tmp1;
+                tmp2->rb_right = sibling;
+                parent->rb_right = tmp2;
+                if (tmp1)
+                    ns_rb_set_parent_color(tmp1, sibling,
+                                NS_RBTREE_BLACK);
+                tmp1 = sibling;
+                sibling = tmp2;
+            }
+            /*
+             * Case 4 - left rotate at parent + color flips
+             * (p and sl could be either color here.
+             *  After rotation, p becomes black, s acquires
+             *  p's color, and sl keeps its color)
+             *
+             *      (p)             (s)
+             *      / \             / \
+             *     N   S     -->   P   Sr
+             *        / \         / \
+             *      (sl) sr      N  (sl)
+             */
+            tmp2 = sibling->rb_left;
+            parent->rb_right = tmp2;
+            sibling->rb_left = parent;
+            ns_rb_set_parent_color(tmp1, sibling, NS_RBTREE_BLACK);
+            if (tmp2)
+                ns_rb_set_parent(tmp2, parent);
+            __ns_rb_rotate_set_parents(parent, sibling, root,
+                        NS_RBTREE_BLACK);
+            break;
+        } else {
+            sibling = parent->rb_left;
+            if (ns_rb_is_red(sibling)) {
+                /* Case 1 - right rotate at parent */
+                tmp1 = sibling->rb_right;
+                parent->rb_left = tmp1;
+                sibling->rb_right = parent;
+                ns_rb_set_parent_color(tmp1, parent, NS_RBTREE_BLACK);
+                __ns_rb_rotate_set_parents(parent, sibling, root,
+                            NS_RBTREE_RED);
+                sibling = tmp1;
+            }
+            tmp1 = sibling->rb_left;
+            if (!tmp1 || ns_rb_is_black(tmp1)) {
+                tmp2 = sibling->rb_right;
+                if (!tmp2 || ns_rb_is_black(tmp2)) {
+                    /* Case 2 - sibling color flip */
+                    ns_rb_set_parent_color(sibling, parent,
+                                NS_RBTREE_RED);
+                    if (ns_rb_is_red(parent))
+                        ns_rb_set_black(parent);
+                    else {
+                        node = parent;
+                        parent = ns_rb_parent(node);
+                        if (parent)
+                            continue;
+                    }
+                    break;
+                }
+                /* Case 3 - left rotate at sibling */
+                tmp1 = tmp2->rb_left;
+                sibling->rb_right = tmp1;
+                tmp2->rb_left = sibling;
+                parent->rb_left = tmp2;
+                if (tmp1)
+                    ns_rb_set_parent_color(tmp1, sibling,
+                                NS_RBTREE_BLACK);
+                tmp1 = sibling;
+                sibling = tmp2;
+            }
+            /* Case 4 - right rotate at parent + color flips */
+            tmp2 = sibling->rb_right;
+            parent->rb_left = tmp2;
+            sibling->rb_right = parent;
+            ns_rb_set_parent_color(tmp1, sibling, NS_RBTREE_BLACK);
+            if (tmp2)
+                ns_rb_set_parent(tmp2, parent);
+            __ns_rb_rotate_set_parents(parent, sibling, root,
+                        NS_RBTREE_BLACK);
+            break;
+        }
+    }
+}
+
+static ns_rbtree_node_t *
+__ns_rb_del(ns_rbtree_node_t *node, ns_rbtree_t *root)
+{
+    ns_rbtree_node_t *child = node->rb_right;
+    ns_rbtree_node_t *tmp = node->rb_left;
+    ns_rbtree_node_t *parent, *rebalance;
+    ns_rb_parent_node_t pc;
+
+    if (!tmp) {
+        /*
+         * Case 1: node to erase has no more than 1 child (easy!)
+         *
+         * Note that if there is one child it must be red due to 5)
+         * and node must be black due to 4). We adjust colors locally
+         * so as to bypass __ns_rb_erase_color() later on.
+         */
+        pc = node->parent_and_color;
+        parent = __ns_rb_parent(pc);
+        __ns_rb_change_child(node, child, parent, root);
+        if (child) {
+            child->parent_and_color = pc;
+            rebalance = NULL;
+        } else
+            rebalance = __ns_rb_is_black(pc) ? parent : NULL;
+        tmp = parent;
+    } else if (!child) {
+        /* Still case 1, but this time the child is node->rb_left */
+        tmp->parent_and_color = pc = node->parent_and_color;
+        parent = __ns_rb_parent(pc);
+        __ns_rb_change_child(node, tmp, parent, root);
+        rebalance = NULL;
+        tmp = parent;
     } else {
-        parent->right = new_node;
-    }
+        ns_rbtree_node_t *successor = child, *child2;
 
-    if(new_node != NULL) ns_rb_set_parent(new_node, parent);
-}
+        tmp = child->rb_left;
+        if (!tmp) {
+            /*
+             * Case 2: node's successor is its right child
+             *
+             *    (n)          (s)
+             *    / \          / \
+             *  (x) (s)  ->  (x) (c)
+             *        \
+             *        (c)
+             */
+            parent = successor;
+            child2 = successor->rb_right;
 
-/* ns_rb_sibling_left / ns_rb_sibling_right: 取 sibling 的左右子节点，
-   sibling 为 NULL 时返回 NULL，避免在调用点重复写三元表达式 */
-static ns_rbtree_node_t *ns_rb_sibling_left(ns_rbtree_node_t *sibling)
-{
-    return (sibling != NULL) ? sibling->left : NULL;
-}
-
-static ns_rbtree_node_t *ns_rb_sibling_right(ns_rbtree_node_t *sibling)
-{
-    return (sibling != NULL) ? sibling->right : NULL;
-}
-
-static void ns_rb_delete_fixup(
-    ns_rbtree_t *tree,
-    ns_rbtree_node_t *node,
-    ns_rbtree_node_t *parent)
-{
-    while((node != tree->root) && ns_rb_is_black(node)){
-        ns_rbtree_node_t *sibling;
-
-        if(parent == NULL) break;
-
-        if(node == parent->left){
-            sibling = parent->right;
-
-            if(ns_rb_is_red(sibling)){
-                ns_rb_set_color(sibling, NS_RBTREE_BLACK);
-                ns_rb_set_color(parent, NS_RBTREE_RED);
-                ns_rb_rotate_left(tree, parent);
-                sibling = parent->right;
-            }
-
-            if(ns_rb_is_black(ns_rb_sibling_left(sibling)) &&
-               ns_rb_is_black(ns_rb_sibling_right(sibling))){
-                if(sibling != NULL) ns_rb_set_color(sibling, NS_RBTREE_RED);
-                node = parent;
-                parent = NS_RB_NODE_PARENT(node);
-            } else {
-                if(ns_rb_is_black(ns_rb_sibling_right(sibling))){
-                    if(ns_rb_sibling_left(sibling) != NULL){
-                        ns_rb_set_color(ns_rb_sibling_left(sibling), NS_RBTREE_BLACK);
-                    }
-                    if(sibling != NULL){
-                        ns_rb_set_color(sibling, NS_RBTREE_RED);
-                        ns_rb_rotate_right(tree, sibling);
-                    }
-                    sibling = parent->right;
-                }
-
-                if(sibling != NULL) ns_rb_set_color(sibling, NS_RB_NODE_COLOR(parent));
-                ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                if(ns_rb_sibling_right(sibling) != NULL){
-                    ns_rb_set_color(ns_rb_sibling_right(sibling), NS_RBTREE_BLACK);
-                }
-                ns_rb_rotate_left(tree, parent);
-                node = tree->root;
-                parent = NULL;
-            }
         } else {
-            sibling = parent->left;
-
-            if(ns_rb_is_red(sibling)){
-                ns_rb_set_color(sibling, NS_RBTREE_BLACK);
-                ns_rb_set_color(parent, NS_RBTREE_RED);
-                ns_rb_rotate_right(tree, parent);
-                sibling = parent->left;
-            }
-
-            if(ns_rb_is_black(ns_rb_sibling_right(sibling)) &&
-               ns_rb_is_black(ns_rb_sibling_left(sibling))){
-                if(sibling != NULL) ns_rb_set_color(sibling, NS_RBTREE_RED);
-                node = parent;
-                parent = NS_RB_NODE_PARENT(node);
-            } else {
-                if(ns_rb_is_black(ns_rb_sibling_left(sibling))){
-                    if(ns_rb_sibling_right(sibling) != NULL){
-                        ns_rb_set_color(ns_rb_sibling_right(sibling), NS_RBTREE_BLACK);
-                    }
-                    if(sibling != NULL){
-                        ns_rb_set_color(sibling, NS_RBTREE_RED);
-                        ns_rb_rotate_left(tree, sibling);
-                    }
-                    sibling = parent->left;
-                }
-
-                if(sibling != NULL) ns_rb_set_color(sibling, NS_RB_NODE_COLOR(parent));
-                ns_rb_set_color(parent, NS_RBTREE_BLACK);
-                if(ns_rb_sibling_left(sibling) != NULL){
-                    ns_rb_set_color(ns_rb_sibling_left(sibling), NS_RBTREE_BLACK);
-                }
-                ns_rb_rotate_right(tree, parent);
-                node = tree->root;
-                parent = NULL;
-            }
-        }
-    }
-
-    if(node != NULL) ns_rb_set_color(node, NS_RBTREE_BLACK);
-}
-
-/* ---- 后序遍历辅助 ---- */
-
-static ns_rbtree_node_t *ns_rb_first_postorder(const ns_rbtree_node_t *root)
-{
-    if(root == NULL) return NULL;
-
-    for(;;){
-        while(root->left != NULL) root = root->left;
-        if(root->right == NULL) break;
-        root = root->right;
-    }
-    return (ns_rbtree_node_t *)root;
-}
-
-static ns_rbtree_node_t *ns_rb_next_postorder(const ns_rbtree_node_t *node)
-{
-    ns_rbtree_node_t *parent = NS_RB_NODE_PARENT(node);
-
-    if(parent == NULL) return NULL;
-
-    if((node == parent->left) && (parent->right != NULL)){
-        return ns_rb_first_postorder(parent->right);
-    }
-    return parent;
-}
-
-/* ---- 公开接口实现 ---- */
-
-void ns_rbtree_init(ns_rbtree_t *tree, int (*cmp)(const ns_rbtree_node_t *, const ns_rbtree_node_t *))
-{
-    if(tree == NULL) return;
-
-    tree->root = NULL;
-    tree->leftmost = NULL;
-    tree->size = 0u;
-    tree->cmp = cmp;
-}
-
-void ns_rbtree_node_init(ns_rbtree_node_t *node)
-{
-    if(node == NULL) return;
-
-    node->parent_and_color = (uintptr_t)node;
-    node->left = NULL;
-    node->right = NULL;
-}
-
-int ns_rbtree_empty(const ns_rbtree_t *tree)
-{
-    if(tree == NULL) return 1;
-
-    return tree->root == NULL;
-}
-
-int ns_rbtree_node_is_linked(const ns_rbtree_node_t *node)
-{
-    return (node != NULL) && !ns_rbtree_node_is_empty(node);
-}
-
-ns_rbtree_node_t *ns_rbtree_insert(ns_rbtree_t *tree, ns_rbtree_node_t *node)
-{
-    ns_rbtree_node_t *parent = NULL;
-    ns_rbtree_node_t **link;
-
-    if((tree == NULL) || (node == NULL) || ns_rbtree_node_is_linked(node)){
-        return NULL;
-    }
-
-    link = &tree->root;
-
-    while(*link != NULL){
-        parent = *link;
-        if(tree->cmp(node, parent) < 0){
-            link = &parent->left;
-        } else {
-            link = &parent->right;
-        }
-    }
-
-    ns_rb_set_parent(node, parent);
-    node->left = NULL;
-    node->right = NULL;
-    ns_rb_set_color(node, NS_RBTREE_RED);
-    *link = node;
-
-    if((tree->leftmost == NULL) || (tree->cmp(node, tree->leftmost) < 0)){
-        tree->leftmost = node;
-    }
-
-    ++tree->size;
-    ns_rb_insert_fixup(tree, node);
-    return node;
-}
-
-ns_rbtree_node_t *ns_rbtree_remove(ns_rbtree_t *tree, ns_rbtree_node_t *node)
-{
-    ns_rbtree_node_t *child;
-    ns_rbtree_node_t *fix_parent;
-    ns_rbtree_node_t *successor;
-    int original_color;
-
-    if(!ns_rb_node_can_remove(tree, node)) return NULL;
-
-    successor = node;
-    /* original_color 记录被移除的"那个槽位"在操作前的颜色：
-       - 单子节点分支：successor == node，其原始颜色决定是否破坏黑高
-       - 双子节点分支：successor == node 中序后继，其原始颜色决定是否破坏黑高
-       后续 if(RED) 不修复，否则调用 delete_fixup 补偿 */
-    original_color = NS_RB_NODE_COLOR(successor);
-
-    if(node->left == NULL){
-        child = node->right;
-        fix_parent = NS_RB_NODE_PARENT(node);
-        ns_rb_transplant(tree, node, node->right);
-    } else if(node->right == NULL){
-        child = node->left;
-        fix_parent = NS_RB_NODE_PARENT(node);
-        ns_rb_transplant(tree, node, node->left);
-    } else {
-        successor = ns_rb_minimum(node->right);
-        original_color = NS_RB_NODE_COLOR(successor);
-        child = successor->right;
-
-        if(NS_RB_NODE_PARENT(successor) == node){
-            fix_parent = successor;
-            if(child != NULL) ns_rb_set_parent(child, successor);
-        } else {
-            fix_parent = NS_RB_NODE_PARENT(successor);
-            ns_rb_transplant(tree, successor, successor->right);
-            successor->right = node->right;
-            ns_rb_set_parent(successor->right, successor);
+            /*
+             * Case 3: node's successor is leftmost under
+             * node's right child subtree
+             *
+             *    (n)          (s)
+             *    / \          / \
+             *  (x) (y)  ->  (x) (y)
+             *      /            /
+             *    (p)          (p)
+             *    /            /
+             *  (s)          (c)
+             *    \
+             *    (c)
+             */
+            do {
+                parent = successor;
+                successor = tmp;
+                tmp = tmp->rb_left;
+            } while (tmp);
+            child2 = successor->rb_right;
+            parent->rb_left = child2;
+            successor->rb_right = child;
+            ns_rb_set_parent(child, successor);
         }
 
-        ns_rb_transplant(tree, node, successor);
-        successor->left = node->left;
-        ns_rb_set_parent(successor->left, successor);
-        /* successor 继承 node 的颜色，以保持红黑不变量。
-           此处只复制颜色 bit，不影响 original_color 的判断逻辑 */
-        ns_rb_set_color(successor, NS_RB_NODE_COLOR(node));
+        tmp = node->rb_left;
+        successor->rb_left = tmp;
+        ns_rb_set_parent(tmp, successor);
+
+        pc = node->parent_and_color;
+        tmp = __ns_rb_parent(pc);
+        __ns_rb_change_child(node, successor, tmp, root);
+
+        if (child2) {
+            ns_rb_set_parent_color(child2, parent, NS_RBTREE_BLACK);
+            rebalance = NULL;
+        } else {
+            rebalance = ns_rb_is_black(successor) ? parent : NULL;
+        }
+        successor->parent_and_color = pc;
+        tmp = successor;
     }
 
-    if(original_color == NS_RBTREE_BLACK) ns_rb_delete_fixup(tree, child, fix_parent);
+    return rebalance;
+}
+/* Non-inline version for ns_rb_erase_augmented() use */
+void __ns_rb_erase_color(ns_rbtree_node_t *parent, ns_rbtree_t *root)
+{
+    ____ns_rb_erase_color(parent, root);
+}
 
-    if(tree->leftmost == node){
-        tree->leftmost = ns_rb_minimum(tree->root);
-    }
-    if(tree->size != 0u) --tree->size;
 
-    /* 将 node 重置为空状态 */
+static void ns_rb_insert_color(ns_rbtree_node_t *node, ns_rbtree_t *root)
+{
+    __ns_rb_insert(node, root);
+}
+
+ns_rbtree_node_t * ns_rbtree_del(ns_rbtree_node_t *node, ns_rbtree_t *root)
+{
+    ns_rbtree_node_t *rebalance;
+    ns_rbtree_node_t *leftmost = NULL;
+
+    if (root->rb_leftmost == node)
+        leftmost = root->rb_leftmost = ns_rbtree_next(node);
+    rebalance = __ns_rb_del(node, root);
+    if (rebalance)
+        ____ns_rb_erase_color(rebalance, root);
     ns_rbtree_node_init(node);
-    return node;
+    return leftmost;
 }
 
-ns_rbtree_node_t *ns_rbtree_first(const ns_rbtree_t *tree)
+ns_rbtree_node_t *ns_rbtree_last(const ns_rbtree_t *root)
 {
-    if(tree == NULL) return NULL;
+    ns_rbtree_node_t    *n;
 
-    return tree->leftmost;
-}
-
-ns_rbtree_node_t *ns_rbtree_last(const ns_rbtree_t *tree)
-{
-    if(tree == NULL) return NULL;
-
-    return ns_rb_maximum(tree->root);
+    n = root->rb_node;
+    if (!n)
+        return NULL;
+    while (n->rb_right)
+        n = n->rb_right;
+    return n;
 }
 
 ns_rbtree_node_t *ns_rbtree_next(const ns_rbtree_node_t *node)
 {
-    const ns_rbtree_node_t *cursor = node;
     ns_rbtree_node_t *parent;
 
-    if((node == NULL) || !ns_rbtree_node_is_linked(node)){
+    if (ns_rbtree_node_is_empty(node))
         return NULL;
+
+    /*
+     * If we have a right-hand child, go down and then left as far
+     * as we can.
+     */
+    if (node->rb_right) {
+        node = node->rb_right;
+        while (node->rb_left)
+            node = node->rb_left;
+        return (ns_rbtree_node_t *)node;
     }
 
-    if(node->right != NULL) return ns_rb_minimum(node->right);
-
-    parent = NS_RB_NODE_PARENT(node);
-    while((parent != NULL) && (cursor == parent->right)){
-        cursor = parent;
-        parent = NS_RB_NODE_PARENT(parent);
-    }
+    /*
+     * No right-hand children. Everything down and left is smaller than us,
+     * so any 'next' node must be in the general direction of our parent.
+     * Go up the tree; any time the ancestor is a right-hand child of its
+     * parent, keep going up. First time it's a left-hand child of its
+     * parent, said parent is our 'next' node.
+     */
+    while ((parent = ns_rb_parent(node)) && node == parent->rb_right)
+        node = parent;
 
     return parent;
 }
 
 ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node)
 {
-    const ns_rbtree_node_t *cursor = node;
     ns_rbtree_node_t *parent;
 
-    if((node == NULL) || !ns_rbtree_node_is_linked(node)){
+    if (ns_rbtree_node_is_empty(node))
         return NULL;
+
+    /*
+     * If we have a left-hand child, go down and then right as far
+     * as we can.
+     */
+    if (node->rb_left) {
+        node = node->rb_left;
+        while (node->rb_right)
+            node = node->rb_right;
+        return (ns_rbtree_node_t *)node;
     }
 
-    if(node->left != NULL) return ns_rb_maximum(node->left);
-
-    parent = NS_RB_NODE_PARENT(node);
-    while((parent != NULL) && (cursor == parent->left)){
-        cursor = parent;
-        parent = NS_RB_NODE_PARENT(parent);
-    }
+    /*
+     * No left-hand children. Go up till we find an ancestor which
+     * is a right-hand child of its parent.
+     */
+    while ((parent = ns_rb_parent(node)) && node == parent->rb_left)
+        node = parent;
 
     return parent;
 }
 
-ns_rbtree_node_t *ns_rbtree_find_first(const ns_rbtree_node_t *key, const ns_rbtree_t *tree)
+void ns_rb_replace_node(ns_rbtree_node_t *victim, ns_rbtree_node_t *new,
+             ns_rbtree_t *root)
 {
-    ns_rbtree_node_t *cursor;
-    ns_rbtree_node_t *match = NULL;
-    int c;
+    ns_rbtree_node_t *parent = ns_rb_parent(victim);
 
-    if((key == NULL) || (tree == NULL) || (tree->cmp == NULL)) return NULL;
+    /* Copy the pointers/colour from the victim to the replacement */
+    *new = *victim;
 
-    cursor = tree->root;
-    while(cursor != NULL){
-        c = tree->cmp(key, cursor);
-        if(c <= 0){
-            if(c == 0) match = cursor;
-            cursor = cursor->left;
+    /* Set the surrounding nodes to point to the replacement */
+    if (victim->rb_left)
+        ns_rb_set_parent(victim->rb_left, new);
+    if (victim->rb_right)
+        ns_rb_set_parent(victim->rb_right, new);
+    __ns_rb_change_child(victim, new, parent, root);
+}
+
+
+ns_rbtree_node_t * ns_rbtree_add(ns_rbtree_node_t *node, ns_rbtree_t *tree)
+{
+    ns_rbtree_node_t **link = &tree->rb_node;
+    ns_rbtree_node_t *parent = NULL;
+    bool leftmost = true;
+
+    while (*link) {
+        parent = *link;
+        if (tree->cmp(node, parent) < 0) {
+            link = &parent->rb_left;
         } else {
-            cursor = cursor->right;
+            link = &parent->rb_right;
+            leftmost = false;
         }
     }
 
-    return match;
+    ns_rb_link_node(node, parent, link);
+    if (leftmost)
+        tree->rb_leftmost = node;
+    ns_rb_insert_color(node, tree);
+
+    return leftmost ? node : NULL;
 }
 
-ns_rbtree_node_t *ns_rbtree_next_match(
-    const ns_rbtree_node_t *key, ns_rbtree_node_t *node, const ns_rbtree_t *tree)
-{
-    ns_rbtree_node_t *next;
-
-    if((key == NULL) || (node == NULL) || (tree == NULL)) return NULL;
-
-    next = ns_rbtree_next(node);
-    while(next != NULL){
-        int c = tree->cmp(key, next);
-        if(c == 0) return next;
-        /* 如果 next > key，中序后续只会更大，无需继续 */
-        if(c < 0) break;
-        next = ns_rbtree_next(next);
-    }
-
-    return NULL;
-}
 
 ns_rbtree_node_t *ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t *tree)
 {
-    ns_rbtree_node_t *existing;
-
-    if((node == NULL) || (tree == NULL)) return NULL;
-
-    existing = ns_rbtree_find_first(node, tree);
-    if(existing != NULL) return existing;
-
-    ns_rbtree_insert(tree, node);
-    return NULL;
-}
-
-ns_rbtree_node_t *ns_rbtree_find_new_add(
-    const void *key, ns_rbtree_t *tree,
-    int (*match)(const void *key, const ns_rbtree_node_t *node),
-    void *user_data,
-    ns_rbtree_node_t *(*new_node)(void *user_data))
-{
+    ns_rbtree_node_t **link = &tree->rb_node;
     ns_rbtree_node_t *parent = NULL;
-    ns_rbtree_node_t **link;
+    bool leftmost = true;
     int c;
-    ns_rbtree_node_t *node;
 
-    if((key == NULL) || (tree == NULL) || (match == NULL) || (new_node == NULL)) return NULL;
-
-    /* 查找 */
-    link = &tree->root;
-    while(*link != NULL){
+    while (*link) {
         parent = *link;
-        c = match(key, parent);
-        if(c < 0){
-            link = &parent->left;
-        } else if(c > 0){
-            link = &parent->right;
-        } else {
-            return parent; /* 找到 */
-        }
+        c = tree->cmp(node, parent);
+
+        if (c < 0)
+            link = &parent->rb_left;
+        else if (c > 0){
+            link = &parent->rb_right;
+            leftmost = false;
+        }else
+            return parent;
     }
 
-    /* 未找到，新建并插入 */
-    node = new_node(user_data);
-    if(node == NULL) return NULL;
-
-    ns_rb_set_parent(node, parent);
-    node->left = NULL;
-    node->right = NULL;
-    ns_rb_set_color(node, NS_RBTREE_RED);
-    *link = node;
-
-    if((tree->leftmost == NULL) || (tree->cmp(node, tree->leftmost) < 0)){
-        tree->leftmost = node;
-    }
-
-    ++tree->size;
-    ns_rb_insert_fixup(tree, node);
+    ns_rb_link_node(node, parent, link);
+    if (leftmost)
+        tree->rb_leftmost = node;
+    ns_rb_insert_color(node, tree);
     return node;
 }
 
-ns_rbtree_node_t *ns_rbtree_match_find(
-    const void *key, const ns_rbtree_t *tree,
-    int (*match)(const void *key, const ns_rbtree_node_t *node))
+ns_rbtree_node_t *ns_rbtree_find_new_add(const void *key, ns_rbtree_t *tree,
+          int (*cmp)(const void *key, const ns_rbtree_node_t *), void *user_data,
+          ns_rbtree_node_t* (new_node)(void *user_data))
 {
-    ns_rbtree_node_t *cursor;
+    ns_rbtree_node_t **link = &tree->rb_node;
+    ns_rbtree_node_t *parent = NULL;
+    ns_rbtree_node_t *node;
+    bool leftmost = true;
     int c;
 
-    if((key == NULL) || (tree == NULL) || (match == NULL)) return NULL;
+    while (*link) {
+        parent = *link;
+        c = cmp(key, parent);
 
-    cursor = tree->root;
-    while(cursor != NULL){
-        c = match(key, cursor);
+        if (c < 0)
+            link = &parent->rb_left;
+        else if (c > 0){
+            link = &parent->rb_right;
+            leftmost = false;
+        }else
+            return parent;
+    }
+    node = new_node(user_data);
+    if(!node)
+        return NULL;
+    ns_rb_link_node(node, parent, link);
+    if (leftmost)
+        tree->rb_leftmost = node;
+    ns_rb_insert_color(node, tree);
+    return node;
+}
+
+
+ns_rbtree_node_t * ns_rbtree_match_find(const void *key, ns_rbtree_t *tree,
+    int (*match)(const void *key, const ns_rbtree_node_t *)){
+    ns_rbtree_node_t *node;
+    int c;
+
+    node = tree->rb_node;
+    while(node){
+        c = match(key, node);
         if(c < 0){
-            cursor = cursor->left;
-        } else if(c > 0){
-            cursor = cursor->right;
-        } else {
-            return cursor;
+            node = node->rb_left;
+        }else if(c > 0){
+            node = node->rb_right;
+        }else{
+            return node;
         }
     }
-
     return NULL;
 }
 
-ns_rbtree_node_t *ns_rbtree_first_postorder(const ns_rbtree_t *tree)
-{
-    if(tree == NULL) return NULL;
 
-    return ns_rb_first_postorder(tree->root);
+ns_rbtree_node_t *ns_rbtree_find_first(const void *key, const ns_rbtree_t *tree,
+          int (*match)(const void *key, const ns_rbtree_node_t *))
+{
+    ns_rbtree_node_t *node = tree->rb_node;
+    ns_rbtree_node_t *match_node = NULL;
+
+    while (node) {
+        int c = match(key, node);
+
+        if (c <= 0) {
+            if (!c)
+                match_node = node;
+            node = node->rb_left;
+        } else if (c > 0) {
+            node = node->rb_right;
+        }
+    }
+
+    return match_node;
 }
 
 ns_rbtree_node_t *ns_rbtree_next_postorder(const ns_rbtree_node_t *node)
 {
-    if(node == NULL) return NULL;
+    const ns_rbtree_node_t *parent;
+    if (!node)
+        return NULL;
+    parent = ns_rb_parent(node);
 
-    return ns_rb_next_postorder(node);
+    /* If we're sitting on node, we've already seen our children */
+    if (parent && node == parent->rb_left && parent->rb_right) {
+        /* If we are the parent's left node, go to the parent's right
+         * node then all the way down to the left */
+        return ns_rb_left_deepest_node(parent->rb_right);
+    } else
+        /* Otherwise we are the parent's right node, and the parent
+         * should be next */
+        return (ns_rbtree_node_t *)parent;
+}
+
+ns_rbtree_node_t *ns_rbtree_first_postorder(const ns_rbtree_t *root)
+{
+    if (!root->rb_node)
+        return NULL;
+
+    return ns_rb_left_deepest_node(root->rb_node);
+}
+
+ns_rbtree_node_t *ns_rbtree_next_match(const void *key, ns_rbtree_node_t *node,
+          int (*match)(const void *key, const ns_rbtree_node_t *))
+{
+    node = ns_rbtree_next(node);
+    if (node && match(key, node))
+        node = NULL;
+    return node;
 }

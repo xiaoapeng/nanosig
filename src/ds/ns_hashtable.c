@@ -58,12 +58,11 @@ int ns_hashtable_init(ns_hashtable_t *table, ns_slist_t *buckets, size_t bucket_
 void ns_hashtable_node_init(ns_hashtable_node_t *node, const char *key, void *value)
 {
     if(node == NULL) return;
-    if(key == NULL) return;
 
     ns_slist_node_init(&node->link);
     node->key = key;
     node->value = value;
-    node->hash = ns_hash_string(key);
+    node->hash = (key != NULL) ? ns_hash_string(key) : 0u;
 }
 
 int ns_hashtable_insert(ns_hashtable_t *table, ns_hashtable_node_t *node)

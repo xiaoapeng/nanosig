@@ -107,12 +107,12 @@ static void ds_contract_use_rbtree(void)
     ds_contract_item_t item;
     ds_contract_item_t *owner;
 
-    ns_rbtree_init(&tree, ds_contract_rbtree_cmp);
+    ns_rbtree_root_init(&tree, ds_contract_rbtree_cmp);
     ns_rbtree_node_init(&item.tree_node);
-    ns_rbtree_insert(&tree, &item.tree_node);
+    ns_rbtree_add(&item.tree_node, &tree);
     owner = ns_rbtree_entry(ns_rbtree_first(&tree), ds_contract_item_t, tree_node);
     (void)owner;
-    ns_rbtree_remove(&tree, &item.tree_node);
+    ns_rbtree_del(&item.tree_node, &tree);
 }
 
 int main(void)

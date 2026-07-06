@@ -43,7 +43,7 @@ static int64_t ns_timer_remaining_us(ns_time_us_t expire_us, ns_platform_time_us
     return (int64_t)((uint64_t)expire_us - (uint64_t)now_us);
 }
 
-static int ns_timer_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
+static int ns_timer_cmp(ns_rbtree_node_t *a, ns_rbtree_node_t *b)
 {
     const ns_timer_t *ta = ns_rbtree_entry(a, const ns_timer_t, rb_node);
     const ns_timer_t *tb = ns_rbtree_entry(b, const ns_timer_t, rb_node);
@@ -87,7 +87,7 @@ static void ns_timer_mgr_notify(int should_notify)
 
 static int ns_timer_is_running(const ns_timer_t *timer)
 {
-    return ns_rbtree_node_is_linked(&timer->rb_node);
+    return !ns_rbtree_node_is_empty(&timer->rb_node);
 }
 
 static int ns_timer_validate_created(const ns_timer_t *timer)
@@ -109,8 +109,7 @@ static int ns_timer_validate_user_input(const ns_timer_t *timer)
 
 static int ns_timer_start_locked(ns_timer_t *timer, int *out_should_notify)
 {
-    ns_rbtree_node_t *before_first;
-    ns_rbtree_node_t *after_first;
+    ns_rbtree_node_t *add_result;
     int rc;
 
     *out_should_notify = 0;
@@ -120,12 +119,10 @@ static int ns_timer_start_locked(ns_timer_t *timer, int *out_should_notify)
     rc = ns_timer_mgr_refresh_now();
     if(rc != NS_OK) return rc;
 
-    before_first = ns_rbtree_first(&g_timer_mgr.tree);
     timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
-    if(ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node) == NULL) return NS_E_CORRUPT;
-    after_first = ns_rbtree_first(&g_timer_mgr.tree);
+    add_result = ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
 
-    *out_should_notify = (after_first == &timer->rb_node) && (before_first != after_first);
+    *out_should_notify = (add_result == &timer->rb_node);
     return NS_OK;
 }
 
@@ -139,7 +136,8 @@ static int ns_timer_cancel_locked(ns_timer_t *timer, int *out_should_notify)
 
     before_first = ns_rbtree_first(&g_timer_mgr.tree);
     *out_should_notify = before_first == &timer->rb_node;
-    return (ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node) != NULL) ? NS_OK : NS_E_CORRUPT;
+    ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree);
+    return NS_OK;
 }
 
 /**
@@ -166,7 +164,7 @@ int ns_timer_mgr_global_init(ns_timer_notify_fn notify, void *ctx)
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = notify;
     g_timer_mgr.notify_ctx = ctx;
-    ns_rbtree_init(&g_timer_mgr.tree, ns_timer_cmp);
+    ns_rbtree_root_init((&g_timer_mgr.tree), ns_timer_cmp);
 
     rc = ns_platform_mutex_create(&g_timer_mgr.mutex, "nanosig-timer-mgr");
     if(rc != NS_OK){
@@ -192,7 +190,7 @@ void ns_timer_mgr_global_shutdown(void)
     /* ② 等待正在执行锁内操作者完成，然后清空树 */
     if(ns_platform_mutex_lock(g_timer_mgr.mutex) == NS_OK){
         while((node = ns_rbtree_first(&g_timer_mgr.tree)) != NULL){
-            if(ns_rbtree_remove(&g_timer_mgr.tree, node) == NULL) break;
+            ns_rbtree_del(node, &g_timer_mgr.tree);
         }
         (void)ns_platform_mutex_unlock(g_timer_mgr.mutex);
     }
@@ -203,7 +201,7 @@ void ns_timer_mgr_global_shutdown(void)
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = NULL;
     g_timer_mgr.notify_ctx = NULL;
-    ns_rbtree_init(&g_timer_mgr.tree, ns_timer_cmp);
+    ns_rbtree_root_init((&g_timer_mgr.tree), ns_timer_cmp);
 }
 
 int ns_timer_mgr_next_timeout(ns_platform_time_us_t *out_timeout_us)
@@ -276,7 +274,7 @@ int ns_timer_mgr_fire_expired(void)
         if(remaining > 0) break;
 
         previous_expire = timer->expire_us;
-        ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree);
 
         rc = ns_signal_emit_raw(&timer->signal, NS_NO_PAYLOAD, 0u);
         if((rc != NS_OK) && (first_error == NS_OK)) first_error = rc;
@@ -293,7 +291,7 @@ int ns_timer_mgr_fire_expired(void)
                 }
             }
 
-            ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
+            ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
         }
     }
 
@@ -391,13 +389,13 @@ int ns_timer_restart(ns_timer_t *timer)
 
     was_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
     if(ns_timer_is_running(timer)){
-        ns_rbtree_remove(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree);
     }
 
     rc = ns_timer_mgr_refresh_now();
     if(rc == NS_OK){
         timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
-        ns_rbtree_insert(&g_timer_mgr.tree, &timer->rb_node);
+        ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
         became_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
     }
 

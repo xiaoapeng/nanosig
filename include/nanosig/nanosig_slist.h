@@ -406,9 +406,9 @@ static inline ns_slist_node_t *ns_slist_dequeue(ns_slist_t *list)
  * @param member 链表节点在外层结构体中的成员名。
  */
 #define ns_slist_for_each_entry(pos, head, member) \
-    for((pos) = ns_slist_entry((head)->first, typeof(*(pos)), member); \
-        NS_MEMBER_ADDRESS_IS_NONNULL((pos), member); \
-        (pos) = ns_slist_entry((pos)->member.next, typeof(*(pos)), member))
+    for((pos) = ns_slist_entry_safe((head)->first, typeof(*(pos)), member); \
+        (pos) != NULL; \
+        (pos) = ns_slist_entry_safe((pos)->member.next, typeof(*(pos)), member))
 
 /**
  * @brief 正向遍历单向链表外层结构体，安全版。
