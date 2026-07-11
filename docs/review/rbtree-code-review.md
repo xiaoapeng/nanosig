@@ -47,9 +47,11 @@
 
 ### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟠 高
 - **类型**: bug
+- **关闭原因**: 在 `new_node` 返回值检查之后添加 `if(!ns_rbtree_node_is_empty(node)) return NULL;` 防御性检查，与 `ns_rbtree_find_add` 的一致。已在 `src/ds/ns_rbtree.c:684` 实施。
+- **关闭日期**: 2026-07-11
 
 #### 问题描述
 `ns_rbtree_find_new_add` 在调用 `new_node(user_data)` 回调后，直接将返回的节点插入树中，未检查该节点是否已链接到某棵树。对比 `ns_rbtree_insert` 有 `ns_rbtree_node_is_linked` 防御性检查。如果 `new_node` 返回已链接节点，会同时损坏两棵树。
@@ -58,7 +60,7 @@
 在 `new_node` 返回值检查之后添加 `if(ns_rbtree_node_is_linked(node)) return NULL;`。
 
 #### 作者建议
-（待作者补充）
+（已采纳）使用 `ns_rbtree_node_is_empty` 检查，与 `ns_rbtree_find_add` 的防御性检查保持一致。
 
 #### 可重现的失败场景
 ```c

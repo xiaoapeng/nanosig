@@ -681,6 +681,8 @@ ns_rbtree_node_t *ns_rbtree_find_new_add(const void *key, ns_rbtree_t *tree,
     node = new_node(user_data);
     if(!node)
         return NULL;
+    if(!ns_rbtree_node_is_empty(node))
+        return NULL;
     ns_rb_link_node(node, parent, link);
     if (leftmost)
         tree->rb_leftmost = node;
