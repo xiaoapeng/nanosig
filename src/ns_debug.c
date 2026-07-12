@@ -14,7 +14,7 @@
 #include <nanosig/ns_debug.h>
 
 /* ================================================================== */
-/*  全局调试等级                                                        */
+/*  全局调试等级 & 互斥锁                                               */
 /* ================================================================== */
 
 #ifndef NS_CONFIG_DEFAULT_DEBUG_LEVEL
@@ -22,6 +22,22 @@ static enum ns_dbg_level dbg_level = NS_DBG_DEBUG;
 #else
 static enum ns_dbg_level dbg_level = NS_CONFIG_DEFAULT_DEBUG_LEVEL;
 #endif
+
+static ns_platform_mutex_t *ns_dbg_mutex = NULL;
+
+int ns_debug_init(void)
+{
+    if (ns_dbg_mutex != NULL) return NS_E_EXISTS;
+    return ns_platform_mutex_create(&ns_dbg_mutex, "nanosig-debug");
+}
+
+void ns_debug_shutdown(void)
+{
+    if (ns_dbg_mutex != NULL) {
+        (void)ns_platform_mutex_destroy(ns_dbg_mutex);
+        ns_dbg_mutex = NULL;
+    }
+}
 
 static const char *ns_dbg_level_str[] = {
     [0]                   = "UNDEF",
@@ -73,9 +89,13 @@ int ns_dbg_raw(enum ns_dbg_level level,
 
     if (level > dbg_level)
         return 0;
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_lock(ns_dbg_mutex);
     va_start(args, fmt);
     n = ns_dbg_vprintf(level, flags, fmt, args);
     va_end(args);
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
     return n;
 }
 
@@ -86,7 +106,11 @@ int ns_vdbg_raw(enum ns_dbg_level level,
 
     if (level > dbg_level)
         return 0;
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_lock(ns_dbg_mutex);
     n = ns_dbg_vprintf(level, flags, fmt, args);
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
     return n;
 }
 
@@ -99,6 +123,8 @@ int ns_dbg_hex(enum ns_dbg_level level,
 
     if (level > dbg_level)
         return 0;
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_lock(ns_dbg_mutex);
 
     y_n = len / 16;
     x_n = len % 16;
@@ -126,5 +152,7 @@ int ns_dbg_hex(enum ns_dbg_level level,
     n += ns_dbg_raw(level, flags,
         "--------------------------------------------------------------"
         NS_DEBUG_ENTER_SIGN);
+    if (ns_dbg_mutex)
+        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
     return n;
 }

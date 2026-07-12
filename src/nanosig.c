@@ -9,6 +9,7 @@
 #include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
+#include <nanosig/ns_debug.h>
 #include "nanosig/internal/ns_broker.h"
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;
@@ -76,12 +77,17 @@ int ns_init(void)
     rc = ns_platform_init();
     if(rc != NS_OK) goto out;
 
-    rc = ns_broker_global_init();
+    rc = ns_debug_init();
     if(rc != NS_OK) goto out_platform;
+
+    rc = ns_broker_global_init();
+    if(rc != NS_OK) goto out_debug;
 
     ns_atomic_store_explicit(&g_ns_initialized, 1, ns_memory_order_release);
     return NS_OK;
 
+out_debug:
+    ns_debug_shutdown();
 out_platform:
     (void)ns_platform_shutdown();
 out:
@@ -95,6 +101,7 @@ int ns_shutdown(void)
     ns_atomic_store_explicit(&g_ns_initialized, 0, ns_memory_order_release);
 
     ns_broker_global_shutdown();
+    ns_debug_shutdown();
 
     return ns_platform_shutdown();
 }

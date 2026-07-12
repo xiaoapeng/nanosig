@@ -84,9 +84,6 @@ static uint8_t _stdout_cache[NS_CONFIG_STDOUT_MEM_CACHE_SIZE];
 
 NS_FUNCTION_WEAK void stdout_write(void *stream, const uint8_t *buf, size_t size)
 {
-    (void)stream;
-    (void)buf;
-    (void)size;
 }
 
 struct ns_stream_function _ns_stdout = {

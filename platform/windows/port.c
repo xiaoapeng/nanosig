@@ -9,10 +9,12 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
 #include <process.h>
 
+#include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
 
 struct ns_platform_wakeup {
@@ -59,6 +61,17 @@ void *ns_platform_alloc(size_t size)
 void ns_platform_free(void *ptr)
 {
     free(ptr);
+}
+
+void stdout_write(void *stream, const uint8_t *buf, size_t size)
+{
+    platform_stdout_write(stream, buf, size);
+}
+
+NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, size_t size)
+{
+    (void)stream;
+    (void)fwrite(buf, 1, size, stdout);
 }
 
 int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
