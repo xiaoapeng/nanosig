@@ -11,6 +11,9 @@
 #include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/ns_debug.h>
 #include "nanosig/internal/ns_broker.h"
+
+#define NS_DBG_MODULE_LEVEL_CORE NS_DBG_SYS
+
 struct ns_loop {
     ns_platform_wakeup_t *wakeup;
     ns_loop_config_t config;
@@ -166,10 +169,12 @@ int ns_loop_deinit(ns_loop_t *loop)
     if(ns_atomic_load_explicit(&loop->running, ns_memory_order_acquire) != 0) return NS_E_INVAL;
 
     rc = ns_platform_wakeup_destroy(loop->wakeup);
-    if(rc != NS_OK) return rc;
+    if(rc != NS_OK) {
+        ns_merrln(CORE, "wakeup_destroy failed: %d, freeing loop anyway", rc);
+    }
 
     ns_platform_free(loop);
-    return NS_OK;
+    return rc;
 }
 
 static void ns_loop_dispatch_pending(ns_loop_t *loop)

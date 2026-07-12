@@ -1,11 +1,30 @@
 /**
  * @file ns_debug.h
  * @brief nanosig 调试输出接口 — 移植自 eventhub_os eh_debug.h。
- * @date 2026-07-11
+ * @date 2026-07-12
  *
- * 提供分级调试输出宏（ns_errln / ns_warnln / ns_infoln / ns_debugln 等），
- * 支持简单宏和模块级宏两种使用方式。模块级宏可通过编译选项
- * -DNS_DBG_MODULE_LEVEL_<name>=<level> 精细控制各模块输出等级。
+ * 提供分级调试输出宏，支持简单宏和模块级宏两种使用方式。
+ *
+ * == 模块级宏（推荐）==
+ *
+ * nanosig 内部模块（以及外部用户代码）应使用 ns_mXX 系列宏
+ * （ns_mdebugln / ns_merrln / ns_minfoln 等），通过编译时模块等级
+ * 精细控制各模块输出量。
+ *
+ * 每个模块在源文件顶部或编译命令中定义其等级：
+ *
+ *   // src/ns_foo.c
+ *   #define NS_DBG_MODULE_LEVEL_FOO  NS_DBG_MODULE_LEVEL_DEFAULT
+ *   // 或覆盖：  #define NS_DBG_MODULE_LEVEL_FOO  NS_DBG_DEBUG
+ *
+ *   void func(void) {
+ *       ns_mdebugln(FOO, "hello");  // 受 NS_DBG_MODULE_LEVEL_FOO 控制
+ *   }
+ *
+ * 项目默认等级为 NS_DBG_SYS（仅 ERR / WARNING / SYS 输出）。
+ * 可在编译命令中按模块覆写：
+ *
+ *   cc -DNS_DBG_MODULE_LEVEL_FOO=NS_DBG_DEBUG ...
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -152,10 +171,10 @@ extern int ns_dbg_hex(enum ns_dbg_level level, enum ns_dbg_flags flags,
 
 #define ns_dbg_println(level, tag_str, fmt, ...) \
     ns_dbg_raw((level), NS_DBG_FLAGS, \
-        (tag_str) fmt NS_DEBUG_ENTER_SIGN, ##__VA_ARGS__)
+        tag_str fmt NS_DEBUG_ENTER_SIGN, ##__VA_ARGS__)
 #define ns_dbg_printfl(level, tag_str, fmt, ...) \
     ns_dbg_raw((level), NS_DBG_FLAGS, \
-        (tag_str) "[%s, %d]: " fmt NS_DEBUG_ENTER_SIGN, \
+        tag_str "[%s, %d]: " fmt NS_DEBUG_ENTER_SIGN, \
         __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define ns_dbg_printraw(level, fmt, ...) \
     ns_dbg_raw((level), 0, fmt, ##__VA_ARGS__)

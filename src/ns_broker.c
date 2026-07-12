@@ -30,6 +30,10 @@
 #include <nanosig/nanosig.h>
 #include "nanosig/internal/ns_broker.h"
 #include "nanosig/internal/ns_timer_mgr.h"
+
+#include <nanosig/ns_debug.h>
+#define NS_DBG_MODULE_LEVEL_BROKER NS_DBG_SYS
+
 #ifdef NANOSIG_TEST
 /* Test hook: non-NS_OK value injects waitset_wait failure.
  * Set before ns_init() to verify broker thread survives waitset errors. */
@@ -526,6 +530,9 @@ static void ns_broker_run(void *arg)
                 }
                 /* watcher 触发事件暂存于 completions 数组，由 dispatch 阶段处理 */
             }
+        }else{
+            ns_merrln(BROKER, "waitset_wait failed: %d", rc);
+            count = 0u;
         }
 
         /* 处理顺序：先 op_queue（remove 会 NULL 化对应 completion.waitable），
