@@ -56,6 +56,8 @@ add_library(nanosig STATIC
     src/nanosig.c
     src/ns_broker.c
     src/ns_timer.c
+    src/ns_formatio.c
+    src/ns_debug.c
     ${NANOSIG_PLATFORM_SOURCES}
     ${NANOSIG_DS_SOURCES}
 )

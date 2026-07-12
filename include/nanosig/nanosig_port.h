@@ -248,7 +248,7 @@ int ns_platform_shutdown(void);
 /**
  * @brief 通过平台层分配内存。
  *
- * 平台层之外的实现代码不得直接调用 C 库分配函数。emit 路径不得调用本函数。
+ * 平台层之外的实现代码不得直接调用 C 库分配函数。
  *
  * @param size 分配字节数。
  * @return 成功时返回非空指针，失败时返回 `NULL`。
