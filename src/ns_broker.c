@@ -308,10 +308,11 @@ static int ns_broker_do_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
 
     watcher->waitable.user_data = watcher;
     rc = ns_platform_waitset_add(broker->waitset, &watcher->waitable);
-    if(rc == NS_OK){
-        ns_list_push_back(&broker->watcher_head, &watcher->broker_node);
-    } else {
+    if(rc != NS_OK){
+        ns_merrln(BROKER, "waitset_add failed: %d", rc);
         watcher->waitable.user_data = NULL;
+    } else {
+        ns_list_push_back(&broker->watcher_head, &watcher->broker_node);
     }
 
     unlock_rc = ns_platform_mutex_unlock(broker->watcher_mutex);
@@ -342,6 +343,9 @@ static int ns_broker_do_remove(ns_event_broker_t *broker, ns_watcher_t *watcher,
     }
 
     rc = ns_platform_waitset_remove(broker->waitset, &watcher->waitable);
+    if(rc != NS_OK){
+        ns_merrln(BROKER, "waitset_remove failed: %d", rc);
+    }
     if(rc == NS_OK){
         /* NULL 化对应 completion：dispatch 阶段会跳过此 watcher。
            user 线程拿到 NS_OK 后可安全 deinit/free watcher。 */
@@ -447,6 +451,7 @@ static void ns_broker_drain_op_queue(ns_event_broker_t *broker,
                 op_rc = ns_broker_do_remove(broker, req->watcher, completions, count);
                 break;
             default:
+                ns_merrln(BROKER, "drain_op_queue: unknown op=%d", req->op);
                 op_rc = NS_E_INVAL;
                 break;
         }

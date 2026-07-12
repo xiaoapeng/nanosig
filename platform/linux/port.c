@@ -22,6 +22,8 @@
 
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
+#define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
+#include <nanosig/ns_debug.h>
 
 struct ns_platform_wakeup {
     int fd;
@@ -95,6 +97,7 @@ int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *deb
 
     wakeup->fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
     if(wakeup->fd < 0){
+        ns_merrln(PLATFORM, "eventfd failed: %m");
         ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
@@ -128,6 +131,7 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
         if(rc == (ssize_t)sizeof(value)) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
         if((rc < 0) && (errno == EAGAIN)) return NS_E_QUEUE_FULL;
+        ns_merrln(PLATFORM, "wakeup_signal write failed: %m");
         return NS_E_INVAL;
     }
 }
@@ -226,17 +230,21 @@ int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
 int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    if(pthread_mutex_lock(&mutex->mutex) != 0) return NS_E_INVAL;
-
-    return NS_OK;
+    int rc = pthread_mutex_lock(&mutex->mutex);
+    if(rc != 0){
+        ns_merrln(PLATFORM, "pthread_mutex_lock failed: %d", rc);
+    }
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    if(pthread_mutex_unlock(&mutex->mutex) != 0) return NS_E_INVAL;
-
-    return NS_OK;
+    int rc = pthread_mutex_unlock(&mutex->mutex);
+    if(rc != 0){
+        ns_merrln(PLATFORM, "pthread_mutex_unlock failed: %d", rc);
+    }
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
@@ -326,12 +334,14 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
 
     epfd = epoll_create1(EPOLL_CLOEXEC);
     if(epfd < 0){
+        ns_merrln(PLATFORM, "epoll_create1 failed: %m");
         ns_platform_free(ws);
         return NS_E_NOMEM;
     }
 
     tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if(tfd < 0){
+        ns_merrln(PLATFORM, "timerfd_create failed: %m");
         close(epfd);
         ns_platform_free(ws);
         return NS_E_NOMEM;
@@ -343,6 +353,7 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
         tev.events = EPOLLIN;
         tev.data.ptr = NS_WAITSET_TIMER_SENTINEL;
         if(epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &tev) < 0){
+            ns_merrln(PLATFORM, "epoll_ctl ADD timerfd failed: %m");
             close(tfd);
             close(epfd);
             ns_platform_free(ws);
@@ -415,6 +426,7 @@ int ns_platform_waitset_add(
 
     if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->primitive.fd, &ev) < 0){
         if(errno == EEXIST) return NS_E_EXISTS;
+        ns_merrln(PLATFORM, "epoll_ctl ADD fd=%d failed: %m", waitable->primitive.fd);
         return NS_E_INVAL;
     }
 
@@ -431,6 +443,7 @@ int ns_platform_waitset_remove(
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
     if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->primitive.fd, NULL) < 0){
+        ns_merrln(PLATFORM, "epoll_ctl DEL fd=%d failed: %m", waitable->primitive.fd);
         return NS_E_INVAL;
     }
 
@@ -471,7 +484,10 @@ int ns_platform_waitset_wait(
         its.it_interval.tv_nsec = 0;
         its.it_value.tv_sec = (time_t)(timeout_us / 1000000u);
         its.it_value.tv_nsec = (long)((timeout_us % 1000000u) * 1000u);
-        if(timerfd_settime(waitset->timer_fd, 0, &its, NULL) < 0) return NS_E_INVAL;
+        if(timerfd_settime(waitset->timer_fd, 0, &its, NULL) < 0){
+            ns_merrln(PLATFORM, "timerfd_settime failed: %m");
+            return NS_E_INVAL;
+        }
         timer_armed = 1;
         timeout_ms = -1;
     }else if(timeout_us == 0u){
@@ -488,6 +504,7 @@ int ns_platform_waitset_wait(
         nfds = epoll_wait(waitset->epoll_fd, events, max_events, timeout_ms);
         if(nfds < 0){
             if(errno == EINTR) return NS_OK;
+            ns_merrln(PLATFORM, "epoll_wait failed: %m");
             return NS_E_INVAL;
         }
 

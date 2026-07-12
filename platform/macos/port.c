@@ -19,6 +19,8 @@
 
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
+#define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
+#include <nanosig/ns_debug.h>
 
 struct ns_platform_wakeup {
     int kq;
@@ -138,6 +140,7 @@ int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *deb
 
     wakeup->kq = ns_macos_user_event_create();
     if(wakeup->kq < 0){
+        ns_merrln(PLATFORM, "user_event_create (kqueue) failed");
         ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
@@ -247,17 +250,21 @@ int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
 int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    if(pthread_mutex_lock(&mutex->mutex) != 0) return NS_E_INVAL;
-
-    return NS_OK;
+    int rc = pthread_mutex_lock(&mutex->mutex);
+    if(rc != 0){
+        ns_merrln(PLATFORM, "pthread_mutex_lock failed: %d", rc);
+    }
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    if(pthread_mutex_unlock(&mutex->mutex) != 0) return NS_E_INVAL;
-
-    return NS_OK;
+    int rc = pthread_mutex_unlock(&mutex->mutex);
+    if(rc != 0){
+        ns_merrln(PLATFORM, "pthread_mutex_unlock failed: %d", rc);
+    }
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
@@ -420,6 +427,7 @@ static int ns_macos_waitset_apply_changes(
     for(;;){
         if(kevent(waitset->kq, changes, (int)change_count, NULL, 0, NULL) == 0) return NS_OK;
         if(errno == EINTR) continue;
+        ns_merrln(PLATFORM, "kevent failed: %m");
         return NS_E_INVAL;
     }
 }
@@ -529,6 +537,7 @@ int ns_platform_waitset_wait(
     nfds = kevent(waitset->kq, NULL, 0, events, max_events, timeout_ptr);
     if(nfds < 0){
         if(errno == EINTR) return NS_OK;
+        ns_merrln(PLATFORM, "kevent wait failed: %m");
         return NS_E_INVAL;
     }
 

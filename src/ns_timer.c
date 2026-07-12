@@ -10,6 +10,9 @@
 
 #include <nanosig/nanosig.h>
 
+#define NS_DBG_MODULE_LEVEL_TIMER NS_DBG_SYS
+#include <nanosig/ns_debug.h>
+
 typedef struct ns_timer_mgr {
     ns_platform_mutex_t *mutex;
     ns_rbtree_t tree;
@@ -62,18 +65,28 @@ static int ns_timer_runtime_ready(void)
 
 static int ns_timer_mgr_lock(void)
 {
+    int rc;
+
     if(!g_timer_mgr.initialized || (g_timer_mgr.mutex == NULL)) return NS_E_SHUTDOWN;
-    return ns_platform_mutex_lock(g_timer_mgr.mutex);
+    rc = ns_platform_mutex_lock(g_timer_mgr.mutex);
+    if(rc != NS_OK) ns_merrln(TIMER, "mutex_lock failed: %d", rc);
+    return rc;
 }
 
 static int ns_timer_mgr_unlock(void)
 {
-    return ns_platform_mutex_unlock(g_timer_mgr.mutex);
+    int rc = ns_platform_mutex_unlock(g_timer_mgr.mutex);
+
+    if(rc != NS_OK) ns_merrln(TIMER, "mutex_unlock failed: %d", rc);
+    return rc;
 }
 
 static int ns_timer_mgr_refresh_now(void)
 {
-    return ns_platform_clock_monotonic_us(&g_timer_mgr.now);
+    int rc = ns_platform_clock_monotonic_us(&g_timer_mgr.now);
+
+    if(rc != NS_OK) ns_merrln(TIMER, "clock_monotonic_us failed: %d", rc);
+    return rc;
 }
 
 static void ns_timer_mgr_notify(int should_notify)

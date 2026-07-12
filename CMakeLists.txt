@@ -127,6 +127,7 @@ if(NANOSIG_BUILD_TESTS)
     nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
     nanosig_add_unit_test(nanosig_test_ds_hashtable test/unit/test_ds_hashtable.c)
     nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
+    nanosig_add_unit_test(nanosig_test_debug test/unit/test_debug.c)
 
     # ── P0 高危 API 缺口补齐 ──────────────────────────────────────
     # 单一文件、单一关注点；每文件对应报告 §2.1 表格中的一行。

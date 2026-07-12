@@ -16,6 +16,8 @@
 
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
+#define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
+#include <nanosig/ns_debug.h>
 
 struct ns_platform_wakeup {
     HANDLE event;
@@ -88,6 +90,7 @@ int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *deb
 
     wakeup->event = CreateEventA(NULL, FALSE, FALSE, NULL);
     if(wakeup->event == NULL){
+        ns_merrln(PLATFORM, "CreateEvent failed: %lu", GetLastError());
         ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
@@ -112,7 +115,10 @@ int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
 {
     if(wakeup == NULL) return NS_E_INVAL;
-    if(SetEvent(wakeup->event) == 0) return NS_E_INVAL;
+    if(SetEvent(wakeup->event) == 0){
+        ns_merrln(PLATFORM, "SetEvent failed: %lu", GetLastError());
+        return NS_E_INVAL;
+    }
 
     return NS_OK;
 }
@@ -136,6 +142,7 @@ int ns_platform_wakeup_wait(
         return NS_OK;
     }
 
+    ns_merrln(PLATFORM, "WaitForSingleObject failed: %lu", wait_result);
     return NS_E_INVAL;
 }
 
@@ -288,6 +295,7 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
 
     ws->timer = CreateWaitableTimerW(NULL, TRUE, NULL);
     if(ws->timer == NULL){
+        ns_merrln(PLATFORM, "CreateWaitableTimer failed: %lu", GetLastError());
         ns_platform_free(ws);
         return NS_E_NOMEM;
     }
@@ -404,6 +412,7 @@ int ns_platform_waitset_wait(
         LARGE_INTEGER due;
         due.QuadPart = -(LONGLONG)(timeout_us * 10u);
         if(!SetWaitableTimer(waitset->timer, &due, 0, NULL, NULL, FALSE)){
+            ns_merrln(PLATFORM, "SetWaitableTimer failed: %lu", GetLastError());
             return NS_E_INVAL;
         }
         handles[waitset->count] = waitset->timer;
@@ -448,5 +457,6 @@ int ns_platform_waitset_wait(
         return NS_OK;
     }
 
+    ns_merrln(PLATFORM, "WaitForMultipleObjects failed: %lu", result);
     return NS_E_INVAL;
 }

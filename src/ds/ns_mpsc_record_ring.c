@@ -11,6 +11,10 @@
 #include <stdbool.h>
 
 #include <nanosig/nanosig_mpsc_record_ring.h>
+
+#define NS_DBG_MODULE_LEVEL_MPSC NS_DBG_SYS
+#include <nanosig/ns_debug.h>
+
 typedef struct ns_mpsc_record_header {
     atomic_size_t meta;
 } ns_mpsc_record_header_t;
@@ -432,7 +436,11 @@ int ns_mpsc_record_ring_try_acquire(
         read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
         write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_acquire);
         used = ns_mpsc_record_ring_used(write_pos, read_pos);
-        if(used > ring->capacity) return NS_E_CORRUPT;
+        if(used > ring->capacity){
+            ns_merrln(MPSC, "try_acquire: corrupted, used=%zu > capacity=%zu",
+                used, ring->capacity);
+            return NS_E_CORRUPT;
+        }
         if(used == 0u) return NS_E_EMPTY;
 
         header = ns_mpsc_record_ring_header_at(ring, read_pos);
@@ -473,7 +481,11 @@ int ns_mpsc_record_ring_release(
     read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
     write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_acquire);
     used = ns_mpsc_record_ring_used(write_pos, read_pos);
-    if(used > ring->capacity) return NS_E_CORRUPT;
+    if(used > ring->capacity){
+        ns_merrln(MPSC, "release: corrupted, used=%zu > capacity=%zu",
+            used, ring->capacity);
+        return NS_E_CORRUPT;
+    }
     if(used == 0u) return NS_E_INVAL;
 
     expected_header = ns_mpsc_record_ring_header_at(ring, read_pos);
@@ -482,17 +494,36 @@ int ns_mpsc_record_ring_release(
         uintptr_t storage_addr = (uintptr_t)ring->storage;
         uintptr_t storage_end = storage_addr + ring->capacity;
 
-        if((record_addr < (storage_addr + sizeof(*header))) || (record_addr > storage_end)) return NS_E_INVAL;
+        if((record_addr < (storage_addr + sizeof(*header))) || (record_addr > storage_end)){
+            ns_merrln(MPSC, "release: record %p out of bounds [%p, %p]",
+                (void *)record_addr, (void *)(storage_addr + sizeof(*header)),
+                (void *)storage_end);
+            return NS_E_INVAL;
+        }
         header = (ns_mpsc_record_header_t *)(record_addr - sizeof(*header));
     }
-    if(header != expected_header) return NS_E_INVAL;
+    if(header != expected_header){
+        ns_merrln(MPSC, "release: header mismatch, expected=%p actual=%p",
+            (void *)expected_header, (void *)header);
+        return NS_E_INVAL;
+    }
 
     meta = ns_atomic_load_explicit(&header->meta, ns_memory_order_acquire);
-    if(!ns_mpsc_meta_is_valid(meta) || ns_mpsc_meta_is_fake(meta)) return NS_E_INVAL;
+    if(!ns_mpsc_meta_is_valid(meta) || ns_mpsc_meta_is_fake(meta)){
+        ns_merrln(MPSC, "release: invalid/fake meta=0x%zx", meta);
+        return NS_E_INVAL;
+    }
 
     stride = ns_mpsc_meta_stride(meta);
-    if((stride == 0u) || (stride > used) || (stride > ring->capacity)) return NS_E_INVAL;
-    if(!ns_mpsc_record_ring_payload_size(meta, &payload_size)) return NS_E_INVAL;
+    if((stride == 0u) || (stride > used) || (stride > ring->capacity)){
+        ns_merrln(MPSC, "release: invalid stride=%zu used=%zu capacity=%zu",
+            stride, used, ring->capacity);
+        return NS_E_INVAL;
+    }
+    if(!ns_mpsc_record_ring_payload_size(meta, &payload_size)){
+        ns_merrln(MPSC, "release: payload_size decode failed meta=0x%zx", meta);
+        return NS_E_INVAL;
+    }
     (void)payload_size;
 
     ns_atomic_store_explicit(&header->meta, (size_t)0u, ns_memory_order_relaxed);

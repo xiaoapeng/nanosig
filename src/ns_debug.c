@@ -121,10 +121,8 @@ int ns_dbg_hex(enum ns_dbg_level level,
     int n = 0;
     size_t y_n, x_n;
 
-    if (level > dbg_level)
-        return 0;
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_lock(ns_dbg_mutex);
+    /* Level gate and mutex are handled inside each ns_dbg_raw call.
+     * Do NOT lock here — ns_dbg_raw re-enters the lock and deadlocks. */
 
     y_n = len / 16;
     x_n = len % 16;
@@ -152,7 +150,5 @@ int ns_dbg_hex(enum ns_dbg_level level,
     n += ns_dbg_raw(level, flags,
         "--------------------------------------------------------------"
         NS_DEBUG_ENTER_SIGN);
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
     return n;
 }
