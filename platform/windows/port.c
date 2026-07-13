@@ -65,6 +65,8 @@ void ns_platform_free(void *ptr)
     free(ptr);
 }
 
+NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, size_t size);
+
 void stdout_write(void *stream, const uint8_t *buf, size_t size)
 {
     platform_stdout_write(stream, buf, size);

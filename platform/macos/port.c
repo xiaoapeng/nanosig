@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/event.h>
 #include <sys/time.h>
 #include <time.h>
@@ -114,6 +115,8 @@ void ns_platform_free(void *ptr)
 {
     free(ptr);
 }
+
+NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, size_t size);
 
 void stdout_write(void *stream, const uint8_t *buf, size_t size)
 {
@@ -427,7 +430,7 @@ static int ns_macos_waitset_apply_changes(
     for(;;){
         if(kevent(waitset->kq, changes, (int)change_count, NULL, 0, NULL) == 0) return NS_OK;
         if(errno == EINTR) continue;
-        ns_merrln(PLATFORM, "kevent failed: %m");
+        ns_merrln(PLATFORM, "kevent failed: %s", strerror(errno));
         return NS_E_INVAL;
     }
 }
@@ -537,7 +540,7 @@ int ns_platform_waitset_wait(
     nfds = kevent(waitset->kq, NULL, 0, events, max_events, timeout_ptr);
     if(nfds < 0){
         if(errno == EINTR) return NS_OK;
-        ns_merrln(PLATFORM, "kevent wait failed: %m");
+        ns_merrln(PLATFORM, "kevent wait failed: %s", strerror(errno));
         return NS_E_INVAL;
     }
 

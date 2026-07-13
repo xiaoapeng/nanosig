@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
@@ -72,6 +73,8 @@ void ns_platform_free(void *ptr)
     free(ptr);
 }
 
+NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, size_t size);
+
 void stdout_write(void *stream, const uint8_t *buf, size_t size)
 {
     platform_stdout_write(stream, buf, size);
@@ -97,7 +100,7 @@ int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *deb
 
     wakeup->fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
     if(wakeup->fd < 0){
-        ns_merrln(PLATFORM, "eventfd failed: %m");
+        ns_merrln(PLATFORM, "eventfd failed: %s", strerror(errno));
         ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
@@ -131,7 +134,7 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
         if(rc == (ssize_t)sizeof(value)) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
         if((rc < 0) && (errno == EAGAIN)) return NS_E_QUEUE_FULL;
-        ns_merrln(PLATFORM, "wakeup_signal write failed: %m");
+        ns_merrln(PLATFORM, "wakeup_signal write failed: %s", strerror(errno));
         return NS_E_INVAL;
     }
 }
@@ -334,14 +337,14 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
 
     epfd = epoll_create1(EPOLL_CLOEXEC);
     if(epfd < 0){
-        ns_merrln(PLATFORM, "epoll_create1 failed: %m");
+        ns_merrln(PLATFORM, "epoll_create1 failed: %s", strerror(errno));
         ns_platform_free(ws);
         return NS_E_NOMEM;
     }
 
     tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if(tfd < 0){
-        ns_merrln(PLATFORM, "timerfd_create failed: %m");
+        ns_merrln(PLATFORM, "timerfd_create failed: %s", strerror(errno));
         close(epfd);
         ns_platform_free(ws);
         return NS_E_NOMEM;
@@ -353,7 +356,7 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
         tev.events = EPOLLIN;
         tev.data.ptr = NS_WAITSET_TIMER_SENTINEL;
         if(epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &tev) < 0){
-            ns_merrln(PLATFORM, "epoll_ctl ADD timerfd failed: %m");
+            ns_merrln(PLATFORM, "epoll_ctl ADD timerfd failed: %s", strerror(errno));
             close(tfd);
             close(epfd);
             ns_platform_free(ws);
@@ -426,7 +429,7 @@ int ns_platform_waitset_add(
 
     if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->primitive.fd, &ev) < 0){
         if(errno == EEXIST) return NS_E_EXISTS;
-        ns_merrln(PLATFORM, "epoll_ctl ADD fd=%d failed: %m", waitable->primitive.fd);
+        ns_merrln(PLATFORM, "epoll_ctl ADD fd=%d failed: %s", waitable->primitive.fd, strerror(errno));
         return NS_E_INVAL;
     }
 
@@ -443,7 +446,7 @@ int ns_platform_waitset_remove(
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
     if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->primitive.fd, NULL) < 0){
-        ns_merrln(PLATFORM, "epoll_ctl DEL fd=%d failed: %m", waitable->primitive.fd);
+        ns_merrln(PLATFORM, "epoll_ctl DEL fd=%d failed: %s", waitable->primitive.fd, strerror(errno));
         return NS_E_INVAL;
     }
 
@@ -485,7 +488,7 @@ int ns_platform_waitset_wait(
         its.it_value.tv_sec = (time_t)(timeout_us / 1000000u);
         its.it_value.tv_nsec = (long)((timeout_us % 1000000u) * 1000u);
         if(timerfd_settime(waitset->timer_fd, 0, &its, NULL) < 0){
-            ns_merrln(PLATFORM, "timerfd_settime failed: %m");
+            ns_merrln(PLATFORM, "timerfd_settime failed: %s", strerror(errno));
             return NS_E_INVAL;
         }
         timer_armed = 1;
@@ -504,7 +507,7 @@ int ns_platform_waitset_wait(
         nfds = epoll_wait(waitset->epoll_fd, events, max_events, timeout_ms);
         if(nfds < 0){
             if(errno == EINTR) return NS_OK;
-            ns_merrln(PLATFORM, "epoll_wait failed: %m");
+            ns_merrln(PLATFORM, "epoll_wait failed: %s", strerror(errno));
             return NS_E_INVAL;
         }
 

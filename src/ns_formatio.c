@@ -84,6 +84,9 @@ static uint8_t _stdout_cache[NS_CONFIG_STDOUT_MEM_CACHE_SIZE];
 
 NS_FUNCTION_WEAK void stdout_write(void *stream, const uint8_t *buf, size_t size)
 {
+    (void)stream;
+    (void)buf;
+    (void)size;
 }
 
 struct ns_stream_function _ns_stdout = {
@@ -233,7 +236,7 @@ static inline void streamout_in_byte(struct ns_stream_base *stream, char ch)
     }
 }
 
-static inline void streamout_finish(struct ns_stream_base *stream)
+static NS_NOINLINE void streamout_finish(struct ns_stream_base *stream)
 {
     switch (stream->type) {
         case NS_STREAM_TYPE_FUNCTION: {
@@ -275,7 +278,7 @@ static inline int skip_atoi(const char **s)
 /* ================================================================== */
 
 static inline int vprintf_char(struct ns_stream_base *stream, char ch,
-    int field_width, int flags)
+    int field_width, unsigned int flags)
 {
     int n = 0;
     n = field_width <= 1 ? 1 : field_width;
@@ -289,7 +292,7 @@ static inline int vprintf_char(struct ns_stream_base *stream, char ch,
 }
 
 static inline int vprintf_string(struct ns_stream_base *stream, char *s,
-    int field_width, int precision, int flags)
+    int field_width, int precision, unsigned int flags)
 {
     int n = 0;
     int len;
@@ -454,7 +457,7 @@ static void float_normalized_decentralized(
 
 static int vprintf_float_decimalism_or_normalized(struct ns_stream_base *stream,
     struct ns_double_components *components_num,
-    int field_width, int precision, int flags, int floored_exp10)
+    int field_width, int precision, unsigned int flags, int floored_exp10)
 {
     char _number_buf[FORMAT_STACK_CACHE_SIZE];
     char *number_buf = _number_buf;
@@ -607,7 +610,7 @@ static int vprintf_float_decimalism_or_normalized(struct ns_stream_base *stream,
 }
 
 static int vprintf_float_e(struct ns_stream_base *stream, double num,
-    int field_width, int precision, int flags)
+    int field_width, int precision, unsigned int flags)
 {
     union ns_double_union du = { .d = num };
     double abs_number = du.sign ? -num : num;
@@ -641,7 +644,7 @@ static int vprintf_float_e(struct ns_stream_base *stream, double num,
 }
 
 static inline int vprintf_float_f_or_g(struct ns_stream_base *stream, double num,
-    int field_width, int precision, int flags)
+    int field_width, int precision, unsigned int flags)
 {
     struct ns_double_components components_num;
 
@@ -655,7 +658,7 @@ static inline int vprintf_float_f_or_g(struct ns_stream_base *stream, double num
 }
 
 static int vprintf_float(struct ns_stream_base *stream, double num,
-    int field_width, int precision, int flags)
+    int field_width, int precision, unsigned int flags)
 {
     int n = 0;
 
@@ -694,7 +697,7 @@ static int vprintf_float(struct ns_stream_base *stream, double num,
 /* ================================================================== */
 
 static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
-    int field_width, int precision, int flags, enum ns_format_qualifier qualifier)
+    int field_width, int precision, unsigned int flags, enum ns_format_qualifier qualifier)
 {
     const char *digits = small_digits;
     const uint8_t *item;
@@ -792,7 +795,7 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
 /* ================================================================== */
 
 static inline int vprintf_number(struct ns_stream_base *stream,
-    unsigned long long num, int field_width, int precision, int flags,
+    unsigned long long num, int field_width, int precision, unsigned int flags,
     enum ns_base_type base)
 {
     char _number_buf[FORMAT_STACK_CACHE_SIZE];
@@ -855,7 +858,7 @@ static inline int vprintf_number(struct ns_stream_base *stream,
     reality_count = ((sign) ? 1 : 0) + special_count + bit_count;
 
     if (precision >= 0) {
-        flags = (int)((unsigned)flags & ~FORMAT_ZEROPAD);
+        flags &= ~FORMAT_ZEROPAD;
         if (precision > bit_count)
             zeropad_count = precision - bit_count;
         reality_count = reality_count + zeropad_count;
@@ -908,7 +911,7 @@ static int streamout_vprintf(struct ns_stream_base *stream,
     const char *fmt, va_list args)
 {
     int n = 0;
-    int flags;
+    unsigned int flags;
     int field_width;
     int precision;
     enum ns_base_type base;

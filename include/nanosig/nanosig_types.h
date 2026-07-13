@@ -249,6 +249,14 @@ typedef enum ns_capacity {
 #endif
 
 #if defined(_MSC_VER)
+#define NS_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define NS_NOINLINE __attribute__((noinline))
+#else
+#define NS_NOINLINE
+#endif  /* NS_NOINLINE: 禁止编译器内联，用于抑制虚假 -Warray-bounds 之类的告警。 */
+
+#if defined(_MSC_VER)
 #define NS_NORETURN __declspec(noreturn)
 #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define NS_NORETURN _Noreturn
