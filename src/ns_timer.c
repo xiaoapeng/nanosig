@@ -135,21 +135,25 @@ static int ns_timer_start_locked(ns_timer_t *timer, int *out_should_notify)
     timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
     add_result = ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
 
-    *out_should_notify = (add_result == &timer->rb_node);
+    /* ns_rbtree_add 契约：返回 NULL 表示插到中/尾，返回 node 本身表示成为
+     * 新 leftmost。这里的判断从来只关心"是否是最左"这一位信息。 */
+    *out_should_notify = (add_result != NULL);
     return NS_OK;
 }
 
 static int ns_timer_cancel_locked(ns_timer_t *timer, int *out_should_notify)
 {
-    ns_rbtree_node_t *before_first;
-
     *out_should_notify = 0;
 
     if(!ns_timer_is_running(timer)) return NS_OK;
 
-    before_first = ns_rbtree_first(&g_timer_mgr.tree);
-    *out_should_notify = before_first == &timer->rb_node;
-    ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree);
+    /* ns_rbtree_del 返回新的 leftmost：
+     *  - 非 NULL：删除的是 leftmost 且树非空 → broker 当前超时已 stale，
+     *    须主动 notify 触发重排（否则会在旧 expire 处 spurious wake）。
+     *  - NULL：要么删的不是 leftmost（broker 超时仍有效），要么删完树空
+     *    （broker 至多在旧 leftmost 的 expire 处 spurious 醒一次后无限
+     *    等待）。两种 NULL 场景均无需 notify。 */
+    *out_should_notify = (ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree) != NULL);
     return NS_OK;
 }
 
@@ -304,7 +308,9 @@ int ns_timer_mgr_fire_expired(void)
                 }
             }
 
-            ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
+            /* fire_expired 批量触发后由 broker 通过 next_timeout 重新排程，
+             * 此处不需要按 leftmost 变化即时 notify，故丢弃返回值。 */
+            (void)ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
         }
     }
 
@@ -384,9 +390,7 @@ int ns_timer_cancel(ns_timer_t *timer)
 
 int ns_timer_restart(ns_timer_t *timer)
 {
-    int was_first = 0;
     int became_first = 0;
-    int should_notify;
     int rc;
 
     if(timer == NULL) return NS_E_INVAL;
@@ -400,22 +404,25 @@ int ns_timer_restart(ns_timer_t *timer)
     rc = ns_timer_mgr_lock();
     if(rc != NS_OK) return rc;
 
-    was_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
     if(ns_timer_is_running(timer)){
         ns_rbtree_del(&timer->rb_node, &g_timer_mgr.tree);
     }
 
     rc = ns_timer_mgr_refresh_now();
     if(rc == NS_OK){
+        ns_rbtree_node_t *add_result;
         timer->expire_us = (ns_time_us_t)(g_timer_mgr.now + timer->interval_us);
-        ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
-        became_first = ns_rbtree_first(&g_timer_mgr.tree) == &timer->rb_node;
+        add_result = ns_rbtree_add(&timer->rb_node, &g_timer_mgr.tree);
+        became_first = (add_result != NULL);
     }
 
     (void)ns_timer_mgr_unlock();
 
-    should_notify = was_first || became_first;
-    if(rc == NS_OK) ns_timer_mgr_notify(should_notify);
+    /* 只需 became_first 触发 notify：restart 后 new_expire = now + interval
+     * 恒 >= 原 leftmost 的 old_expire（时间单调向前）。若 T 从"非最左"变成
+     * "最左"，broker 当前超时晚于新截止，必须 notify；否则至多一次旧超时
+     * 处的 spurious wake，broker 会自行 refresh 后重排。 */
+    if(rc == NS_OK) ns_timer_mgr_notify(became_first);
     return rc;
 }
 
