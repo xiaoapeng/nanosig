@@ -89,11 +89,20 @@ NS_FUNCTION_WEAK void stdout_write(void *stream, const uint8_t *buf, size_t size
     (void)size;
 }
 
+/* 静态初始化器一律通过非 weak wrapper 间接引用 stdout_write，绕过 MinGW
+ * 链接器的已知 bug：weak 函数指针直接用于静态初始化器时会被错误解析到
+ * 一个无关地址（例如 main+0x28），即使存在强符号覆盖也不生效。NS_NOINLINE
+ * 防止 LTO 把 wrapper 消除后重新暴露原始 weak 引用形式。 */
+static NS_NOINLINE void _stdout_write_wrapper(void *stream, const uint8_t *buf, size_t size)
+{
+    stdout_write(stream, buf, size);
+}
+
 struct ns_stream_function _ns_stdout = {
     .base = {
         .type = NS_STREAM_TYPE_FUNCTION,
     },
-    .write = stdout_write,
+    .write = _stdout_write_wrapper,
     .cache = _stdout_cache,
     .pos = _stdout_cache,
     .end = _stdout_cache + NS_CONFIG_STDOUT_MEM_CACHE_SIZE,
