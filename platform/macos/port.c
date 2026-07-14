@@ -203,17 +203,14 @@ int ns_platform_wakeup_wait(
     }
 }
 
-ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup)
+int ns_platform_wakeup_get_waitable(const ns_platform_wakeup_t *wakeup,
+    ns_platform_waitable_t *out_waitable)
 {
-    ns_platform_waitable_t waitable;
+    if(wakeup == NULL || out_waitable == NULL) return NS_E_INVAL;
 
-    ns_waitable_init(&waitable);
-
-    if(wakeup != NULL){
-        waitable.primitive.fd = wakeup->kq;
-    }
-
-    return waitable;
+    ns_waitable_init(out_waitable);
+    out_waitable->primitive.fd = wakeup->kq;
+    return NS_OK;
 }
 
 int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)

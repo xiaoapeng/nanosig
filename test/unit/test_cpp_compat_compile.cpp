@@ -39,6 +39,9 @@
 #include <nanosig/nanosig_broker.h>
 #include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig_ds.h>
+#include <nanosig/ns_formatio.h>
+#include <nanosig/ns_debug.h>
+#include <nanosig/internal/ns_timer_mgr.h>
 
 /* ── Umbrella header (includes everything + lifecycle API) ─────── */
 #include <nanosig/nanosig.h>
@@ -229,6 +232,61 @@ static void cpp_test_static_assert_macro(void)
     NS_STATIC_ASSERT(true, "NS_STATIC_ASSERT must work in C++ mode");
 }
 
+/* ── Test: ns_debug.h macros compile & call from C++ ──────────── */
+
+/* Module level must expand to a single decimal digit for the
+ * NS_MACRO_DEBUG_LEVEL(name) stringify-first-char trick to work. */
+#define NS_DBG_MODULE_LEVEL_CPPTEST 3   /* NS_DBG_SYS */
+
+static void cpp_test_debug_macros(void)
+{
+    /* Simple leveled logging. */
+    (void)ns_debugln("debug %d", 1);
+    (void)ns_infoln("info %s", "x");
+    (void)ns_sysln("sys");
+    (void)ns_warnln("warn");
+    (void)ns_errln("err");
+
+    /* File-line variants. */
+    (void)ns_debugfl("dbg-fl %d", 2);
+    (void)ns_errfl("err-fl");
+
+    /* Raw (no header/no LF). */
+    (void)ns_debugraw("raw %d", 3);
+    (void)ns_errraw("err-raw");
+
+    /* Hex dump. */
+    const unsigned char buf[4] = { 0xDE, 0xAD, 0xBE, 0xEF };
+    (void)ns_debughex(buf, sizeof(buf));
+    (void)ns_errhex(buf, sizeof(buf));
+
+    /* Module-level macros — exercises NS_MACRO_DEBUG_LEVEL(name) and the
+     * statement-expression ({ ... }) inside ns_mprintln/ns_mprintfl. */
+    (void)ns_mdebugln(CPPTEST, "mdbg %d", 4);
+    (void)ns_minfoln(CPPTEST, "minfo");
+    (void)ns_msysln(CPPTEST, "msys");
+    (void)ns_mwarnln(CPPTEST, "mwarn");
+    (void)ns_merrln(CPPTEST, "merr");
+    (void)ns_mdebugfl(CPPTEST, "mdbg-fl");
+    (void)ns_merrfl(CPPTEST, "merr-fl");
+    (void)ns_mdebugraw(CPPTEST, "mraw %d", 5);
+    (void)ns_merrraw(CPPTEST, "merr-raw");
+    (void)ns_mdebughex(CPPTEST, buf, sizeof(buf));
+    (void)ns_merrhex(CPPTEST, buf, sizeof(buf));
+
+    /* NS_DBG_ERROR_EXEC — checks the error-flow macro. */
+    int touched = 0;
+    NS_DBG_ERROR_EXEC(1 == 1, touched = 1);
+    (void)touched;
+
+    /* Direct API calls with integer-literal level/flags — verifies the
+     * signature change (enum → int / unsigned int) accepts C++ int
+     * expressions without implicit-enum-conversion errors. */
+    (void)ns_dbg_raw(NS_DBG_ERR, 0u, "raw call");
+    (void)ns_dbg_hex(NS_DBG_ERR, 0u, sizeof(buf), buf);
+    (void)ns_dbg_set_level(NS_DBG_SYS);
+}
+
 /* ── Force instantiation of all test functions ────────────────── */
 
 static void cpp_test_all(void)
@@ -242,4 +300,5 @@ static void cpp_test_all(void)
     cpp_test_loop_config_default();
     cpp_test_memory_order_enum();
     cpp_test_static_assert_macro();
+    cpp_test_debug_macros();
 }

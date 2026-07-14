@@ -127,7 +127,7 @@ static int test_wakeup_waitable(void)
     EXPECT_OK(ns_platform_wakeup_create(&wakeup, "test-wakeup-waitable") == NS_OK);
     EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
 
-    w = ns_platform_wakeup_get_waitable(wakeup);
+    EXPECT_OK(ns_platform_wakeup_get_waitable(wakeup, &w) == NS_OK);
     w.events = NS_WAITABLE_EVENT_IN;
     w.user_data = (void *)0x1234;
 

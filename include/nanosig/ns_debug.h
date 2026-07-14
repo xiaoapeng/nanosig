@@ -157,12 +157,15 @@ void ns_debug_shutdown(void);
 /*  公开 API 声明                                                        */
 /* ================================================================== */
 
-extern int ns_dbg_set_level(enum ns_dbg_level level);
-extern int ns_dbg_raw(enum ns_dbg_level level, enum ns_dbg_flags flags,
-    const char *fmt, ...);
-extern int ns_vdbg_raw(enum ns_dbg_level level, enum ns_dbg_flags flags,
+/* NOTE: 公开 API 的 level/flags 参数用 int/unsigned int 而非 enum
+ * ns_dbg_level / enum ns_dbg_flags —— 便于宏调用点传入 NS_DBG_ERR 之类的
+ * 整型 #define 常量。C++ 编译器不允许 int → enum 隐式转换，若签名用 enum
+ * 会造成头文件不兼容 C++。int 与 enum 常量在 C 下无损，语义等价。 */
+extern int ns_dbg_set_level(int level);
+extern int ns_dbg_raw(int level, unsigned int flags, const char *fmt, ...);
+extern int ns_vdbg_raw(int level, unsigned int flags,
     const char *fmt, va_list args);
-extern int ns_dbg_hex(enum ns_dbg_level level, enum ns_dbg_flags flags,
+extern int ns_dbg_hex(int level, unsigned int flags,
     size_t len, const void *buf);
 
 /* ================================================================== */

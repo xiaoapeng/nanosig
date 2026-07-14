@@ -686,7 +686,8 @@ int ns_broker_global_init(void)
     rc = ns_platform_waitset_create(&broker->waitset);
     if(rc != NS_OK) goto out_wakeup;
 
-    broker->wakeup_waitable = ns_platform_wakeup_get_waitable(broker->wakeup);
+    rc = ns_platform_wakeup_get_waitable(broker->wakeup, &broker->wakeup_waitable);
+    if(rc != NS_OK) goto out_waitset;
     broker->wakeup_waitable.events = NS_WAITABLE_EVENT_IN;
     broker->wakeup_waitable.user_data = NULL;
     rc = ns_platform_waitset_add(broker->waitset, &broker->wakeup_waitable);

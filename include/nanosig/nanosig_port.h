@@ -309,13 +309,15 @@ int ns_platform_wakeup_wait(
 /**
  * @brief 将 wakeup 转换为 waitset 可注册的 waitable。
  *
- * 返回值只填充平台原语字段；调用方负责设置 `events` 和 `user_data`。
- * `wakeup == NULL` 时返回无效 waitable。
+ * `out_waitable` 仅填充平台原语字段；调用方在此之后负责设置
+ * `events` 和 `user_data`。
  *
- * @param wakeup wakeup 句柄。
- * @return 可注册到 waitset 的 waitable。
+ * @param wakeup      wakeup 句柄。
+ * @param out_waitable 输出 waitable，成功时被填充。
+ * @return `NS_OK` 成功；`NS_E_INVAL` 参数为 NULL。
  */
-ns_platform_waitable_t ns_platform_wakeup_get_waitable(ns_platform_wakeup_t *wakeup);
+int ns_platform_wakeup_get_waitable(const ns_platform_wakeup_t *wakeup,
+    ns_platform_waitable_t *out_waitable);
 
 /**
  * @brief 创建互斥锁。

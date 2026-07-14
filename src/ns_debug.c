@@ -18,9 +18,9 @@
 /* ================================================================== */
 
 #ifndef NS_CONFIG_DEFAULT_DEBUG_LEVEL
-static enum ns_dbg_level dbg_level = NS_DBG_DEBUG;
+static int dbg_level = NS_DBG_DEBUG;
 #else
-static enum ns_dbg_level dbg_level = NS_CONFIG_DEFAULT_DEBUG_LEVEL;
+static int dbg_level = NS_CONFIG_DEFAULT_DEBUG_LEVEL;
 #endif
 
 static ns_platform_mutex_t *ns_dbg_mutex = NULL;
@@ -52,14 +52,14 @@ static const char *ns_dbg_level_str[] = {
 /*  公开 API                                                             */
 /* ================================================================== */
 
-int ns_dbg_set_level(enum ns_dbg_level level)
+int ns_dbg_set_level(int level)
 {
     dbg_level = level;
     return 0;
 }
 
-static int ns_dbg_vprintf(enum ns_dbg_level level,
-    enum ns_dbg_flags flags, const char *fmt, va_list args)
+static int ns_dbg_vprintf(int level,
+    unsigned int flags, const char *fmt, va_list args)
 {
     int n = 0;
 
@@ -81,8 +81,8 @@ static int ns_dbg_vprintf(enum ns_dbg_level level,
     return n;
 }
 
-int ns_dbg_raw(enum ns_dbg_level level,
-    enum ns_dbg_flags flags, const char *fmt, ...)
+int ns_dbg_raw(int level,
+    unsigned int flags, const char *fmt, ...)
 {
     int n = 0;
     va_list args;
@@ -99,8 +99,8 @@ int ns_dbg_raw(enum ns_dbg_level level,
     return n;
 }
 
-int ns_vdbg_raw(enum ns_dbg_level level,
-    enum ns_dbg_flags flags, const char *fmt, va_list args)
+int ns_vdbg_raw(int level,
+    unsigned int flags, const char *fmt, va_list args)
 {
     int n = 0;
 
@@ -114,8 +114,8 @@ int ns_vdbg_raw(enum ns_dbg_level level,
     return n;
 }
 
-int ns_dbg_hex(enum ns_dbg_level level,
-    enum ns_dbg_flags flags, size_t len, const void *buf)
+int ns_dbg_hex(int level,
+    unsigned int flags, size_t len, const void *buf)
 {
     const uint8_t *pos = (const uint8_t *)buf;
     int n = 0;
