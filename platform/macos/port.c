@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -88,6 +89,11 @@ static int ns_macos_user_event_signal(int kq)
     struct kevent kev;
 
     EV_SET(&kev, NS_MACOS_WAKEUP_IDENT, EVFILT_USER, 0u, NOTE_TRIGGER, 0, NULL);
+
+    /* Release fence：保证 signal 前的所有写（如 req->rc = op_rc）在 kevent
+     * 触发前对等待线程可见，与 Linux eventfd write / Windows SetEvent 的
+     * 内核提供语义对齐。详见 docs/review/broker-code-review.md BROKER-023。 */
+    atomic_thread_fence(memory_order_release);
 
     for(;;){
         if(kevent(kq, &kev, 1, NULL, 0, NULL) == 0) return NS_OK;
@@ -191,6 +197,9 @@ int ns_platform_wakeup_wait(
     for(;;){
         rc = kevent(wakeup->kq, NULL, 0, &event, 1, timeout_ptr);
         if(rc > 0){
+            /* Acquire fence：保证 signal 侧 release 之前的所有写（如 req->rc）
+             * 在本线程读取前可见。与 Linux poll / Windows WaitForSingleObject 对齐。 */
+            atomic_thread_fence(memory_order_acquire);
             *out_result = NS_PLATFORM_WAIT_SIGNALED;
             return NS_OK;
         }

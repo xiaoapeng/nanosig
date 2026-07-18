@@ -15,7 +15,7 @@
 
 ### GLOBAL-001: `ns_rbtree_insert` 头文件文档与实现不一致，影响 timer 模块正确性假设
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: doc
 
@@ -32,7 +32,14 @@
 统一 rbtree 文档与实现语义。推荐将文档改为"成功插入返回该节点；输入无效或节点已链接时返回 NULL"，与实现一致。参见 RBTREE-009。
 
 #### 作者建议
-（待作者补充）
+与 RBTREE-009 同源误读。`ns_rbtree_add` 返回值实际为 `leftmost ? node : NULL`（`src/ds/ns_rbtree.c:628`），与文档完全一致。Timer 调用的是 `ns_rbtree_add`，其 leftmost 语义正确，不存在"文档-代码不一致"问题。
+→ 关闭-已拒绝
+
+#### 关闭原因
+与 RBTREE-009 相同——reviewer 误读代码。`ns_rbtree_add` 实现与文档一致，timer 依赖正确。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 定位
 `include/nanosig/nanosig_rbtree.h:106-114`（文档），`src/ds/ns_rbtree.c:374`（实现），`src/ns_timer.c:125`（依赖方）

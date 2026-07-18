@@ -32,7 +32,7 @@
 （待作者补充）
 
 #### 定位
-`include/nanosig/nanosig_slist.h:276-285`
+include/nanosig/nanosig_slist.h:276-285
 
 ---
 
@@ -52,7 +52,7 @@
 （待作者补充）
 
 #### 定位
-`include/nanosig/nanosig_slist.h:367`
+include/nanosig/nanosig_slist.h:367
 
 ---
 
@@ -72,13 +72,13 @@ docstring 写道"是节点时从该节点开始遍历"，但实际 `pos` 的起�
 （待作者补充）
 
 #### 定位
-`include/nanosig/nanosig_slist.h:358-359`
+include/nanosig/nanosig_slist.h:358-359
 
 ---
 
 ### SLIST-006: `ns_slist_append_list` 自拼接导致数据损坏
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: bug
 
@@ -89,7 +89,14 @@ docstring 写道"是节点时从该节点开始遍历"，但实际 `pos` 的起�
 在函数入口添加 `if(list == other) return;` 防御性检查，或在 docstring 中显式声明 `@pre list != other`。
 
 #### 作者建议
-（待作者补充）
+自拼接（将链表拼给自己）没有语义——调用方不应在同一个链表上做 append。通过 docstring 显式声明 `@pre list != other` 作为契约前提即可，不需要运行时检查。
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：自拼接无合理使用场景，应在文档中声明 `@pre list != other` 作为设计契约而非加运行时防御。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 可重现的失败场景
 ```c
@@ -98,7 +105,7 @@ assert(ns_slist_empty(&list));  // true — 链表数据丢失
 ```
 
 #### 定位
-`include/nanosig/nanosig_slist.h:290-303`
+include/nanosig/nanosig_slist.h:290-303
 
 ---
 

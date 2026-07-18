@@ -144,3 +144,19 @@ cmake --build <build-dir> --target sanitize-all
 - 禁止在源码中引用 `P0`、`P1`、`P2` 等计划阶段编号——这些信息只属于 `docs/`
 - 禁止在 `src/`、`include/`、`test/`、`demos/`、`CMakeLists.txt` 中写 OS 预处理器分支——平台特定代码应在 `platform/`
 - 禁止在代码中拼出 stage 阶段 ID 的字面量（会被 review 自动检查）
+
+## AI Agent 行为规则（动态累积）
+
+以下规则来自用户交互中的"以后..."指令，必须遵守：
+
+1. **输出问题需附带 review 文档定位**：讨论或输出代码审查问题时，除了代码文件的行号，还必须输出该问题在 review 文档（`docs/review/*.md`）中的位置（文件名 + 行号）。
+2. **"以后"指令自动持久化**：当用户提示或对话中出现"以后 X"格式的指令（如"以后输出问题要附带 review 文档行号"），必须立即写入本文件的 `AI Agent 行为规则` 节，后续交互中无条件遵守。
+3. **源码定位使用无反引号**：review 文档的 `#### 定位` 中及所有输出中，源码路径不包裹反引号，使用 `file:line` 格式，每行一条（多个引用分散到多行），以利终端识别为可点击链接。文件引用统一使用项目根相对路径，不带 `./` 前缀。例如：
+   ```
+   #### 定位
+   src/ns_broker.c:459
+   src/ns_broker.c:551
+   ```
+   而非 `` `src/ns_broker.c:459` ``。
+
+4. **MPSC 压力测试限时 20 秒**：在普通编译/测试（`cmake --build` + `ctest`）时，`nanosig_test_mpsc_record_ring_stress` 必须限制为 20 秒。如默认值过高，通过 CMake `ENVIRONMENT` 属性或直接传递 `NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20` 环境变量控制。完整稳定性测试可手动运行测试二进制（不带 env 覆盖）使用默认时长。

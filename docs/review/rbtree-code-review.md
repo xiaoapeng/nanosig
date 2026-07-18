@@ -27,7 +27,7 @@
 
 ### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: doc
 
@@ -38,7 +38,18 @@
 将 `@brief` 和 `@return` 改为一致描述："成功插入返回该节点；输入无效或节点已链接时返回 NULL。"删除矛盾描述。
 
 #### 作者建议
-（待作者补充）
+reviewer 误读代码。被审查的函数 `ns_rbtree_insert` 在此代码库中不存在。实际的两个插入函数 `ns_rbtree_add` 和 `ns_rbtree_find_add` 都与各自的文档一致：
+
+- **`ns_rbtree_add`**：`return leftmost ? node : NULL;`（第 628 行） ✅ 与文档"正常返回 NULL，返回 node 说明插入最左节点"一致
+- **`ns_rbtree_find_add`**：`return node;`（第 656 行） ✅ 与文档"返回找到的节点，如果没有找到返回插入的节点"一致
+
+Timer 的依赖方（`ns_timer.c:136-140`）调用的是 `ns_rbtree_add`，其 leftmost 语义确认正确。代码自初始移植提交 `c8b4f58` 至今未变。→ 关闭-已拒绝
+
+#### 关闭原因
+reviewer 误读代码。`ns_rbtree_add` 的返回值为 `leftmost ? node : NULL`，与文档完全一致。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 定位
 `include/nanosig/nanosig_rbtree.h:106-114`

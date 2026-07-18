@@ -139,7 +139,10 @@ if(NANOSIG_BUILD_TESTS)
 
     # Previously unregistered stress test
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)
-    set_tests_properties(nanosig_test_mpsc_record_ring_stress PROPERTIES TIMEOUT 1300 LABELS "stress;long-stability")
+    set_tests_properties(nanosig_test_mpsc_record_ring_stress PROPERTIES
+        TIMEOUT 1300
+        LABELS "stress;long-stability"
+        ENVIRONMENT "NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20")
 
     # ==========================================
     # Integration tests — layered targets

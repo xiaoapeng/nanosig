@@ -39,7 +39,7 @@
 
 ### TIMER-019: `fire_expired` 和 `restart` 中 `ns_rbtree_insert` 返回值未检查，与 `start_locked` 不一致
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟢 较低
 - **类型**: cleanup
 
@@ -50,7 +50,16 @@
 统一三处错误处理风格：要么都检查，要么在 `start_locked` 处添加注释说明 NULL 检查是防御性编程。
 
 #### 作者建议
-（待作者补充）
+- **`restart`（`src/ns_timer.c:415-416`）**：当前代码已检查返回值：`add_result = ns_rbtree_add(...); became_first = (add_result != NULL);`。review 描述不准确。
+- **`fire_expired`（`src/ns_timer.c:313`）**：有 `(void)` cast 但附注释说明意图——批量触发后由 broker 通过 next_timeout 排程，不需要按 leftmost 变化即时 notify。这是文档化的设计决策。
+- **`start_locked`** 检查返回值是因为它需要根据 leftmost 决定是否 notify，语义不同。
+→ 关闭-已拒绝
+
+#### 关闭原因
+restart 已检查返回值（reviewer 误读）；fire_expired 有注释说明设计意图（批量触发场景不需要 leftmost 信息）。三处语义各不相同，非一致性 bug。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 定位
 `src/ns_timer.c:296`（fire_expired）、`src/ns_timer.c:400`（restart）；对比 `src/ns_timer.c:125`（start_locked）
@@ -73,7 +82,7 @@
 （待作者补充）
 
 #### 定位
-`src/ns_timer.c:246-249`
+src/ns_timer.c:246-249
 
 ---
 

@@ -29,7 +29,7 @@
 （待作者补充）
 
 #### 定位
-`include/nanosig/nanosig_list.h:60-69`
+include/nanosig/nanosig_list.h:60-69
 
 ---
 
@@ -53,7 +53,7 @@
 （待作者补充）
 
 #### 定位
-`include/nanosig/nanosig_list.h` — 全文件缺失此宏
+include/nanosig/nanosig_list.h（全文件缺失此宏）
 
 ---
 

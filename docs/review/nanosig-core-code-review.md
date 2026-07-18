@@ -15,7 +15,7 @@
 
 ### CORE-010: `ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 失败时泄漏 loop 内存
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: bug
 
@@ -31,7 +31,13 @@ return rc;
 ```
 
 #### 作者建议
-（待作者补充）
+当前代码（`src/nanosig.c:171-177`）已实现 review 建议——无论 wakeup_destroy 是否失败，都打印日志后 fall through 到 `ns_platform_free(loop)`。问题已修复，review 文档未同步更新。→ 关闭-已修复
+
+#### 关闭原因
+代码已修复：`src/nanosig.c:172-177` 在 wakeup_destroy 失败时先记日志，然后始终执行 `ns_platform_free(loop)`。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 1. 调用 `ns_loop_init(&loop, NULL)` 成功创建 loop。
@@ -40,7 +46,7 @@ return rc;
 4. 调用方丢弃 loop 指针，内存永久泄漏。
 
 #### 定位
-`src/nanosig.c:161-165`
+src/nanosig.c:161-165
 
 ---
 
@@ -65,7 +71,8 @@ return rc;
 3. sig_a 的 slot_list 断链：遍历 sig_a 时无法到达原后继节点。
 
 #### 定位
-`src/nanosig.c:337-342`（实现），`include/nanosig/nanosig_signal.h:290-313`（docstring）
+src/nanosig.c:337-342（实现）
+include/nanosig/nanosig_signal.h:290-313（docstring）
 
 ## 现在关闭的问题
 

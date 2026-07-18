@@ -85,13 +85,13 @@ if(rc == NS_OK){
 3. 若平台后端在错误路径上将 `count` 写为上一轮的值，`dispatch_pending_events` 读取旧 completion，W1 的 slot 被重复调用。
 
 #### 定位
-`src/ns_broker.c:534-535`
+src/ns_broker.c:534-535
 
 ---
 
 ### BROKER-018: `ns_broker_drain_op_queue_shutdown` 丢弃 `wakeup_signal` 返回值 `bug`
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🔴 关键
 
 #### 问题描述
@@ -103,19 +103,30 @@ if(rc == NS_OK){
 在信号失败时给一个回退路径：使用一个共享的 shutdown condvar 或一个 `op_shutdown_done` 原子计数，让所有等待的用户线程能自检退出（而非依赖每个 `req.wakeup` 的个别信号）。最低成本方案：让 `ns_broker_wait_op_completion` 检查 `req->wakeup` 是否已被唤醒（用非阻塞 poll），同时定期（如 100ms）自检 `req->rc != NS_OK` 或一个阶段计数器。
 
 #### 作者建议
-（待作者补充）
+合同前提保护。`drain_op_queue_shutdown` 执行时：
+1. `shutdown_started` 已置位，新 add/remove 直接返回 `NS_E_SHUTDOWN`，不会再入队
+2. 队列中残留的 op 虽在 shutdown 前入队，但 `nanosig_broker.h` 已文档化 `@warning 不得与 ns_shutdown() 并发调用`——调用方在 shutdown 期间不应假设 add/remove 能正常完成
+3. 残留 op 数量极少（shutdown_started → loop join 的窗口极窄），eventfd 的 uint64_t 计数器不可能在 drain 数条 op 的场景下溢出
+4. Shutdown drain 是清理路径，平台级 signal 失败在此上下文中不可恢复
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：`ns_broker_add`/`ns_broker_remove` 的 `@warning 不得与 ns_shutdown() 并发调用` 前提覆盖此路径。shutdown drain 仅处理窗口期内残存的少数 op，eventfd 计数器溢出在 drain 场景中不可达。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 可重现的失败场景
 1000 个并发 `ns_broker_add` 调用堆叠在 op_queue 上。`ns_shutdown()` 触发 drain → 第 443 行 eventfd_write 因内核计数器饱和返回 EAGAIN（Linux eventfd 最大计数值为 `UINT64_MAX-1`）。1000 个用户线程全部永久阻塞。
 
 #### 定位
-`src/ns_broker.c:443`
+`src/ns_broker.c:490`（当前代码，对应原 review 第 443 行）
 
 ---
 
 ### BROKER-019: `ns_broker_queue_op` 丢弃 `ns_platform_wakeup_signal(broker->wakeup)` 返回值 `bug`
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🔴 关键
 
 #### 问题描述
@@ -129,19 +140,25 @@ if(rc == NS_OK){
 2. 或使用更可靠的通知机制：在 `op_lock` 锁区间内先读 `broker->quit_requested`/`shutdown_started` 来决定是否入队。
 
 #### 作者建议
-（待作者补充）
+`ns_broker_queue_op` 改为返回 int，持 `op_lock` 期间调用 `wakeup_signal`——成功继续，失败则从 op_queue 原子回滚并返回错误码。`ns_broker_add`/`ns_broker_remove` 两个调用方检查返回值，失败时走 `out` 清理路径。→ 关闭-已修复
+
+#### 关闭原因
+`src/ns_broker.c:224-235`：函数改为 `static int` 返回类型；持 `op_lock` 期间 signal 失败时 `ns_list_remove_init` 回滚；调用方均检查返回值。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 Linux eventfd 计数达到 `UINT64_MAX - 1`（极端信号风暴）→ `ns_broker_queue_op` 的 `eventfd_write` 返回 `EAGAIN`。Op 已入 op_queue。Broker 线程在 `waitset_wait` 中休眠。用户线程永远等不到 `req->wakeup`。无任何错误日志。
 
 #### 定位
-`src/ns_broker.c:229`
+src/ns_broker.c:224-235
 
 ---
 
 ### BROKER-021: `ns_broker_remove_all_watchers` 在 watcher_mutex 锁失败时静默返回，watcher 残留链表节点 `bug`
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟠 高
 
 #### 问题描述
@@ -153,7 +170,17 @@ Linux eventfd 计数达到 `UINT64_MAX - 1`（极端信号风暴）→ `ns_broke
 统一修复三处锁失败：至少 `assert`（debug build）或 `abort`（release build），因为这些 locks 都是在内部路径使用，失败表示严重故障（锁对象被破坏、死锁、多线程重复等）。不推荐静默返回，因为状态不一致比 abort 更危险（内存损坏 → 遗漏侧信道）。最低成本方案：拉出 `watcher_head` 链表后释放锁再截断链表，即使锁失败也采取紧急清理（走 force-unlink 路径，不做 waitset_remove 但至少断链）。
 
 #### 作者建议
-（待作者补充）
+三个平台的 `ns_platform_mutex_lock`：
+- **Linux/macOS**：`pthread_mutex_lock` 在正确使用的非递归 mutex 上不会失败。EDEADLK 意味着调用方有 bug（同线程重复加锁）；EAGAIN 意味着内核完全 OOM——两者均不可恢复。
+- **Windows**：`AcquireSRWLockExclusive` 无返回值（void），永远成功。
+- 锁失败等价于不可恢复的系统级错误，静默返回已在所有路径上提供了最轻的失败模式。改为 `assert`/`abort` 是合理强化但不是 bug fix。
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：三个平台上 `ns_platform_mutex_lock` 在正确使用下不会失败。锁失败表示调用方违反前提（如 double-lock）或系统 OOM——均不可恢复，静默返回已是最轻处理。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 可重现的失败场景
 Lock 实现被信号中断后返回 `EINTR`（某些较旧的 POSIX 平台）→ `ns_platform_mutex_lock` 返回非 NS_OK → `ns_broker_remove_all_watchers` 直接 return。Broker 被 freed。Watcher 的 `broker_node` 成为悬空指针。用户线程 `ns_watcher_deinit` → `ns_broker_node_is_linked` 读到无效节点 → UAF 或无限循环。
@@ -165,7 +192,7 @@ Lock 实现被信号中断后返回 `EINTR`（某些较旧的 POSIX 平台）→
 
 ### BROKER-023: macOS kqueue EVFILT_USER NOTE_TRIGGER 不能保证用户数据的内存序 `bug`
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟠 高
 
 #### 问题描述
@@ -177,19 +204,26 @@ Lock 实现被信号中断后返回 `EINTR`（某些较旧的 POSIX 平台）→
 将 `req->rc` 改为 atomic，loop 线程侧写 `req->rc = op_rc` 用 `atomic_store_explicit(req->rc, op_rc, memory_order_release)`，用户线程侧用 `atomic_load_explicit(&req->rc, memory_order_acquire)`。这以最小的改动修复 mac 端的内存序问题，不影响 Linux/Windows 上已有的 OS 屏障。
 
 #### 作者建议
-（待作者补充）
+不在调用方（broker.c）逐点改 atomic，而是从 port 层保证：在 `ns_macos_user_event_signal` 的 `kevent` 调用前加 `atomic_thread_fence(memory_order_release)`，在 `ns_platform_wakeup_wait` 的 `kevent` 返回成功后加 `atomic_thread_fence(memory_order_acquire)`。这样 MAC 端 `wakeup_signal`/`wakeup_wait` 对的语义与 Linux eventfd write/poll、Windows SetEvent/WaitForSingleObject 一致，不需要改任何调用方。→ 关闭-已修复
+
+#### 关闭原因
+`platform/macos/port.c:94` 新增 `atomic_thread_fence(memory_order_release)`（signal 侧），`platform/macos/port.c:202` 新增 `atomic_thread_fence(memory_order_acquire)`（wait 侧）。注释同步更新。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 macOS/ARM64（Apple Silicon）上，通知密集型场景：user 线程调用 `ns_broker_add(W)`，broker 线程处理 op 后写 `req->rc = NS_OK`，然后 `kevent(NOTE_TRIGGER)` 唤醒等待线程。用户线程被 kevent 唤醒，但 CPU store buffer 使 `req->rc` 尚未可见。用户读到 stale NS_OK（初始化预设值），返回成功，认为 W 已注册。Watcher 实际未加入 waitset → 对应 fd 的事件永远不会被 dispatch。
 
 #### 定位
-`src/ns_broker.c:412-415` 伴随 `src/ns_broker.c:551` 和 `src/ns_broker.c:582`（用户读 rc）
+platform/macos/port.c:94（signal 侧 fence）
+platform/macos/port.c:202（wait 侧 fence）
 
 ---
 
 ### BROKER-029: `ns_broker_drain_op_queue` 中 op_lock 锁失败时静默返回导致待处理 op 未被 signal `bug`
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟠 高
 
 #### 问题描述
@@ -201,7 +235,14 @@ macOS/ARM64（Apple Silicon）上，通知密集型场景：user 线程调用 `n
 将锁失败变成硬失败（`assert` debug build，`abort` release build），或至少记录 fatal error 日志。因为锁失败表示严重的内部状态问题（死锁、销毁后使用），静默恢复是不可能的——任何不完整的 drain 都会导致至少一个用户线程永久挂起。
 
 #### 作者建议
-（待作者补充）
+与 BROKER-021 同根因。三个平台上 `ns_platform_mutex_lock` 在正确使用下不会失败。锁失败意味着内部 bug 或系统 OOM，均不可恢复。静默返回已是可用的最轻处理。
+→ 关闭-已拒绝
+
+#### 关闭原因
+与 BROKER-021 相同：合同前提保护。`ns_platform_mutex_lock` 在三个平台上均不会因正常操作失败。锁失败表示不可恢复的系统级错误。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 可重现的失败场景
 Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败。req 已被取出（第 391-396 行），但 `req->rc` 未设置，`req->wakeup` 未 signal。用户线程将永远等待。Broker 继续循环的下一次 `waitset_wait` 后静默工作（缺少上述 req 的处理不会使 broker 崩溃），但那个用户线程的栈和资源再也得不到释放。

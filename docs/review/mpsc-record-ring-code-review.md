@@ -44,7 +44,7 @@
 （待作者补充）
 
 #### 定位
-`docs/MPSC_MEMORY_ORDER.md:1-105`
+docs/MPSC_MEMORY_ORDER.md（全文）
 
 ## 现在关闭的问题
 

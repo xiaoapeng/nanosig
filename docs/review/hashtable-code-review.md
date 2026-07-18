@@ -69,7 +69,7 @@
 （待作者补充）
 
 #### 定位
-`src/ds/ns_hashtable.c:137`
+src/ds/ns_hashtable.c:137
 
 ## 现在打开的问题
 

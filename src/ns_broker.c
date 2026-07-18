@@ -221,16 +221,22 @@ static void ns_broker_notify(void *ctx)
  * @note caller 必须已经构造好 req（除 link 外），且 req->wakeup 已创建。
  *       调用前 req 不应在 op_queue 中。
  */
-static void ns_broker_queue_op(ns_event_broker_t *broker, ns_broker_op_request_t *req)
+static int ns_broker_queue_op(ns_event_broker_t *broker, ns_broker_op_request_t *req)
 {
-    int rc = ns_platform_mutex_lock(broker->op_lock);
-    /* op_lock 创建失败是 init 错误，调用栈必定已崩溃；此处省略错误检查 */
-    (void)rc;
-    ns_list_push_back(&broker->op_queue_head, &req->link);
-    (void)ns_platform_mutex_unlock(broker->op_lock);
+    int rc;
 
-    /* 唤醒 loop 线程处理 op_queue */
-    (void)ns_platform_wakeup_signal(broker->wakeup);
+    rc = ns_platform_mutex_lock(broker->op_lock);
+    if(rc != NS_OK) return rc;
+    ns_list_push_back(&broker->op_queue_head, &req->link);
+
+    /* 持锁期间 signal 失败时可原子回滚；否则用户线程将因 broker 不被唤醒而永久等待。 */
+    rc = ns_platform_wakeup_signal(broker->wakeup);
+    if(rc != NS_OK){
+        ns_list_remove_init(&req->link);
+    }
+
+    (void)ns_platform_mutex_unlock(broker->op_lock);
+    return rc;
 }
 
 /**
@@ -594,7 +600,8 @@ int ns_broker_add(ns_watcher_t *watcher)
     req.wakeup = wakeup;
     req.rc = NS_OK;
 
-    ns_broker_queue_op(broker, &req);
+    queue_rc = ns_broker_queue_op(broker, &req);
+    if(queue_rc != NS_OK) goto out;
 
     if(ns_broker_wait_op_completion(&req) != NS_OK){
         /* 超时：先尝试从 op_queue 移除。若成功，broker 不会碰我们的 req/wakeup。 */
@@ -637,7 +644,8 @@ int ns_broker_remove(ns_watcher_t *watcher)
     req.wakeup = wakeup;
     req.rc = NS_OK;
 
-    ns_broker_queue_op(broker, &req);
+    queue_rc = ns_broker_queue_op(broker, &req);
+    if(queue_rc != NS_OK) goto out;
 
     if(ns_broker_wait_op_completion(&req) != NS_OK){
         if(ns_broker_try_dequeue_op(broker, &req) == NS_OK){

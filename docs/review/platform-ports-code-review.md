@@ -37,7 +37,8 @@ macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执�
 （待作者补充）
 
 #### 定位
-`platform/macos/port.c:522-543`, `include/nanosig/nanosig_port.h:432-451`
+platform/macos/port.c:522-543
+include/nanosig/nanosig_port.h:432-451
 
 ---
 
@@ -57,7 +58,8 @@ macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执�
 （待作者补充）
 
 #### 定位
-`platform/windows/port.c:38`, `platform/linux/port.c:141`
+platform/windows/port.c:38
+platform/linux/port.c:141
 
 ---
 
@@ -77,7 +79,7 @@ macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执�
 （待作者补充）
 
 #### 定位
-`test/unit/test_platform_backend.c:690-714`
+test/unit/test_platform_backend.c:690-714
 
 ## 现在关闭的问题
 

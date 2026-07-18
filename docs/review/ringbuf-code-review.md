@@ -100,7 +100,7 @@ const uint8_t *p = ns_ringbuf_peek(&rb, 0, buf, &want);
 ```
 
 #### 定位
-`src/ds/ns_ringbuf.c:223-224`
+src/ds/ns_ringbuf.c:223-224
 
 ---
 
@@ -124,7 +124,10 @@ const uint8_t *p = ns_ringbuf_peek(&rb, 0, buf, &want);
 （待作者补充）
 
 #### 定位
-`test/unit/test_ds_ringbuf.c`（缺失测试用例）；涉及 `src/ds/ns_ringbuf.c:220-238, 260-268, 128`
+test/unit/test_ds_ringbuf.c（缺失测试用例）
+src/ds/ns_ringbuf.c:220-238
+src/ds/ns_ringbuf.c:260-268
+src/ds/ns_ringbuf.c:128
 
 ---
 

@@ -58,8 +58,7 @@ ns_stream_puts(stream, "0123456789... (80 chars)");
 ```
 
 #### 定位
-
-`src/ns_formatio.c:1216-1218`
+src/ns_formatio.c:1216-1218
 
 ---
 
