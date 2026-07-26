@@ -53,7 +53,7 @@
 
 ### BROKER-031: `ns_broker_run` 在 `waitset_wait` 失败后将未初始化的 `completions`/`count` 传入 dispatch 路径
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: bug
 
@@ -77,7 +77,14 @@ if(rc == NS_OK){
 ```
 
 #### 作者建议
-（待作者补充）
+当前代码（`src/ns_broker.c:544-546`）已在错误路径上显式设置 `count = 0u`，`dispatch_pending_events` 以 `count=0` 调用时函数内部立即返回，无任何副作用。加 `if(rc == NS_OK)` 包裹是代码整洁层面的优化，不影响正确性。
+→ 关闭-已拒绝
+
+#### 关闭原因
+`count = 0u` 已在错误路径上设置，`dispatch_pending_events` 在 `count=0` 时无操作，不存在"重复 signal emit"的风险。平台后端在错误路径上写 `count` 为非零值且不填充 `completions` 是平台层的 bug，不在 broker 的防御范围内。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 可重现的失败场景
 1. 注册 watcher W1，W1 触发事件 → `waitset_wait` 成功，`completions[0]` 包含 W1。
@@ -85,7 +92,7 @@ if(rc == NS_OK){
 3. 若平台后端在错误路径上将 `count` 写为上一轮的值，`dispatch_pending_events` 读取旧 completion，W1 的 slot 被重复调用。
 
 #### 定位
-src/ns_broker.c:534-535
+src/ns_broker.c:544-553
 
 ---
 

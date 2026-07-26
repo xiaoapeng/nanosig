@@ -35,7 +35,7 @@ include/nanosig/nanosig_list.h:60-69
 
 ### LIST-004: 缺少 `ns_list_entry_safe`（NULL 安全版反查宏）
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: design
 
@@ -50,10 +50,16 @@ include/nanosig/nanosig_list.h:60-69
 ```
 
 #### 作者建议
-（待作者补充）
+已添加 `ns_list_entry_safe` 到 `include/nanosig/nanosig_list.h:214-216`，与 `ns_list_entry` 相邻，与 slist 的 `ns_slist_entry_safe` 语义一致。→ 关闭-已修复
+
+#### 关闭原因
+已在 `include/nanosig/nanosig_list.h:214-216` 添加。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已修复
 
 #### 定位
-include/nanosig/nanosig_list.h（全文件缺失此宏）
+include/nanosig/nanosig_list.h:214-216
 
 ---
 

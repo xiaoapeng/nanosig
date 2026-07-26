@@ -18,7 +18,7 @@
 
 ### SLIST-003: `ns_slist_del_node_in_for_each_safe` 不重置被删除节点的 `next` 指针
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: cleanup
 
@@ -29,7 +29,14 @@
 在函数末尾添加对被删除节点的 `next` 清零，与 `pop_front` / `remove_after` 保持一致。或在 docstring 中说明此行为差异。
 
 #### 作者建议
-（待作者补充）
+`del_node_in_for_each_safe` 专用于遍历中安全删除，调用方在遍历结束后不应再依赖 `is_on_list` 判断被删除节点。`is_on_list` 的文档已说明"尾节点返回 false"，只保证不在链表中的节点可能返回 false，不保证精确性。`pop_front`/`remove_after` 清 `next` 是额外便利而非契约。
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：`del_node_in_for_each_safe` 的语义是删除后节点不再属于链表，调用方不应在遍历后依赖 `is_on_list` 判断。`is_on_list` 文档已声明"如需精确判断，请使用 intrusive 标记或外部状态"。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已拒绝
 
 #### 定位
 include/nanosig/nanosig_slist.h:276-285

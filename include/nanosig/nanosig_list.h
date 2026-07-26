@@ -211,6 +211,12 @@ static inline void ns_list_splice_back_init(ns_list_node_t *head, ns_list_node_t
     NS_CONTAINER_OF((ptr), type, member)
 
 /**
+ * @brief 安全版反查（NULL 安全）。
+ */
+#define ns_list_entry_safe(ptr, type, member) \
+    NS_CONTAINER_OF_SAFE((ptr), type, member)
+
+/**
  * @brief 正向遍历双向链表。
  *
  * @param pos  `ns_list_node_t *` 迭代变量。

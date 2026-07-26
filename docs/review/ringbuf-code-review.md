@@ -106,7 +106,7 @@ src/ds/ns_ringbuf.c:223-224
 
 ### RINGBUF-024: `peek`/`peek_copy` 绕回路径及 `draft_write` 非零 offset 路径无测试覆盖
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: test
 
@@ -121,10 +121,22 @@ src/ds/ns_ringbuf.c:223-224
 在 `test_ds_ringbuf.c` 中增加绕回测试、数据不足测试、draft_write 非零 offset 测试。
 
 #### 作者建议
-（待作者补充）
+已添加 `test_wrap_paths` 测试函数，覆盖：
+- peek 绕回路径（size=5, r=3, rl=3 > read_size_first_max=2）
+- peek_copy 绕回路径（同布局）
+- peek 数据不足返回 NULL
+- peek_copy 数据不足返回 0
+- draft_write 非零 offset（offset=1）
+→ 关闭-已修复
+
+#### 关闭原因
+`test/unit/test_ds_ringbuf.c` 新增 `test_wrap_paths` 函数，覆盖全部 4 条缺失路径。
+
+- 关闭日期: 2026-07-18
+- 状态: 关闭-已修复
 
 #### 定位
-test/unit/test_ds_ringbuf.c（缺失测试用例）
+test/unit/test_ds_ringbuf.c（新增 test_wrap_paths）
 src/ds/ns_ringbuf.c:220-238
 src/ds/ns_ringbuf.c:260-268
 src/ds/ns_ringbuf.c:128
