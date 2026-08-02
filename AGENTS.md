@@ -160,3 +160,18 @@ cmake --build <build-dir> --target sanitize-all
    而非 `` `src/ns_broker.c:459` ``。
 
 4. **MPSC 压力测试限时 20 秒**：在普通编译/测试（`cmake --build` + `ctest`）时，`nanosig_test_mpsc_record_ring_stress` 必须限制为 20 秒。如默认值过高，通过 CMake `ENVIRONMENT` 属性或直接传递 `NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20` 环境变量控制。完整稳定性测试可手动运行测试二进制（不带 env 覆盖）使用默认时长。
+
+5. **问题展示格式**：展示 review 问题时使用以下格式，按模块分组，组内按优先级排序（🟠 > 🟡 > 🟢）：
+   ```
+   ### 模块名
+
+   **1. ISSUE-ID** 🟠 高 | type
+
+   一行描述问题核心
+   - 定位: file:line
+   - Review: docs/review/xxx-code-review.md:line
+   ```
+   注意：
+   - 编号从 1 开始连续编号
+   - 严重度图标用 🟠/🟡/🟢
+   - 定位和 Review 各一行，无反引号
