@@ -23,7 +23,7 @@
 
 ### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
 
-- **状态**: 打开
+- **状态**: 关闭-延期
 - **严重度**: 🟡 中
 - **类型**: design
 
@@ -34,7 +34,8 @@ macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执�
 在 `nanosig_port.h` 的 `ns_platform_waitset_wait` Doxygen 注释中补充一句声明。
 
 #### 作者建议
-（待作者补充）
+暂时不修。当前三平台行为一致，无实际影响。后续若出现平台不兼容再处理。
+→ 关闭-延期
 
 #### 定位
 platform/macos/port.c:522-543
@@ -44,7 +45,7 @@ include/nanosig/nanosig_port.h:432-451
 
 ### PORT-015: Windows `ns_windows_timeout_ms` 在超大 timeout_us 下有 uint64 加法溢出
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟢 较低
 - **类型**: bug
 
@@ -55,7 +56,14 @@ include/nanosig/nanosig_port.h:432-451
 改用不溢出的等价算术：`timeout_ms = timeout_us / 1000u + (timeout_us % 1000u != 0u ? 1u : 0u);`
 
 #### 作者建议
-（待作者补充）
+不考虑这种情况，场景不可能。`timeout_us` 在实际使用中不会接近 UINT64_MAX。
+→ 关闭-已拒绝
+
+#### 关闭原因
+场景不可能。实际使用中 timeout_us 为微秒级超时值，不会接近 UINT64_MAX。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已拒绝
 
 #### 定位
 platform/windows/port.c:38

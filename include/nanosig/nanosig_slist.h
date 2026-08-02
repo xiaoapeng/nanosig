@@ -356,7 +356,7 @@ static inline ns_slist_node_t *ns_slist_dequeue(ns_slist_t *list)
  * @brief 正向遍历单向链表指针节点。
  *
  * 接受 `ns_slist_t *` 或 `ns_slist_node_t *` 作为 head。
- * 当 head 是链头时遍历全链表，是节点时从该节点开始遍历。
+ * 当 head 是链头时遍历全链表，是节点时从该节点之后开始遍历（跳过该节点本身）。
  * ns_slist_t 与 ns_slist_node_t 的首字段类型相同且在相同偏移处，
  * (head)->next 在任何 C/C++ 编译器下都正确解析。
  *

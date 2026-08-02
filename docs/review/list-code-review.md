@@ -15,7 +15,7 @@
 
 ### LIST-003: `ns_list_insert_between` 缺少 Doxygen 文档注释
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
 
@@ -26,7 +26,14 @@
 在 `ns_list_insert_between` 函数前添加 `/** @brief */` 风格的 Doxygen 注释。
 
 #### 作者建议
-（待作者补充）
+已添加 Doxygen 注释，包括 @brief、@param 和 @note。
+→ 关闭-已修复
+
+#### 关闭原因
+`include/nanosig/nanosig_list.h:60-69` 已添加完整 Doxygen 注释。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已修复
 
 #### 定位
 include/nanosig/nanosig_list.h:60-69

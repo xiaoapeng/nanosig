@@ -297,6 +297,10 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  * @pre 使用前必须调用 `ns_signal_init_raw()` 或 `ns_signal_init()` 初始化。
  *      初始化后的 signal 由内部 mutex 保护，connect / disconnect / emit 可从
  *      多个线程并发调用。
+ * @pre `connection` 必须处于未连接状态（尚未连接到任何 signal，或已通过
+ *      `ns_signal_disconnect` 断开连接）。
+ * @warning 对已连接到某个 signal 的 `connection` 再次调用本函数（未先
+ *          disconnect）会导致原 signal 的 slot_list 损坏。
  *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。

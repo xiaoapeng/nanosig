@@ -259,9 +259,10 @@ out_unlock:
  * 对重复定时器按 reload 策略重新计算并插入。
  *
  * @note 本函数在 g_timer_mgr.mutex 下调用 ns_signal_emit_raw（非阻塞
- *       MPSC 环推送）。由于锁被持有，槽位回调中**不得调用**任何 timer API
- *       （如 ns_timer_start / ns_timer_cancel），否则会死锁。
- *       ns_signal_emit_raw 仅为队列推送不会阻塞，但槽位回调本身应保持简短。
+ *       MPSC 环推送，仅将事件入队到目标 loop 的 MPSC 队列）。槽位回调
+ *       在 loop 线程排空 MPSC 队列时执行，此时 g_timer_mgr.mutex 已释放，
+ *       因此槽位回调中调用 timer API（如 ns_timer_start / ns_timer_cancel）
+ *       **不会死锁**，但可能增加锁竞争。
  *
  * @note 首次 emit 失败后后续失败被静默丢弃（first_error 仅记录第一个错误）。
  *       这是有意取舍：批量触发场景下报告第一个错误，避免通过累积错误码

@@ -52,7 +52,7 @@ src/nanosig.c:161-165
 
 ### CORE-011: `ns_signal_connect` 缺少"禁止重复连接"前置条件文档
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
 
@@ -63,7 +63,14 @@ src/nanosig.c:161-165
 在 `nanosig_signal.h` 的 `ns_signal_connect` docstring 中添加 `@pre` 前置条件。可在实现中添加防御性检查：如果 `connection->signal_node` 不是自引用状态，返回 `NS_E_INVAL`。
 
 #### 作者建议
-（待作者补充）
+已采纳 review 建议，在 docstring 中添加 `@pre connection 必须处于未连接状态` 和 `@warning 重复连接会导致原 signal 的 slot_list 损坏`。
+→ 关闭-已修复
+
+#### 关闭原因
+`include/nanosig/nanosig_signal.h:290-313` 已添加 `@pre` 和 `@warning` 文档。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 1. `ns_signal_connect(&sig_a, ...)` 将 conn 连接到 sig_a。

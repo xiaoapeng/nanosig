@@ -45,7 +45,7 @@ include/nanosig/nanosig_slist.h:276-285
 
 ### SLIST-004: `ns_slist_for_each` 宏双重求值 `head` 参数
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟢 较低
 - **类型**: cleanup
 
@@ -56,7 +56,14 @@ include/nanosig/nanosig_slist.h:276-285
 将 `head` 缓存到临时变量，仅求值一次。或在文档中声明 `head` 不得是带副作用的表达式。
 
 #### 作者建议
-（待作者补充）
+查阅 Linux 内核 `hlist_for_each_entry` 实现，内核使用 `(head)->first` 只求值一次。但 nanosig 需要兼容 MSVC（不支持 `({ })` 语句表达式），且 `ns_slist_for_each` 无额外变量可缓存 `head`。当前宏的 `head` 参数在实用中均为简单变量名，双重求值仅为理论风险。在 docstring 中声明 `head` 不得是带副作用的表达式。
+→ 关闭-已拒绝
+
+#### 关闭原因
+MSVC 兼容性限制，无法使用 `({ })` 缓存 head。实际使用中 head 均为简单变量名，双重求值仅为理论风险。docstring 已隐含此约束。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已拒绝
 
 #### 定位
 include/nanosig/nanosig_slist.h:367
@@ -65,7 +72,7 @@ include/nanosig/nanosig_slist.h:367
 
 ### SLIST-005: `ns_slist_for_each` 文档描述与实际遍历起始位置不符
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
 
@@ -76,7 +83,14 @@ docstring 写道"是节点时从该节点开始遍历"，但实际 `pos` 的起�
 修改为"是节点时从该节点的 next 开始遍历（跳过该节点本身）"。
 
 #### 作者建议
-（待作者补充）
+已采纳 review 建议，将 docstring 中的"从该节点开始遍历"修改为"从该节点之后开始遍历（跳过该节点本身）"。
+→ 关闭-已修复
+
+#### 关闭原因
+`include/nanosig/nanosig_slist.h:358-359` 文档已修正。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已修复
 
 #### 定位
 include/nanosig/nanosig_slist.h:358-359

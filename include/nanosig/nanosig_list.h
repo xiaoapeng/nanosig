@@ -57,6 +57,18 @@ static inline int ns_list_empty(const ns_list_node_t *head)
     return head->next == head;
 }
 
+/**
+ * @brief 在双向链表的两个节点之间插入新节点。
+ *
+ * 在 prev 和 next 之间插入 node。prev 和 next 必须相邻（prev->next == next,
+ * next->prev == prev）。此函数不检查相邻性，调用方负责保证。
+ *
+ * 被 `ns_list_push_front`、`ns_list_push_back` 等公开函数调用。
+ *
+ * @param node 要插入的节点。
+ * @param prev 前驱节点。
+ * @param next 后继节点。
+ */
 static inline void ns_list_insert_between(
     ns_list_node_t *node,
     ns_list_node_t *prev,

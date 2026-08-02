@@ -30,7 +30,7 @@
 
 ### MPSC-011: `MPSC_MEMORY_ORDER.md` 描述已删除的固定容量 MPSC 队列，未文档化 record ring 的内存序协议
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
 
@@ -41,7 +41,14 @@
 创建 `docs/MPSC_RECORD_RING_MEMORY_ORDER.md` 或更新 `MPSC_MEMORY_ORDER.md` 添加 record ring 章节，文档化三阶段发布链。
 
 #### 作者建议
-（待作者补充）
+已重写 `docs/MPSC_MEMORY_ORDER.md`，删除旧版固定容量 MPSC 队列描述，替换为 MPSC record ring 的三阶段发布链（reserve → write → commit）和完整内存序协议文档。
+→ 关闭-已修复
+
+#### 关闭原因
+`docs/MPSC_MEMORY_ORDER.md` 已重写为 record ring 内存序协议文档。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已修复
 
 #### 定位
 docs/MPSC_MEMORY_ORDER.md（全文）

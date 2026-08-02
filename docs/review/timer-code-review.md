@@ -68,7 +68,7 @@ restart 已检查返回值（reviewer 误读）；fire_expired 有注释说明�
 
 ### TIMER-020: `fire_expired` 文档中关于槽位回调死锁的描述不准确
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
 
@@ -79,10 +79,17 @@ restart 已检查返回值（reviewer 误读）；fire_expired 有注释说明�
 将注释改为准确描述：本函数在 `g_timer_mgr.mutex` 下调用 `ns_signal_emit_raw`（非阻塞推送）。槽位回调执行时 mutex 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
 
 #### 作者建议
-（待作者补充）
+已采纳 review 建议，修改注释为准确描述：槽位回调执行时 `g_timer_mgr.mutex` 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
+→ 关闭-已修复
+
+#### 关闭原因
+`src/ns_timer.c:255-269` 的 `@note` 注释已修正。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已修复
 
 #### 定位
-src/ns_timer.c:246-249
+src/ns_timer.c:255-269
 
 ---
 

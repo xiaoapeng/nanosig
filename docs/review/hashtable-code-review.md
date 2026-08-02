@@ -55,7 +55,7 @@
 
 ### HT-010: `ns_hashtable_remove` 中 `--table->size` 前缺失防御性 assert（HASHTABLE-004 回归）
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟢 较低
 - **类型**: bug
 
@@ -66,7 +66,14 @@
 在 `src/ds/ns_hashtable.c:137` 的 `--table->size` 之前添加 `assert(table->size > 0u);`。
 
 #### 作者建议
-（待作者补充）
+正常调用 API 时调用方保证 remove 前 size > 0，不需要防御性 assert。与 HASHTABLE-004 同理。
+→ 关闭-已拒绝
+
+#### 关闭原因
+正常调用 API 时调用方保证 remove 前 size > 0，不需要防御性 assert。
+
+- 关闭日期: 2026-08-02
+- 状态: 关闭-已拒绝
 
 #### 定位
 src/ds/ns_hashtable.c:137
