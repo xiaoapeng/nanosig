@@ -30,7 +30,7 @@ option(NANOSIG_BUILD_BENCH "Build nanosig benchmarks" OFF)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
 set(NANOSIG_DS_SOURCES
-    src/ds/ns_hashtable.c
+    src/ds/ns_hashtbl.c
     src/ds/ns_mpsc_record_ring.c
     src/ds/ns_rbtree.c
     src/ds/ns_ringbuf.c

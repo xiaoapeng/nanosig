@@ -59,6 +59,20 @@
 #endif
 
 /**
+ * @brief 表达式式编译期断言（可嵌入逗号表达式/宏 for-init 子句）。
+ *
+ * `NS_STATIC_ASSERT` 是声明式（static_assert / _Static_assert），不能放进
+ * `for(init; ...)` 的表达式位置。本宏用负大小数组技巧把断言转为表达式：
+ * 条件为假时 `char[-1]` 触发编译错误。C11 与 C++ 均合法，不依赖
+ * `({...})` 语句表达式（GNU 扩展，C++ 不可用）。
+ *
+ * @param expr 编译期常量条件。
+ * @param msg  断言失败提示（未用于输出，仅文档性占位）。
+ */
+#define NS_STATIC_ASSERT_EXPR(expr, msg) \
+    ((void)sizeof(char[((expr) != 0) ? 1 : -1]))
+
+/**
  * @brief 编译期类型比较宏，判断两个表达式的类型是否兼容。
  *
  * 等价于 eventhub 的 `eh_same_type(a, b)`。

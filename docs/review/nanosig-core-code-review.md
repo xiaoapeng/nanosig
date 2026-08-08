@@ -81,6 +81,64 @@ src/nanosig.c:161-165
 src/nanosig.c:337-342（实现）
 include/nanosig/nanosig_signal.h:290-313（docstring）
 
+---
+
+### CORE-012: `ns_loop_quit` 在 loop 被 `ns_loop_deinit` 释放后写入 → heap-use-after-free `bug`
+
+- **状态**: 关闭-已修复（测试问题，非库缺陷）
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+ASAN 下运行 `nanosig_test_broker_consume_fn` 触发 heap-use-after-free：主线程 `ns_loop_quit` 写入 `loop->quit_requested`（src/nanosig.c:256）时，loop 已被 broker worker 线程的 `ns_loop_deinit`（src/nanosig.c:176 → `ns_platform_free`）释放。
+
+完整调用栈（ASAN）：
+```
+WRITE of size 4 at 0x51a000000168 thread T0
+  #0 ns_loop_quit  src/nanosig.c:256
+  #1 test_consume_fn_impl  test/unit/test_broker_consume_fn.c:213
+freed by thread T2 here:
+  #0 free
+  #1 ns_platform_free  platform/linux/port.c:73
+  #2 ns_loop_deinit  src/nanosig.c:176
+  #3 broker_worker_entry  test/unit/test_broker_consume_fn.c:67
+previously allocated by thread T2 here:
+  #1 ns_platform_alloc  platform/linux/port.c:68
+  #2 ns_loop_init  src/nanosig.c:135
+  #3 broker_worker_entry  test/unit/test_broker_consume_fn.c:57
+```
+
+#### review 建议
+需调查根因方向：
+1. 测试时序问题：`test_broker_consume_fn.c` 主线程在 broker worker 已 deinit loop 后仍调用 `ns_loop_quit`，违反"loop 生命周期由调用方保证"合同（与 CORE-001 同类）。
+2. 库防御缺口：`ns_loop_quit` 未检查 loop 是否仍存活/运行中，deinit 后调用即为 UAF。若合同允许 deinit 后不调用 quit，则测试需修正时序；若库需防御，应在 quit 入口检查 `running` 或增加生命周期同步。
+3. 建议先用 TSAN 或加日志确认是测试时序竞态还是库缺陷，再决定修复归属。
+
+#### 作者建议
+确认是测试问题而非库缺陷。根因：`test_broker_consume_fn.c` 的 slot 回调（如 `consume_slot` line 103）内部已调用 `ns_loop_quit(ctx->loop)`，loop 被 slot quit 后 worker 线程继续执行 `ns_loop_deinit` 释放 loop；主线程成功路径又在 join 前**重复调用** `ns_loop_quit`（如 line 213），此时 loop 可能已被 worker 释放 → UAF。
+修复：主线程成功路径移除多余的二次 quit，只 join（slot 已负责 quit）。但**保留**"slot 未调用"测试（`slot_called == 0`，如 prevents_refire / negative return）的 quit——这些测试的 loop 仍在 run，需主线程 quit 才能退出。共 6 处成功路径：4 处移除重复 quit，2 处保留。
+→ 关闭-已修复
+
+#### 关闭原因
+`test/unit/test_broker_consume_fn.c` 修复成功路径的重复 `ns_loop_quit`：slot 被调用（`slot_called != 0`）的测试只 join；slot 未调用（`slot_called == 0`）的测试保留 quit。ASAN 下重跑无 UAF，release 完整测试 48/48 通过。
+
+- 关闭日期: 2026-08-08
+- 状态: 关闭-已修复
+
+#### 可重现的失败场景
+```sh
+cmake --preset linux-debug-asan
+cmake --build build --target nanosig_test_broker_consume_fn
+./build/nanosig_test_broker_consume_fn
+# ASAN: heap-use-after-free in ns_loop_quit
+```
+
+#### 定位
+src/nanosig.c:256
+src/nanosig.c:176
+test/unit/test_broker_consume_fn.c:213
+test/unit/test_broker_consume_fn.c:67
+
 ## 现在关闭的问题
 
 ### CORE-001: `ns_loop_deinit` 与同步 `ns_loop_run` 并发可造成 UAF

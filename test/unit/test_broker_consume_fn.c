@@ -210,7 +210,7 @@ static int test_consume_fn_impl(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
-    if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    if(worker_started){ test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -295,6 +295,7 @@ static int test_consume_fn_no_emit(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
+    /* slot 未调用（consume_fn 阻止了 emit），loop 仍在 run，需主线程 quit 才能退出 */
     if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
@@ -572,7 +573,7 @@ static int test_consume_fn_pipe_level_triggered(void)
     watcher_ok = 0;
     (void)close(pipefd[0]);
     (void)close(pipefd[1]);
-    if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    if(worker_started){ test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -667,6 +668,7 @@ static int test_consume_fn_negative_return(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
+    /* slot 未调用（consume_fn 返回 0 跳过 emit），loop 仍在 run，需主线程 quit 才能退出 */
     if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
@@ -785,7 +787,7 @@ static int test_consume_fn_no_handle_set(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
-    if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    if(worker_started){ test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -876,7 +878,7 @@ static int test_consume_fn_edge_triggered(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
-    if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    if(worker_started){ test_thread_join(&g_broker_thread); }
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 

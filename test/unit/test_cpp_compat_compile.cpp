@@ -30,7 +30,7 @@
 #include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_slist.h>
 #include <nanosig/nanosig_rbtree.h>
-#include <nanosig/nanosig_hashtable.h>
+#include <nanosig/nanosig_hashtbl.h>
 #include <nanosig/nanosig_ringbuf.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/nanosig_signal.h>
@@ -287,6 +287,35 @@ static void cpp_test_debug_macros(void)
     (void)ns_dbg_set_level(NS_DBG_SYS);
 }
 
+/* ── Test: hashtbl traversal macros ────────────────────────────── */
+/* ns_hashtbl_for_each_safe uses NS_STATIC_ASSERT_EXPR (expression-style
+ * static assert) and is C++-safe; the for_each_with_* macros are also
+ * C++-safe via the __typeof__ mapping. All three are exercised here. */
+
+static void cpp_test_hashtbl_traversal(void)
+{
+    ns_hashtbl_t ht = ns_hashtbl_create(0.75f);
+    ns_list_node_t *list_tmp_head;
+    unsigned int tmp_uint_i;
+
+    if(ht == NULL) return;
+
+    struct ns_hashtbl_node *pos;
+    struct ns_hashtbl_node *tmp_n;
+
+    ns_hashtbl_for_each_safe(ht, pos, tmp_n, tmp_uint_i){
+        (void)pos;
+    }
+    ns_hashtbl_for_each_with_string_safe(ht, "key", pos, tmp_n, list_tmp_head){
+        (void)pos;
+    }
+    ns_hashtbl_for_each_with_key_safe(ht, "key", 3u, pos, tmp_n, list_tmp_head){
+        (void)pos;
+    }
+
+    ns_hashtbl_destroy(ht);
+}
+
 /* ── Force instantiation of all test functions ────────────────── */
 
 static void cpp_test_all(void)
@@ -301,4 +330,5 @@ static void cpp_test_all(void)
     cpp_test_memory_order_enum();
     cpp_test_static_assert_macro();
     cpp_test_debug_macros();
+    cpp_test_hashtbl_traversal();
 }

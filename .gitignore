@@ -11,3 +11,4 @@ build-linux*
 .codex
 Testing/
 build-coverage/
+*.c.gcov

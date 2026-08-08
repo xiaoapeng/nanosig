@@ -73,7 +73,7 @@
 | 公开 intrusive list | P2 产物 | `include/nanosig/nanosig_list.h` | 已覆盖 |
 | 公开 slist | P2 产物 | `include/nanosig/nanosig_slist.h` | 已覆盖 |
 | 公开 ringbuf | P2 产物 | `include/nanosig/nanosig_ringbuf.h` + `src/ds/ns_ringbuf.c` | 已覆盖 |
-| 公开 hashtable | P2 产物 | `include/nanosig/nanosig_hashtable.h` + `src/ds/ns_hashtable.c` | 已覆盖 |
+| 公开 hashtable | P2 产物 | `include/nanosig/nanosig_hashtbl.h` + `src/ds/ns_hashtbl.c` | 已覆盖 |
 | 公开 rbtree | P2 产物 | `include/nanosig/nanosig_rbtree.h` + `src/ds/ns_rbtree.c` | 已覆盖 |
 | 5 个数据结构单元测试 | P2 产物 | `test_ds_list.c`/`_slist.c`/`_ringbuf.c`/`_hashtable.c`/`_rbtree.c` | 已覆盖 |
 | 覆盖基本操作 | P2 目标 | 各 DS 测试的基本插入/删除/遍历 | 已覆盖 |

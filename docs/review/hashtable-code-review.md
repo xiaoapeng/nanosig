@@ -84,6 +84,72 @@ src/ds/ns_hashtable.c:137
 
 ---
 
+## 现在打开的问题（2026-08-08 — ns_hashtbl 重新移植后 review）
+
+> 说明：2026-08-08 哈希表按 eventhub_os `eh_hashtbl` 重新移植，API 从 `ns_hashtable_*`（字符串键指针式、调用方拥有存储）改为 `ns_hashtbl_*`（二进制键 KV 内联、库管理内存、自动扩容 + 渐进式重建）。旧 API 相关条目见上方修复历史/关闭区，均已归档语义。以下为移植后新模块的 review 条目。
+
+### HASHTBL-101: `ns_hashtbl_for_each_with_string_safe` 前缀匹配假阳性 `bug`
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`ns_hashtbl_for_each_with_string_safe` 的过滤条件是 `strncmp(node_key, string, node_key_len)`——只比较节点的键长度。搜索较长字符串时，会匹配键是其严格前缀的节点（如搜索 "abcd" 会遍历到键为 "abc" 的节点）。专用查找 `ns_hashtbl_find_with_string` 用 `memcmp` 按搜索串长度比较，无此问题；仅遍历宏存在此行为。
+
+#### review 建议
+在头文件文档化前缀匹配语义，或改为比较 `ns_hashtbl_node_key_len(node) == strlen(string) && memcmp(...)` 做精确匹配。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:284（宏定义）
+src/ds/ns_hashtbl.c:342（find_with_string，无此问题，对比参考）
+
+---
+
+### HASHTBL-102: 字符串工厂/查找无 NULL 键守卫 `bug`
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`ns_hashtbl_node_new_with_string_refresh` 和 `ns_hashtbl_find_with_string` 将键直接传入 `fnv1a_str`，`key == NULL` 时会解引用崩溃。上游 `eh_hashtbl` 行为相同（仅 `ns_hash_string` 在移植时补了 NULL 守卫）。未文档化的输入 UB，与 C API 惯例一致。
+
+#### review 建议
+为对称性给这两个函数加 `if(key == NULL)` 守卫，或在头文件文档化非 NULL 前置条件。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+src/ds/ns_hashtbl.c:178
+src/ds/ns_hashtbl.c:333
+
+---
+
+### HASHTBL-103: 极小 load_factor 时 `threshold == 0` 导致每次 insert 都 resize `perf`
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: perf
+
+#### 问题描述
+`0 < load_factor < 1/16` 时，`(unsigned)(16 * load_factor)` 截断为 0，`count + 1 >= 0` 恒真，每次 insert 都触发扩容（O(n) per insert，表无界增长）。不产生数据丢失，但性能病态。上游 `eh_hashtbl` 行为相同。`create` 的 NaN/上限钳制守卫未覆盖此下限。
+
+#### review 建议
+将 `threshold` 下限钳制到 `>= 1`（如 `MAX(threshold, 1u)`）。
+
+#### 作者建议
+（待作者补充）
+
+#### 定位
+src/ds/ns_hashtbl.c:366
+
+---
+
 ## 现在关闭的问题
 
 ### HASHTABLE-009: `ns_hashtable_node_init` 在 `key==NULL` 时留 struct 未初始化 (MEDIUM) `bug`

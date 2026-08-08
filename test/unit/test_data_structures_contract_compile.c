@@ -14,7 +14,6 @@ typedef struct ds_contract_item {
     int value;
     ns_list_node_t list_node;
     ns_slist_node_t slist_node;
-    ns_hashtable_node_t hash_node;
     ns_rbtree_node_t tree_node;
 } ds_contract_item_t;
 
@@ -84,15 +83,18 @@ static void ds_contract_use_mpsc_record_ring(void)
 
 static void ds_contract_use_hashtable(void)
 {
-    ns_slist_t buckets[4];
-    ns_hashtable_t table;
-    ds_contract_item_t item;
+    ns_hashtbl_t ht;
+    struct ns_hashtbl_node *node;
 
-    if(ns_hashtable_init(&table, buckets, 4u) != NS_OK) return;
-    ns_hashtable_node_init(&item.hash_node, "key", &item);
-    (void)ns_hashtable_insert(&table, &item.hash_node);
-    (void)ns_hashtable_find(&table, "key");
-    (void)ns_hashtable_remove(&table, "key");
+    ht = ns_hashtbl_create(0.75f);
+    if(ht == NULL) return;
+    node = ns_hashtbl_node_new_with_string_refresh(ht, "key", (ns_hashtbl_kv_len_t)sizeof(void*));
+    if(node != NULL){
+        (void)ns_hashtbl_insert(ht, node);
+        (void)ns_hashtbl_find_with_string(ht, "key", &node);
+        ns_hashtbl_node_delete(ht, node);
+    }
+    ns_hashtbl_destroy(ht);
 }
 
 static int ds_contract_rbtree_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
