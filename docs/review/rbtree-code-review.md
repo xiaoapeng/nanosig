@@ -87,9 +87,11 @@ ns_rbtree_find_new_add(key, &tree, match_fn, NULL, bad_new_node);
 
 ---
 
+## 现在关闭的问题
+
 ### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
 
-- **状态**: 打开
+- **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: design
 
@@ -114,6 +116,14 @@ docstring；若仅内部使用，改为 `static` 并评估是否可删除。二�
 
 （2026-08-09 作者决定：保持现状。该函数作为内部低层原语暂不暴露到公共头文件、也不改为 static；不引入 -Wunused-function 告警。后续若出现真实生产调用者再评估：公开 API 则补声明，仅内部使用则改 static 并视用途保留/删除。测试侧已通过 extern 自声明覆盖 5 种形态，见 test/unit/test_ds_rbtree.c:554-598。）
 
+#### 关闭原因
+
+作者决策：内部低层原语暂不暴露公共 API、也不改 static（避免 -Wunused-function 告警），
+保持现状，待未来出现真实生产调用者再评估。测试侧已通过 extern 自声明覆盖 5 种形态
+（test/unit/test_ds_rbtree.c:554-598）。关闭-已拒绝 永久保留。
+- 关闭日期: 2026-08-09
+- 状态: 关闭-已拒绝
+
 #### 可重现的失败场景
 
 ```c
@@ -128,7 +138,6 @@ src/ds/ns_rbtree.c:590
 
 ---
 
-## 现在关闭的问题
 
 ### RBTREE-001: `ns_rbtree_remove` 中 `size` 下溢防护静默掩盖错误
 

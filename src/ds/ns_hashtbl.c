@@ -175,7 +175,11 @@ struct ns_hashtbl_node *ns_hashtbl_node_new_with_string_refresh(
 {
     struct ns_hashtbl_node *node;
     ns_hashtbl_kv_len_t key_len;
-    ns_hash_val_t hash_val = ns_hash_str_val(key, &key_len);
+    ns_hash_val_t hash_val;
+
+    if(key == NULL)
+        return NULL;    /* 与 ns_hash_string 的 NULL 守卫对称 */
+    hash_val = ns_hash_str_val(key, &key_len);
 
     (void)hashtbl;
     node = (struct ns_hashtbl_node *)ns_platform_alloc(
@@ -330,8 +334,12 @@ int ns_hashtbl_find_with_string(
 {
     struct ns_hashtbl *hashtbl = (struct ns_hashtbl *)_hashtbl;
     ns_hashtbl_kv_len_t key_len;
-    unsigned int idx = ns_hash_str_val(key_str, &key_len) & hashtbl->mask;
     struct ns_list_node *pos;
+    unsigned int idx;
+
+    if(key_str == NULL)
+        return NS_E_INVAL;    /* NULL 键参数无效，与 ns_hash_string 的 NULL 守卫对称 */
+    idx = ns_hash_str_val(key_str, &key_len) & hashtbl->mask;
 
     /* 尝试进行重建 */
     ns_hashtbl_try_remake(hashtbl, idx);
@@ -364,6 +372,8 @@ ns_hashtbl_t ns_hashtbl_create(float load_factor)
         return NULL;
     hashtbl->mask = NS_CONFIG_HASHTBL_MIN_SIZE - 1;
     hashtbl->threshold = (unsigned int)(NS_CONFIG_HASHTBL_MIN_SIZE * load_factor);
+    if(hashtbl->threshold == 0)
+        hashtbl->threshold = 1;    /* 下限钳制：极小 load_factor 时避免每次 insert 都 resize */
     hashtbl->count = 0;
     hashtbl->table = (struct ns_list_node *)ns_platform_alloc(
         sizeof(struct ns_list_node) * NS_CONFIG_HASHTBL_MIN_SIZE);

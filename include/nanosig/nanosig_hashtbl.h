@@ -112,8 +112,9 @@ extern struct ns_hashtbl_node *ns_hashtbl_node_new_refresh(
  *
  * @param hashtbl   哈希表句柄。
  * @param key       字符串键；长度限制 65535 字节（ns_hashtbl_kv_len_t 为 uint16_t）。
+ *                  NULL 时返回 NULL（与 ns_hash_string 的 NULL 守卫对称）。
  * @param value_len 值长度。
- * @return 成功返回节点句柄，失败返回 NULL。
+ * @return 成功返回节点句柄，失败或 key 为 NULL 返回 NULL。
  */
 extern struct ns_hashtbl_node *ns_hashtbl_node_new_with_string_refresh(
     ns_hashtbl_t hashtbl, const char *key, ns_hashtbl_kv_len_t value_len);
@@ -221,9 +222,9 @@ extern int ns_hashtbl_find(
  * @brief 从哈希表寻找节点（字符串键）。
  *
  * @param hashtbl  哈希表句柄。
- * @param key_str  键字符串。
+ * @param key_str  键字符串；NULL 时返回 NS_E_INVAL（不崩溃）。
  * @param out_node 输出节点；可传 NULL（不会崩溃）。
- * @return NS_OK 找到；NS_E_EMPTY 未找到。
+ * @return NS_OK 找到；NS_E_EMPTY 未找到；NS_E_INVAL 键为 NULL。
  */
 extern int ns_hashtbl_find_with_string(
     ns_hashtbl_t hashtbl, const char *key_str, struct ns_hashtbl_node **out_node);
@@ -262,7 +263,7 @@ extern uint32_t ns_hash_string(const char *key);
                 ((struct ns_hashtbl *)(hashtbl))->table + (tmp_uint_i), node)
 
 /**
- * @brief 遍历哈希表，键为字符串（仅匹配键匹配的节点）。
+ * @brief 遍历哈希表，键为字符串（仅精确匹配键的节点：长度与内容均相等，不做前缀匹配）。
  *
  * @param hashtbl       哈希表句柄。
  * @param string        字符串。
@@ -276,7 +277,8 @@ extern uint32_t ns_hash_string(const char *key);
         node_tmp_n = ns_list_entry(node_pos->node.next, typeof(*node_pos), node);                   \
         &node_pos->node != (list_tmp_head);                                                         \
         node_pos = node_tmp_n, node_tmp_n = ns_list_entry(node_tmp_n->node.next, typeof(*node_tmp_n), node)) \
-        if(strncmp((const char *)ns_hashtbl_node_const_key(node_pos), string, ns_hashtbl_node_key_len(node_pos)) == 0)
+        if(ns_hashtbl_node_key_len(node_pos) == strlen((const char *)string) &&                     \
+           memcmp(ns_hashtbl_node_const_key(node_pos), string, ns_hashtbl_node_key_len(node_pos)) == 0)
 
 /**
  * @brief 遍历哈希表，键为二进制（仅匹配键匹配的节点）。

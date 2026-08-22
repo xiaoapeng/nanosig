@@ -285,6 +285,35 @@ static int test_auto_resize(void)
     return 0;
 }
 
+/* 极小 load_factor(HASHTBL-103)：threshold 钳制到 >= 1，
+ * 插入 100 个节点后桶数有界（修复前每次 insert 都 resize，mask 会涨到 UINT32_MAX） */
+static int test_tiny_load_factor_bounded(void)
+{
+    ns_hashtbl_t tbl;
+    struct ns_hashtbl *h;
+    unsigned int i;
+    uint32_t key;
+
+    tbl = ns_hashtbl_create(0.01f);
+    if(tbl == NULL) return 1;
+    h = (struct ns_hashtbl *)tbl;
+
+    for(i = 0u; i < 100u; i++){
+        struct ns_hashtbl_node *node;
+        key = i;
+        node = ns_hashtbl_node_new_refresh(tbl, &key, 4, 4);
+        if(node == NULL) return 1;
+        if(expect_true(ns_hashtbl_insert(tbl, node) == NS_OK) != 0) return 1;
+    }
+
+    /* 修复后 threshold 1→2→4→...→64→128，100 次插入 resize 约 8 次，mask ≈ 2047；
+     * 修复前每次 insert 都 resize，mask 到 UINT32_MAX */
+    if(expect_true(h->mask < 4096u) != 0) return 1;
+
+    ns_hashtbl_destroy(tbl);
+    return 0;
+}
+
 /* try_remake 渐进式重建：扩容后新桶被标记为待重建，查找/插入触发重建 */
 static int test_try_remake(void)
 {
@@ -439,6 +468,39 @@ static int test_for_each_with_string_safe(void)
         count++;
     }
     if(expect_true(count == 0) != 0) return 1;
+
+    /* 前缀假阳性回归：键 "aa" 与搜索串 "aaz" 的 FNV-1a 哈希同桶（各掩码下均同桶）。
+     * 修复前 strncmp("aa","aaz",2)==0 会把前缀键 "aa" 误当匹配带出；
+     * 精确匹配（长度短路 + memcmp）后只出精确键 "aaz"。 */
+    {
+        struct ns_hashtbl_node *node;
+        node = ns_hashtbl_node_new_with_string_refresh(tbl, "aa", 2);
+        if(node == NULL) return 1;
+        *(uint32_t *)ns_hashtbl_node_value(node) = 100u;
+        if(expect_true(ns_hashtbl_insert(tbl, node) == NS_OK) != 0) return 1;
+        node = ns_hashtbl_node_new_with_string_refresh(tbl, "aaz", 3);
+        if(node == NULL) return 1;
+        *(uint32_t *)ns_hashtbl_node_value(node) = 101u;
+        if(expect_true(ns_hashtbl_insert(tbl, node) == NS_OK) != 0) return 1;
+    }
+
+    /* 搜 "aaz"：不得遍历出前缀键 "aa"，只出精确键 "aaz" */
+    count = 0;
+    ns_hashtbl_for_each_with_string_safe(tbl, "aaz", node_pos, node_tmp_n, list_tmp_head){
+        count++;
+        if(expect_true(ns_hashtbl_node_key_len(node_pos) == 3) != 0) return 1;
+        if(expect_true(memcmp(ns_hashtbl_node_const_key(node_pos), "aaz", 3) == 0) != 0) return 1;
+    }
+    if(expect_true(count == 1) != 0) return 1;
+
+    /* 反向：搜 "aa" 只出 "aa"，不出 "aaz" */
+    count = 0;
+    ns_hashtbl_for_each_with_string_safe(tbl, "aa", node_pos, node_tmp_n, list_tmp_head){
+        count++;
+        if(expect_true(ns_hashtbl_node_key_len(node_pos) == 2) != 0) return 1;
+        if(expect_true(memcmp(ns_hashtbl_node_const_key(node_pos), "aa", 2) == 0) != 0) return 1;
+    }
+    if(expect_true(count == 1) != 0) return 1;
 
     ns_hashtbl_destroy(tbl);
     return 0;
@@ -617,6 +679,10 @@ static int test_find_with_string_null_out(void)
     if(expect_true(ns_hashtbl_find_with_string(tbl, "alpha", NULL) == NS_OK) != 0) return 1;
     if(expect_true(ns_hashtbl_find_with_string(tbl, "missing", NULL) == NS_E_EMPTY) != 0) return 1;
 
+    /* NULL 键守卫(HASHTBL-102)：工厂返回 NULL、查找返回 NS_E_INVAL，不崩溃 */
+    if(expect_true(ns_hashtbl_node_new_with_string_refresh(tbl, NULL, 4) == NULL) != 0) return 1;
+    if(expect_true(ns_hashtbl_find_with_string(tbl, NULL, NULL) == NS_E_INVAL) != 0) return 1;
+
     ns_hashtbl_destroy(tbl);
     return 0;
 }
@@ -664,6 +730,7 @@ int main(void)
     if(test_binary_key() != 0) return 1;
     if(test_string_key() != 0) return 1;
     if(test_auto_resize() != 0) return 1;
+    if(test_tiny_load_factor_bounded() != 0) return 1;
     if(test_try_remake() != 0) return 1;
     if(test_for_each_safe() != 0) return 1;
     if(test_for_each_with_string_safe() != 0) return 1;
