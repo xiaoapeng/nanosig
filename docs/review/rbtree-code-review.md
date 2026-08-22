@@ -87,6 +87,47 @@ ns_rbtree_find_new_add(key, &tree, match_fn, NULL, bad_new_node);
 
 ---
 
+### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: design
+
+#### 问题描述
+
+`ns_rb_replace_node`（src/ds/ns_rbtree.c:590）为非 static 全局定义，会被静态库导出，
+但 include/nanosig/nanosig_rbtree.h 中没有任何声明。对比同文件其余全局函数
+（ns_rbtree_prev / ns_rbtree_match_find / ns_rbtree_find_new_add 等）均已在头文件声明。
+由此产生两种可能：该函数本应是公共 API 却缺原型（调用方跨 TU 使用需自声明或产生
+隐式声明告警），或本应是 static 内部函数却意外导出（头文件与实现的公共符号面不一致）。
+
+测试暴露：本测试套件新增用例（test/unit/test_ds_rbtree.c）为覆盖该函数需要
+`extern void ns_rb_replace_node(...)` 自声明，发现头文件无对应原型。
+
+#### review 建议
+
+由作者决策：若该函数属于公共 API，在 include/nanosig/nanosig_rbtree.h 补充声明与
+docstring；若仅内部使用，改为 `static` 并评估是否可删除。二选一消除"导出但未声明"
+的符号面不一致。
+
+#### 作者建议
+
+（2026-08-09 作者决定：保持现状。该函数作为内部低层原语暂不暴露到公共头文件、也不改为 static；不引入 -Wunused-function 告警。后续若出现真实生产调用者再评估：公开 API 则补声明，仅内部使用则改 static 并视用途保留/删除。测试侧已通过 extern 自声明覆盖 5 种形态，见 test/unit/test_ds_rbtree.c:554-598。）
+
+#### 可重现的失败场景
+
+```c
+#include <nanosig/nanosig_rbtree.h>
+/* 编译报错：ns_rb_replace_node 未声明（无原型） */
+ns_rb_replace_node(victim, new_node, &tree);
+/* 需在调用方手动 extern 声明才能通过编译 */
+```
+
+#### 定位
+src/ds/ns_rbtree.c:590
+
+---
+
 ## 现在关闭的问题
 
 ### RBTREE-001: `ns_rbtree_remove` 中 `size` 下溢防护静默掩盖错误

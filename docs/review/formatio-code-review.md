@@ -29,6 +29,16 @@
 
 ---
 
+
+### 2026-08-09
+
+| ID | 摘要 | 修复 | 日期 |
+|----|------|------|------|
+| FORMATIO-017 | `%e`/`%.0e`/`%E` 对 0.0 输出垃圾值 → 0.0 分支补 raw_factor=1.0 | 已修复 | 2026-08-09 |
+| FORMATIO-018 | `ns_snprintf(buf,0,...)` 写 buf[-1] → finish 加 size==0 守卫 | 已修复 | 2026-08-09 |
+| FORMATIO-019 | `ns_sprintf` 指针越界 UB → 无界模式(end==NULL)+ns_vsprintf 移入 .c | 已修复 | 2026-08-09 |
+
+---
 ## 现在打开的问题
 
 ### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出
@@ -529,3 +539,139 @@ src/ns_formatio.c:1216-1218
 #### 定位
 
 `src/ns_formatio.c:1030-1032` → 已确认
+
+### FORMATIO-017: `%e`/`%.0e` 对精确 0.0/-0.0 输出垃圾值（NaN→uint64_t 转换 UB）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **标签**: bug
+
+#### 问题描述
+
+`vprintf_float_e`（src/ns_formatio.c:621）的 `abs_number == 0.0` 分支（:634-635）只设置
+`floored_exp10 = 0`，没有设置 `normalization.raw_factor`。`normalization` 在 :629 初始化为
+`{ 0 }`，因此 raw_factor 保持 0。随后 `float_normalized_decentralized` → `apply_scaling(0.0,
+{raw_factor=0})` 内部做 `x / raw_factor`，0.0/0.0 = NaN，再把 NaN 赋给 `(uint64_t)`（
+`components->integral = (uint64_t)scaled`，:449 附近）触发未定义行为，输出
+"9223372036854775809.000000e+00"（2^63+1）这样的垃圾值。
+
+测试暴露：本测试套件（test/unit/test_formatio.c）在构造用例时发现，按"只记录不修"原则将
+`%e` 0.0 用例排除（见 test_formatio.c 用例 19 注释），未作为通过预期。
+
+#### review 建议
+
+在 `abs_number == 0.0` 分支内显式设置 `normalization.raw_factor = 1`（并使
+`abs_exp10_covered_by_powers_table = true`），使 apply_scaling 得到 0.0/1.0=0.0，
+输出正确的 "0.000000e+00"；或在该分支直接跳过归一化。修复后可在测试中补回
+`%e`/`%.0e`/`%E` 的 0.0 与 -0.0 黄金值用例。
+
+#### 作者建议
+
+（2026-08-09 作者修复：vprintf_float_e 的 0.0 分支补充 normalization.raw_factor = 1.0，避免 apply_scaling 0.0/0.0 = NaN → (uint64_t)NaN UB；0.0 输出 "0.000000e+00"、-0.0 输出 "-0.000000e+00"。）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%e", 0.0);
+// 实际: "9223372036854775809.000000e+00"（n=30）
+// 期望: "0.000000e+00"
+ns_snprintf(buf, sizeof(buf), "%.0e", 0.0);
+// 实际: "9223372036854775809e+00"
+ns_snprintf(buf, sizeof(buf), "%e", -0.0);
+// 实际: "-9223372036854775809.000000e+00"
+```
+
+#### 定位
+src/ns_formatio.c:634-647
+
+---
+
+### FORMATIO-018: `ns_snprintf(buf, 0, ...)` 在 size=0 时 `streamout_finish` 写 `buf[-1]` 下溢
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **标签**: bug
+
+#### 问题描述
+
+`ns_snprintf(buf, 0, ...)` → `ns_stream_memory_init(&stream, buf, 0)`（:1147）使
+`m->end == buf`、`m->pos == buf`。`streamout_finish` 的 `NS_STREAM_TYPE_MEMORY` 分支
+（:265-273）中 `m->pos < m->end` 为假，走 else 分支 `*(m->end - 1) = '\0'` 写入
+`buf[-1]`——调用方缓冲区前 1 字节下溢。公共头 include/nanosig/ns_formatio.h 未文档化
+size>0 前提，且属内存安全问题（违反前提仍值得防御性加固，见 review 规范 §4.4.5）。
+
+已用 ASAN 实测确认：`streamout_finish` 在 src/ns_formatio.c:270 触发 stack-buffer-underflow，
+WRITE of size 1。
+
+测试暴露：本测试套件按计划 R2 禁用 size=0 作为通过用例（test_formatio.c 用例 5 注释），
+以最小复现确认后录入。
+
+#### review 建议
+
+在 `streamout_finish` 的 MEMORY 分支对 `m->end > m->pos` 之外的 `m->end > 起始地址`
+情形做防御：当 `size == 0`（`m->end == m->pos == buf`）时跳过写 NUL，或
+`ns_stream_memory_init` 对 size==0 提前返回空输出。修复后可在测试中补回 size=0
+边界用例（期望返回应写全长、缓冲区不被写入）。
+
+#### 作者建议
+
+（2026-08-09 作者修复：streamout_finish MEMORY 分支增加 size==0 守卫，size=0 时不写任何字节；ns_snprintf(buf,0,...) 返回应写全长，符合 C99。测试新增 size=0 用例。）
+
+#### 可重现的失败场景
+
+```c
+char buf[16];
+ns_snprintf(buf, 0, "hello %d", 42);
+// ASAN: stack-buffer-underflow, WRITE of size 1 at src/ns_formatio.c:270
+// 正常返回 n=8，但调用方缓冲区前 1 字节被写入 '\0'
+```
+
+#### 定位
+src/ns_formatio.c:265-273
+
+---
+
+### FORMATIO-019: `ns_vsprintf`/`ns_sprintf` 经 `buf + size` 指针越界（FORMATIO-004 修复不完整，UBSAN 可见）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **标签**: bug
+
+#### 问题描述
+
+FORMATIO-004 的修复把 `ns_vsprintf` 的指针相减改为整数减法
+`(size_t)(UINTPTR_MAX - (uintptr_t)buf)`（include/nanosig/ns_formatio.h:74），
+但该 size 随后传入 `ns_vsnprintf` → `ns_stream_memory_init`，
+后者执行 `stream->end = buf + size`（include/nanosig/ns_formatio.h:118）——
+`buf + (UINTPTR_MAX - (uintptr_t)buf)` 使指针索引溢出地址空间，
+仍是 C11 6.5.6p8 未定义行为。UBSAN 实测报错：
+"runtime error: pointer index expression with base ... overflowed to 0xffffffffffffffff"。
+
+测试暴露：本测试套件 test_formatio.c 用例 8（test_sprintf）调用公共 API
+`ns_sprintf` 时触发。该 UB 源自生产代码（ns_formatio.h:74,118），非测试引入。
+
+#### review 建议
+
+由作者决策：① 为内存流增加"无界"模式（end 不做边界限制），使 `ns_sprintf` 不走
+`buf + size` 越界计算；② 或在头文件明确文档化 `ns_sprintf`/`ns_vsprintf`
+"将地址空间视为缓冲区、指针算术可能溢出"的设计前提；③ 或改由 caller 提供足够大
+的 size 的 `ns_snprintf` 替代。三选一消除 UBSAN 可见的指针溢出。
+
+#### 作者建议
+
+（2026-08-09 作者修复：采用无界模式——内存流 end==NULL 表示无界；ns_vsprintf 由 header static inline 改为 .c 实现，不再计算假 size；ns_sprintf 改调 ns_vsprintf；streamout_in_byte/streamout_finish 对 end==NULL 短路，消除 buf+size 指针越界 UB。）
+
+#### 可重现的失败场景
+
+```c
+char buf[512];
+ns_sprintf(buf, "%s", "hello");   /* ns_vsprintf → size = UINTPTR_MAX - (uintptr_t)buf */
+/* UBSAN: include/nanosig/ns_formatio.h:118 pointer index expression overflowed */
+```
+
+#### 定位
+include/nanosig/ns_formatio.h:74
+include/nanosig/ns_formatio.h:118
+
+---

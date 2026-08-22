@@ -12,3 +12,4 @@ build-linux*
 Testing/
 build-coverage/
 *.c.gcov
+*.h.gcov

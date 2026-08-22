@@ -236,7 +236,8 @@ static inline void streamout_in_byte(struct ns_stream_base *stream, char ch)
         }
         case NS_STREAM_TYPE_MEMORY: {
             struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
-            if (m->pos < m->end) {
+            /* end == NULL 表示无界流(ns_sprintf/ns_vsprintf),调用方保证缓冲足够 */
+            if (m->end == NULL || m->pos < m->end) {
                 *m->pos = (uint8_t)ch;
                 m->pos++;
             }
@@ -264,11 +265,18 @@ static NS_NOINLINE void streamout_finish(struct ns_stream_base *stream)
         }
         case NS_STREAM_TYPE_MEMORY: {
             struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
-            if (m->pos < m->end) {
+            if (m->end == NULL) {
+                /* 无界流(ns_sprintf/ns_vsprintf):调用方保证空间,直接收尾 */
                 *m->pos = '\0';
-            } else {
-                *(m->end - 1) = '\0';
+            } else if (m->end > m->buf) {
+                /* 有界且 size >= 1:截断时在 end-1 处写 NUL */
+                if (m->pos < m->end) {
+                    *m->pos = '\0';
+                } else {
+                    *(m->end - 1) = '\0';
+                }
             }
+            /* 有界且 size == 0:不写任何字节(与 C99 一致) */
             break;
         }
     }
@@ -633,6 +641,7 @@ static int vprintf_float_e(struct ns_stream_base *stream, double num,
 
     if (abs_number == 0.0) {
         floored_exp10 = 0;
+        normalization.raw_factor = 1.0;
     } else {
         double exp10 = log10_of_positive(abs_number);
         floored_exp10 = bastardized_floor(exp10);
@@ -1150,6 +1159,18 @@ int ns_vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
     return n;
 }
 
+int ns_vsprintf(char *buf, const char *fmt, va_list args)
+{
+    int n;
+    struct ns_stream_memory stream;
+
+    ns_stream_memory_init(&stream, (uint8_t *)buf, 0);
+    stream.end = NULL; /* 无界流:不设上界,调用方保证缓冲足够 */
+    n = streamout_vprintf((struct ns_stream_base *)&stream, fmt, args);
+    streamout_finish((struct ns_stream_base *)&stream);
+    return n;
+}
+
 int ns_snprintf(char *buf, size_t size, const char *fmt, ...)
 {
     int n;
@@ -1167,7 +1188,7 @@ int ns_sprintf(char *buf, const char *fmt, ...)
     va_list args;
 
     va_start(args, fmt);
-    n = ns_vsnprintf(buf, (size_t)(UINTPTR_MAX - (uintptr_t)buf), fmt, args);
+    n = ns_vsprintf(buf, fmt, args);
     va_end(args);
     return n;
 }

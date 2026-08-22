@@ -69,10 +69,7 @@ extern int ns_printf(const char *fmt, ...);
 
 extern int ns_vsnprintf(char *buf, size_t size, const char *fmt, va_list args);
 
-static inline int ns_vsprintf(char *buf, const char *fmt, va_list args)
-{
-    return ns_vsnprintf(buf, (size_t)((UINTPTR_MAX) - (uintptr_t)buf), fmt, args);
-}
+extern int ns_vsprintf(char *buf, const char *fmt, va_list args);
 
 extern int ns_snprintf(char *buf, size_t size, const char *fmt, ...);
 extern int ns_sprintf(char *buf, const char *fmt, ...);
