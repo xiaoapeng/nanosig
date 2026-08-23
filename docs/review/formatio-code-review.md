@@ -37,40 +37,10 @@
 | FORMATIO-017 | `%e`/`%.0e`/`%E` 对 0.0 输出垃圾值 → 0.0 分支补 raw_factor=1.0 | 已修复 | 2026-08-09 |
 | FORMATIO-018 | `ns_snprintf(buf,0,...)` 写 buf[-1] → finish 加 size==0 守卫 | 已修复 | 2026-08-09 |
 | FORMATIO-019 | `ns_sprintf` 指针越界 UB → 无界模式(end==NULL)+ns_vsprintf 移入 .c | 已修复 | 2026-08-09 |
+| FORMATIO-007 | `ns_stream_puts` FUNCTION 逐字节 → 设计权衡(缓存已摊销 flush)，关闭-已拒绝 | 关闭-已拒绝 | 2026-08-09 |
 
 ---
 ## 现在打开的问题
-
-### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出
-
-- **状态**: 打开
-- **严重度**: 🟢 较低（cleanup）
-
-#### 问题描述
-
-`src/ns_formatio.c:1216-1218` 中，`ns_stream_puts` 对缓存的 `NS_STREAM_TYPE_FUNCTION` 流使用逐个字节循环输出字符串。每字符调用一次 `streamout_in_byte`，触发 switch 分发、边界检查、指针递增和换行扫描。而 `NS_STREAM_TYPE_FUNCTION_NO_CACHE` 类型在 `src/ns_formatio.c:1209-1214` 有批量写入快速路径（单次 `f->write`）。
-
-#### review 建议
-
-为 `NS_STREAM_TYPE_FUNCTION` 类型添加缓存批量写入快速路径：用 `memcpy` 一次性复制到缓存剩余空间，然后 flush。仅在需要换行检测时回退到逐字节路径。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-// 80 字节字符串，FUNCTION 流
-ns_stream_puts(stream, "0123456789... (80 chars)");
-// 80 次 streamout_in_byte 调用
-// 每次包含 switch + bounds check + newline scan
-```
-
-#### 定位
-src/ns_formatio.c:1216-1218
-
----
 
 ### FORMATIO-012: `NS_MACRO_DEBUG_LEVEL` 仅检查首字符，多位数等级会错误
 
@@ -117,6 +87,45 @@ src/ns_formatio.c:1216-1218
 ---
 
 ## 现在关闭的问题
+
+### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低（cleanup）
+
+#### 问题描述
+
+`src/ns_formatio.c:1216-1218` 中，`ns_stream_puts` 对缓存的 `NS_STREAM_TYPE_FUNCTION` 流使用逐个字节循环输出字符串。每字符调用一次 `streamout_in_byte`，触发 switch 分发、边界检查、指针递增和换行扫描。而 `NS_STREAM_TYPE_FUNCTION_NO_CACHE` 类型在 `src/ns_formatio.c:1209-1214` 有批量写入快速路径（单次 `f->write`）。
+
+#### review 建议
+
+为 `NS_STREAM_TYPE_FUNCTION` 类型添加缓存批量写入快速路径：用 `memcpy` 一次性复制到缓存剩余空间，然后 flush。仅在需要换行检测时回退到逐字节路径。
+
+#### 作者建议
+
+（2026-08-09 作者决策：关闭-已拒绝。逐字节实现是有意设计——缓存型 FUNCTION 流的 f->write 只在缓存满或换行时调用，缓存已批量摊销 I/O，逐字节的真实代价仅是每字符一次 streamout_in_byte 的 CPU 分发开销；MCU 场景短字符串下该开销可忽略，且无缓存场景已由 FUNCTION_NO_CACHE 的批量路径覆盖。批量 memcpy 优化仅省 CPU 指令、不省 I/O，投入产出比低，保持现状。）
+
+#### 关闭原因
+
+设计权衡：缓存已摊销 flush（仅缓存满/换行调用），逐字节仅 CPU 级开销，MCU 短串可忽略；无缓存场景已有 NO_CACHE 批量路径（src/ns_formatio.c:1249-1253）。作者决策保持现状。
+- 关闭日期: 2026-08-09
+- 状态: 关闭-已拒绝
+
+#### 可重现的失败场景
+
+```c
+// 80 字节字符串，FUNCTION 流
+ns_stream_puts(stream, "0123456789... (80 chars)");
+// 80 次 streamout_in_byte 调用
+// 每次包含 switch + bounds check + newline scan
+```
+
+#### 定位
+src/ns_formatio.c:1254-1256
+src/ns_formatio.c:1249-1253
+
+---
+
 
 ### FORMATIO-001: `streamout_in_byte` 缓存满时输入字符静默丢弃
 
