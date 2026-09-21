@@ -43,7 +43,7 @@
 | CMake preset 可配置并写入 `build/` | P0 验收 | `CMakePresets.json` 中 `binaryDir` 统一为 `${sourceDir}/build` | 已覆盖 |
 | 空静态库目标可构建 | P0 验收 | `src/nanosig.c` 和 `CMakeLists.txt` 中的 `add_library(nanosig ...)` | 已覆盖 |
 | 编译警告等级已提高 | P0 验收 | CMakeLists.txt 中的 `-Wall -Wextra -Wconversion -Wsign-conversion -Wno-psabi` 和 MSVC `/W4 /permissive- /Zc:preprocessor` | 已覆盖 |
-| `sanitize-all` 占位目标存在 | P0 验收 | `CMakeLists.txt` 中 `add_custom_target(sanitize-all ...)` | 已覆盖 |
+| `sanitize-all` 真正化为多阶段审计入口 | P0 验收 | `cmake/SanitizeAll.cmake` + `cmake/scripts/audit_{config,headers,encoding}.{cmake,py}`；CI `.github/workflows/ci.yml` 显式调用 | 已覆盖 |
 | `api-compile-checks` 和 CTest syntax-only 检查存在 | P0 验收 | CMake 中 `add_custom_target(api-compile-checks ...)`；6 个 compile-check 测试目标 | 已覆盖 |
 
 ### P1a：`nanosig/nanosig_port.h` 接口冻结

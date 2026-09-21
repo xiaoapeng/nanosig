@@ -46,7 +46,7 @@ static int64_t ns_timer_remaining_us(ns_time_us_t expire_us, ns_platform_time_us
     return (int64_t)((uint64_t)expire_us - (uint64_t)now_us);
 }
 
-static int ns_timer_cmp(ns_rbtree_node_t *a, ns_rbtree_node_t *b)
+static int ns_timer_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
 {
     const ns_timer_t *ta = ns_rbtree_entry(a, const ns_timer_t, rb_node);
     const ns_timer_t *tb = ns_rbtree_entry(b, const ns_timer_t, rb_node);

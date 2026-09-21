@@ -19,6 +19,7 @@ include(cmake/CompileWarnings.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/Coverage.cmake)
 include(cmake/ApiCompileChecks.cmake)
+include(cmake/SanitizeAll.cmake)
 
 if(UNIX)
     find_package(Threads REQUIRED)
@@ -230,10 +231,10 @@ if(NANOSIG_BUILD_API_CHECKS)
     )
 endif()
 
-add_custom_target(sanitize-all
-    COMMAND ${CMAKE_COMMAND} -E echo "sanitize-all: no sanitizer/audit targets yet"
-    VERBATIM
-)
+# sanitize-all — driven by cmake/SanitizeAll.cmake; see that module for the
+# audit pipeline (A1 api-contract, A2 config consistency, A3 header tags, A4
+# encoding). Runs only when NANOSIG_ENABLE_ASAN / TSAN / UBSAN is ON.
+nanosig_configure_sanitize_all()
 
 # ── Coverage report ──────────────────────────────────────────────────
 if(NANOSIG_ENABLE_COVERAGE)

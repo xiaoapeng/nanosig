@@ -7,7 +7,26 @@
 
 ## 修复历史
 
-(无)
+### 2026-09-21 — sanitize-all 真正化（CMake 多阶段审计入口）
+
+- **GLOBAL-002**: `sanitize-all` 自 P0 起为 echo 占位目标（仅打印
+  "no sanitizer/audit targets yet"），从未执行实际审计。CI 在所有 preset
+  都显式调用该 target，但实际只是 echo 通过，造成"审计通过"的假象。
+
+  真正化后由 cmake/SanitizeAll.cmake 驱动，按当前 preset 启用的 sanitizer
+  创建 `nanosig_audit_asan` / `nanosig_audit_ubsan` / `nanosig_audit_tsan`
+  子目标，每个子目标按 A1 api-contract / A2 config / A3 header tags /
+  A4 encoding 顺序执行四阶段审计（脚本位于 cmake/scripts/audit_*.{sh,cmake,py}）。
+  顶层 `sanitize-all` target 聚合已启用的子目标。CTest 由 CI 单独调用，
+  `sanitize-all` 不再覆盖 quick tests。Release preset 下 sanitize-all
+  降级为说明性输出。
+
+  副产品：A1 api-compile-check 暴露 rbtree cmp 字段 const-correctness 缺陷，
+  已作为 RBTREE-012 修复（详见 rbtree-code-review.md）。
+  A3 header audit 暴露 nanosig_rbtree.h 缺 `@thread-safety` 标注，
+  已作为 RBTREE-013 打开（详见 rbtree-code-review.md）。
+
+(无其它历史)
 
 ---
 

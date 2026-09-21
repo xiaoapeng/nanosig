@@ -7,6 +7,16 @@
 
 ## 修复历史
 
+### 2026-09-21 — 第二轮修复（cmp 字段 const-correctness）
+
+- **RBTREE-012**: `ns_rbtree_root.cmp` 字段类型从
+  `int (*)(ns_rbtree_node_t *, ns_rbtree_node_t *)` 改为
+  `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`，
+  允许调用方按 const-correctness 习惯写 cmp 函数（与 Linux 内核 rbtree 风格一致）。
+  src/ns_timer.c:49 的 `ns_timer_cmp` 与 test/unit/test_ds_rbtree.c:17 的
+  `tree_item_cmp` 同步加 const；内部调用点 src/ds/ns_rbtree.c:609/615/641
+  因实参到 const 形参的隐式转换无需修改。
+
 ### 2026-07-04 — 第一轮修复
 
 - **RBTREE-002**: `ns_rbtree_node_t` 添加 `NS_ALIGNED(sizeof(long))` 对齐属性，
@@ -83,7 +93,94 @@ ns_rbtree_find_new_add(key, &tree, match_fn, NULL, bad_new_node);
 ```
 
 #### 定位
-`src/ds/ns_rbtree.c:572-579`
+src/ds/ns_rbtree.c:572-579
+
+---
+
+### RBTREE-012: `ns_rbtree_root.cmp` 字段类型未 const-correct
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: nanosig_rbtree.h:40 字段类型改为
+  `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`；
+  src/ns_timer.c:49 的 `ns_timer_cmp` 与 test/unit/test_ds_rbtree.c:17 的
+  `tree_item_cmp` 同步加 const；内部调用点 src/ds/ns_rbtree.c:609/615/641
+  因实参到 const 形参的隐式转换无需修改。A1 api-compile-check 由 1 条
+  `-Wincompatible-pointer-types` warning 归零；`ctest -LE long-stability` 47/47 通过。
+- **关闭日期**: 2026-09-21
+
+#### 问题描述
+include/nanosig/nanosig_rbtree.h:40 字段类型
+`int (*cmp)(ns_rbtree_node_t *a, ns_rbtree_node_t *b)` 未带 const，
+导致调用方按 const-correctness 写的 cmp 函数（如
+test/unit/test_data_structures_contract_compile.c:100 的 `ds_contract_rbtree_cmp`）
+无法直接赋值给字段，必须强转或放弃 const。GCC 报告 `-Wincompatible-pointer-types`。
+该问题由 `sanitize-all` A1 api-compile-check 暴露（2026-09-21 audit）。
+
+#### review 建议
+将字段类型改为 `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`，
+与 Linux 内核 `rb_root_cmp_t` 风格一致；同步更新所有 cmp 函数签名加 const。
+src/ds/ns_rbtree.c 内部调用点（`tree->cmp(node, parent)`）无需修改——
+非 const 实参到 const 形参的转换是 C 标准允许的隐式转换。
+
+#### 作者建议
+（已采纳）字段改 const；`ns_timer_cmp` / `tree_item_cmp` 同步加 const；
+内部调用点因 const-correctness 方向的隐式转换无需修改。
+
+#### 可重现的失败场景
+```c
+static int cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
+{
+    (void)a; (void)b;
+    return 0;
+}
+ns_rbtree_root_init(&tree, cmp);
+/* gcc -Wincompatible-pointer-types: 不兼容指针类型赋值 */
+```
+
+#### 定位
+include/nanosig/nanosig_rbtree.h:40
+src/ns_timer.c:49
+test/unit/test_ds_rbtree.c:17
+test/unit/test_data_structures_contract_compile.c:100
+src/ds/ns_rbtree.c:609
+src/ds/ns_rbtree.c:615
+src/ds/ns_rbtree.c:641
+
+---
+
+### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: doc
+
+#### 问题描述
+include/nanosig/nanosig_rbtree.h 完全没有 thread-safety 相关注释。
+对比 include/nanosig/nanosig_list.h:6 与 include/nanosig/nanosig_slist.h:6、
+include/nanosig/nanosig_hashtbl.h:9 均在文件顶部声明"非线程安全"，rbtree
+头文件未声明，等同于文档缺失。该问题由 `sanitize-all` A3 header audit 暴露
+（2026-09-21 WARN）。
+
+#### review 建议
+在 `nanosig_rbtree.h` 文件顶部 `@file` 块内增加 `@thread-safety` 注释，
+遵循 `nanosig_list.h:6` / `nanosig_slist.h:6` 风格：声明 rbtree 为单调用方线程
+使用，并发访问需调用方自行同步（基于 `ns_rbtree_for_each_entry_safe` 等
+遍历宏对裸节点指针的非原子操作）。可选：参考
+include/nanosig/nanosig_mpsc_record_ring.h:135-186 为 `find_add` /
+`find_new_add` / `match_find` 等带回调的函数补充 `@warning callback`
+说明（说明 callback 在调用方线程上下文中执行、非 broker 线程）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+`grep -L 'thread-safety\|MPM-safe\|非线程安全\|原子操作\|单读单写\|并发\|串行' include/nanosig/nanosig_rbtree.h`
+→ 0 命中。其他 8 个 required header 均有命中。
+
+#### 定位
+include/nanosig/nanosig_rbtree.h
 
 ---
 

@@ -37,7 +37,7 @@ struct ns_rbtree_root {
      * @brief      内部使用的比较函数
      * @return  -1:a<b  0:a==b  1:a>b
      */
-    int (*cmp)(ns_rbtree_node_t *a, ns_rbtree_node_t *b);
+    int (*cmp)(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b);
 };
 
 typedef struct ns_rbtree_root ns_rbtree_t;

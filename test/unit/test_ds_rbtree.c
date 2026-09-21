@@ -14,7 +14,7 @@ typedef struct tree_item {
     ns_rbtree_node_t node;
 } tree_item_t;
 
-static int tree_item_cmp(ns_rbtree_node_t *a, ns_rbtree_node_t *b)
+static int tree_item_cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
 {
     const tree_item_t *ia = ns_rbtree_entry(a, const tree_item_t, node);
     const tree_item_t *ib = ns_rbtree_entry(b, const tree_item_t, node);
