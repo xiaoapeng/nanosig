@@ -116,31 +116,79 @@ static int test_waitset_lifecycle(void)
     return 0;
 }
 
-static int test_wakeup_waitable(void)
+typedef struct test_event_ctx {
+    ns_platform_event_t *event;
+} test_event_ctx_t;
+
+static void test_event_signal_entry(void *arg)
 {
-    ns_platform_wakeup_t *wakeup = NULL;
+    test_event_ctx_t *ctx = (test_event_ctx_t *)arg;
+
+    (void)ns_platform_event_signal(ctx->event);
+}
+
+static int test_event_backend(void)
+{
+    ns_platform_event_t event;
     ns_platform_waitset_t *ws = NULL;
-    ns_platform_waitable_t w;
     ns_platform_waitset_completion_t cc[4];
+    ns_platform_thread_t *thread = NULL;
+    test_event_ctx_t ctx;
     size_t cnt = 0u;
 
-    EXPECT_OK(ns_platform_wakeup_create(&wakeup, "test-wakeup-waitable") == NS_OK);
+    EXPECT_OK(ns_platform_event_init(&event, "test-event") == NS_OK);
+
+    /* drain 幂等（无信号时同样返回成功） */
+    EXPECT_OK(ns_platform_event_drain(&event) == NS_OK);
+    EXPECT_OK(ns_platform_event_drain(&event) == NS_OK);
+
     EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
+    event.waitable.events = NS_WAITABLE_EVENT_IN;
+    event.waitable.user_data = (void *)0x1234;
 
-    EXPECT_OK(ns_platform_wakeup_get_waitable(wakeup, &w) == NS_OK);
-    w.events = NS_WAITABLE_EVENT_IN;
-    w.user_data = (void *)0x1234;
+    EXPECT_OK(ns_platform_waitset_add(ws, &event.waitable) == NS_OK);
 
-    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
-    EXPECT_OK(ns_platform_wakeup_signal(wakeup) == NS_OK);
+    /* 强约束：未 remove 就 deinit → NS_E_BUSY */
+    EXPECT_OK(ns_platform_event_deinit(&event) == NS_E_BUSY);
+
+    /* 跨线程 signal → wait 触发，user_data 原样返回 */
+    ctx.event = &event;
+    EXPECT_OK(ns_platform_thread_create(&thread, test_event_signal_entry, &ctx, "test-event-signal") == NS_OK);
     EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4u, &cnt) == NS_OK);
     EXPECT_OK(cnt == 1u);
-    EXPECT_OK(cc[0].waitable == &w);
+    EXPECT_OK(cc[0].waitable == &event.waitable);
     EXPECT_OK(cc[0].waitable->user_data == (void *)0x1234);
+    EXPECT_OK(ns_platform_thread_join(thread) == NS_OK);
 
-    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
+    /* 多次 signal 合并；单次 drain 后电平触发不再重复报告（防 busy-loop） */
+    EXPECT_OK(ns_platform_event_signal(&event) == NS_OK);
+    EXPECT_OK(ns_platform_event_signal(&event) == NS_OK);
+    EXPECT_OK(ns_platform_event_signal(&event) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 1000000u, cc, 4u, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK(ns_platform_event_drain(&event) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 0u, cc, 4u, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 0u);
+
+    EXPECT_OK(ns_platform_waitset_remove(ws, &event.waitable) == NS_OK);
+    EXPECT_OK(ns_platform_event_deinit(&event) == NS_OK);
     EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
-    EXPECT_OK(ns_platform_wakeup_destroy(wakeup) == NS_OK);
+
+    return 0;
+}
+
+static int test_event_null_params(void)
+{
+    ns_platform_event_t event;
+
+    if(ns_platform_event_init(NULL, "test-event-null") != NS_E_INVAL) return 1;
+    if(ns_platform_event_signal(NULL) != NS_E_INVAL) return 1;
+    if(ns_platform_event_drain(NULL) != NS_E_INVAL) return 1;
+    if(ns_platform_event_deinit(NULL) != NS_E_INVAL) return 1;
+
+    EXPECT_OK(ns_platform_event_init(&event, "test-event-double-deinit") == NS_OK);
+    EXPECT_OK(ns_platform_event_deinit(&event) == NS_OK);
+    EXPECT_OK(ns_platform_event_deinit(&event) == NS_OK);
 
     return 0;
 }
@@ -882,7 +930,8 @@ int main(void)
     if(test_clock() != 0){ fprintf(stderr, "test_clock failed\n"); return 1; }
     if(test_thread() != 0){ fprintf(stderr, "test_thread failed\n"); return 1; }
     if(test_waitset_lifecycle() != 0){ fprintf(stderr, "test_waitset_lifecycle failed\n"); return 1; }
-    if(test_wakeup_waitable() != 0){ fprintf(stderr, "test_wakeup_waitable failed\n"); return 1; }
+    if(test_event_backend() != 0){ fprintf(stderr, "test_event_backend failed\n"); return 1; }
+    if(test_event_null_params() != 0){ fprintf(stderr, "test_event_null_params failed\n"); return 1; }
     if(test_waitset_null_params() != 0){ fprintf(stderr, "test_waitset_null_params failed\n"); return 1; }
     if(test_waitset_add_remove() != 0){ fprintf(stderr, "test_waitset_add_remove failed\n"); return 1; }
     if(test_waitset_add_signaled() != 0){ fprintf(stderr, "test_waitset_add_signaled failed\n"); return 1; }

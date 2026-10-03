@@ -10,7 +10,8 @@
  *  3. loop 线程处理 op_queue，逐个 do_op → 设 rc → signal wakeup
  *  4. user 线程唤醒，读取 rc 后销毁 wakeup，返回
  *
- * 内存序由 ns_platform_wakeup_signal / wakeup_wait 的 OS 原语保证
+ * 内存序由 eventfd/pipe/kqueue 的 signal 与 waitset wait，以及
+ * ns_platform_wakeup_signal / wakeup_wait 的 OS 原语保证
  * （Linux eventfd write(2) / read(2)、Windows SetEvent / WaitForSingleObject），
  * 库内不另加 atomic barrier。
  *
@@ -66,8 +67,7 @@ typedef struct ns_broker_op_request {
 struct ns_event_broker {
     ns_platform_thread_t *thread;
     ns_platform_waitset_t *waitset;
-    ns_platform_wakeup_t *wakeup;
-    ns_platform_waitable_t wakeup_waitable;
+    ns_platform_event_t event;           /* broker loop 自唤醒事件源 */
     ns_list_node_t watcher_head;
     ns_platform_mutex_t *watcher_mutex;
     atomic_int quit_requested;
@@ -206,8 +206,8 @@ static void ns_broker_notify(void *ctx)
 {
     ns_event_broker_t *broker = (ns_event_broker_t *)ctx;
 
-    if((broker != NULL) && (broker->wakeup != NULL)){
-        (void)ns_platform_wakeup_signal(broker->wakeup);
+    if((broker != NULL) && ns_waitable_handle_is_valid(broker->event.signal_handle)){
+        (void)ns_platform_event_signal(&broker->event);
     }
 }
 
@@ -229,8 +229,9 @@ static int ns_broker_queue_op(ns_event_broker_t *broker, ns_broker_op_request_t 
     if(rc != NS_OK) return rc;
     ns_list_push_back(&broker->op_queue_head, &req->link);
 
-    /* 持锁期间 signal 失败时可原子回滚；否则用户线程将因 broker 不被唤醒而永久等待。 */
-    rc = ns_platform_wakeup_signal(broker->wakeup);
+    /* 持锁期间 signal 失败时可原子回滚；否则用户线程将因 broker 不被唤醒而永久等待。
+       event 契约下底层缓冲已满（EAGAIN）视为成功，仅真实错误触发回滚。 */
+    rc = ns_platform_event_signal(&broker->event);
     if(rc != NS_OK){
         ns_list_remove_init(&req->link);
     }
@@ -415,7 +416,7 @@ static void ns_broker_dispatch_pending_events(ns_event_broker_t *broker,
         ns_watcher_t *watcher;
 
         if(w == NULL) continue;
-        if(w == &broker->wakeup_waitable) continue;
+        if(w == &broker->event.waitable) continue;
         watcher = (ns_watcher_t *)w->user_data;
         if(watcher == NULL) continue;
 
@@ -534,10 +535,8 @@ static void ns_broker_run(void *arg)
 #endif
         if(rc == NS_OK){
             for(i = 0u; i < count; ++i){
-                if(completions[i].waitable == &broker->wakeup_waitable){
-                    ns_platform_wait_result_t wait_result;
-
-                    (void)ns_platform_wakeup_wait(broker->wakeup, 0u, &wait_result);
+                if(completions[i].waitable == &broker->event.waitable){
+                    (void)ns_platform_event_drain(&broker->event);
                 }
                 /* watcher 触发事件暂存于 completions 数组，由 dispatch 阶段处理 */
             }
@@ -679,8 +678,6 @@ int ns_broker_global_init(void)
 
     broker->thread = NULL;
     broker->waitset = NULL;
-    broker->wakeup = NULL;
-    ns_waitable_init(&broker->wakeup_waitable);
     broker->watcher_mutex = NULL;
     ns_list_init(&broker->watcher_head);
     ns_atomic_init(&broker->quit_requested, 0);
@@ -688,21 +685,19 @@ int ns_broker_global_init(void)
     ns_list_init(&broker->op_queue_head);
     broker->shutdown_started = 0;
 
-    rc = ns_platform_wakeup_create(&broker->wakeup, "nanosig-broker");
+    rc = ns_platform_waitset_create(&broker->waitset);
     if(rc != NS_OK) goto out_free;
 
-    rc = ns_platform_waitset_create(&broker->waitset);
-    if(rc != NS_OK) goto out_wakeup;
+    rc = ns_platform_event_init(&broker->event, "nanosig-broker");
+    if(rc != NS_OK) goto out_waitset;
 
-    rc = ns_platform_wakeup_get_waitable(broker->wakeup, &broker->wakeup_waitable);
-    if(rc != NS_OK) goto out_waitset;
-    broker->wakeup_waitable.events = NS_WAITABLE_EVENT_IN;
-    broker->wakeup_waitable.user_data = NULL;
-    rc = ns_platform_waitset_add(broker->waitset, &broker->wakeup_waitable);
-    if(rc != NS_OK) goto out_waitset;
+    broker->event.waitable.events = NS_WAITABLE_EVENT_IN;
+    broker->event.waitable.user_data = NULL;
+    rc = ns_platform_waitset_add(broker->waitset, &broker->event.waitable);
+    if(rc != NS_OK) goto out_event;
 
     rc = ns_platform_mutex_create(&broker->watcher_mutex, "nanosig-broker-watchers");
-    if(rc != NS_OK) goto out_wakeup_waitable;
+    if(rc != NS_OK) goto out_add;
 
     rc = ns_platform_mutex_create(&broker->op_lock, "nanosig-broker-op");
     if(rc != NS_OK) goto out_watcher_mutex;
@@ -724,14 +719,13 @@ out_op_lock:
 out_watcher_mutex:
     (void)ns_platform_mutex_destroy(broker->watcher_mutex);
     broker->watcher_mutex = NULL;
-out_wakeup_waitable:
-    (void)ns_platform_waitset_remove(broker->waitset, &broker->wakeup_waitable);
+out_add:
+    (void)ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
+out_event:
+    (void)ns_platform_event_deinit(&broker->event);
 out_waitset:
     (void)ns_platform_waitset_destroy(broker->waitset);
     broker->waitset = NULL;
-out_wakeup:
-    (void)ns_platform_wakeup_destroy(broker->wakeup);
-    broker->wakeup = NULL;
 out_free:
     ns_platform_free(broker);
     return rc;
@@ -748,11 +742,11 @@ void ns_broker_global_shutdown(void)
 
     /* ① 阻止后续 add/remove 入队 */
     broker->shutdown_started = 1;
-    (void)ns_platform_wakeup_signal(broker->wakeup);
+    (void)ns_platform_event_signal(&broker->event);
 
     /* ② 唤醒 loop 线程、join */
     ns_atomic_store_explicit(&broker->quit_requested, 1, ns_memory_order_release);
-    (void)ns_platform_wakeup_signal(broker->wakeup);
+    (void)ns_platform_event_signal(&broker->event);
     if(broker->thread != NULL){
         (void)ns_platform_thread_join(broker->thread);
         broker->thread = NULL;
@@ -767,9 +761,9 @@ void ns_broker_global_shutdown(void)
 
     ns_broker_remove_all_watchers(broker);
 
-    (void)ns_platform_waitset_remove(broker->waitset, &broker->wakeup_waitable);
+    (void)ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
     (void)ns_platform_waitset_destroy(broker->waitset);
-    (void)ns_platform_wakeup_destroy(broker->wakeup);
+    (void)ns_platform_event_deinit(&broker->event);
     (void)ns_platform_mutex_destroy(broker->watcher_mutex);
     (void)ns_platform_mutex_destroy(broker->op_lock);
 

@@ -22,7 +22,7 @@ broker 是全局单例，随 `ns_init()` 初始化，随 `ns_shutdown()` 销毁�
 
 broker 层（独立模块）：
   g_broker（全局单例）
-  thread + waitset + wakeup
+  thread + waitset + event
   watcher 链表（注册的 watcher）
   timer_mgr（内置事件源）
 
@@ -34,7 +34,7 @@ timer_mgr 层（独立模块）：
 平台层：
   ns_platform_thread_create / join
   ns_platform_waitset
-  ns_platform_wakeup_get_waitable
+  ns_platform_event_*（caller-owned waitable-first 事件原语）
 ```
 
 ## 依赖关系
@@ -151,8 +151,7 @@ int ns_broker_remove(ns_watcher_t *watcher);
 struct ns_event_broker {
     ns_platform_thread_t    *thread;
     ns_platform_waitset_t   *waitset;
-    ns_platform_wakeup_t    *wakeup;          /* broker 自己的 wakeup */
-    ns_platform_waitable_t   wakeup_waitable; /* 注册到 waitset */
+    ns_platform_event_t      event;           /* broker 自唤醒事件源（waitable 注册到 waitset） */
     ns_list_node_t           watcher_head;    /* 已注册 watcher 链表 */
     ns_platform_mutex_t     *watcher_mutex;   /* 保护链表 */
     atomic_int               quit_requested;
@@ -210,17 +209,17 @@ static void broker_run(void *arg)
 2. 同一批 watcher 事件按 completion 数组顺序处理。
 3. 单个 emit 失败不影响后续 watcher 或 timer fire。
 
-### wakeup 机制
+### 自唤醒机制
 
-broker 的 waitset 里始终注册一个 wakeup waitable。以下场景触发
-wakeup：
+broker 的 waitset 里始终注册一个 `ns_platform_event_t` 的 waitable
+（wakeup 仅保留阻塞单等待职责，不再暴露内部 waitable）。以下场景触发：
 
 - `ns_timer_start` / `ns_timer_cancel` / `ns_timer_restart` 通过
   timer_mgr 的 notify 回调调 `ns_broker_notify()`，内部
-  `wakeup_signal(broker->wakeup)`。
-- `ns_broker_destroy` 时 wakeup signal 唤醒 broker 线程退出。
+  `ns_platform_event_signal(&broker->event)`。
+- `ns_broker_destroy` 时 event signal 唤醒 broker 线程退出。
 
-wakeup 返回后 broker 重新计算 timeout 并继续循环。
+event 触发后 broker drain 该事件、重新计算 timeout 并继续循环。
 
 ## add / remove 流程
 
@@ -262,11 +261,10 @@ ns_init()
   → ns_platform_init()
   → ns_broker_init()
     → ns_platform_alloc(broker)
-    → ns_platform_wakeup_create(&broker->wakeup, "broker")
     → ns_platform_waitset_create(&broker->waitset)
-    → broker->wakeup_waitable = ns_platform_wakeup_get_waitable(broker->wakeup)
-    → broker->wakeup_waitable.events = NS_WAITABLE_EVENT_IN
-    → ns_platform_waitset_add(broker->waitset, &broker->wakeup_waitable)
+    → ns_platform_event_init(&broker->event, "nanosig-broker")
+    → broker->event.waitable.events = NS_WAITABLE_EVENT_IN
+    → ns_platform_waitset_add(broker->waitset, &broker->event.waitable)
     → ns_platform_mutex_create(&broker->watcher_mutex)
     → ns_list_init(&broker->watcher_head)
     → ns_timer_mgr_global_init(ns_broker_notify, broker)
@@ -289,16 +287,16 @@ ns_shutdown()
   → atomic_store(g_ns_initialized, 0)
   → ns_broker_destroy()
     → atomic_store(broker->quit_requested, 1)
-    → ns_platform_wakeup_signal(broker->wakeup)
+    → ns_platform_event_signal(&broker->event)
     → ns_platform_thread_join(broker->thread)
     → g_broker = NULL
     → ns_timer_mgr_global_shutdown()
     → mutex_lock(broker->watcher_mutex)
     → 遍历 watcher_list：waitset_remove + clear user_data + list_remove_init
     → mutex_unlock
-    → waitset_remove(wakeup_waitable)
+    → waitset_remove(event.waitable)
     → waitset_destroy
-    → wakeup_destroy
+    → ns_platform_event_deinit(&broker->event)
     → mutex_destroy
     → ns_platform_free(broker)
   → ns_platform_shutdown()
@@ -351,23 +349,36 @@ int ns_platform_thread_join(ns_platform_thread_t *thread);
 - Linux/macOS：`pthread_create`。
 - `join` 后释放线程句柄和内部结构体。
 
-### ns_platform_wakeup_get_waitable
+### ns_platform_event_*
 
 ```c
-ns_platform_waitable_t ns_platform_wakeup_get_waitable(
-    ns_platform_wakeup_t *wakeup);
+typedef struct ns_platform_event {
+    ns_platform_waitable_t waitable;      /* 等待/消费侧：注册进 waitset，drain 读取此侧 */
+    ns_waitable_handle_t   signal_handle; /* 触发侧：signal 写入此句柄 */
+} ns_platform_event_t;
+
+int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name);
+int ns_platform_event_signal(ns_platform_event_t *event);
+int ns_platform_event_drain(ns_platform_event_t *event);
+int ns_platform_event_deinit(ns_platform_event_t *event);
 ```
 
-- Windows：`w->handle = wakeup->event`。
-- Linux：`w->fd = wakeup->fd`。
-- macOS：`w->fd = wakeup->kq`（kqueue fd，内部注册 `EVFILT_USER`）。
-- `events` 和 `user_data` 由调用方设置。
+caller-owned waitable-first 事件原语，供 broker 自唤醒和未来多事件源接入。
+`events` 和 `user_data` 由调用方设置。`waitable` 为等待/消费侧（drain 读此侧），
+`signal_handle` 为触发侧（signal 写此句柄）；调用方只经 API 操作，不得依赖二者
+是否同值。wakeup 仅保留阻塞单等待职责。
+
+- Windows：`CreateEventA` auto-reset，两 handle 同值；drain 为 no-op。
+- Linux：`eventfd`，waitable fd 与 signal_handle fd 同值。
+- macOS：`pipe`，waitable fd = 读端、signal_handle fd = 写端；pipe 满时
+  signal 视为成功（EAGAIN = 已 signaled）。
+- `deinit` 前必须已 `waitset_remove`，否则返回 `NS_E_BUSY`。
 
 ## 与 timer 的集成
 
 timer_mgr 的 notify 回调 = `ns_broker_notify`。timer start / cancel /
 restart 时内部调 `notify(ctx)` → `ns_broker_notify()` →
-`wakeup_signal(broker->wakeup)`。
+`ns_platform_event_signal(&broker->event)`。
 
 `ns_broker_notify` 是零分配、可跨线程调用的函数：
 
@@ -376,8 +387,8 @@ void ns_broker_notify(void *ctx)
 {
     ns_event_broker_t *broker = ctx;
 
-    if(broker != NULL){
-        (void)ns_platform_wakeup_signal(broker->wakeup);
+    if((broker != NULL) && ns_waitable_handle_is_valid(broker->event.signal_handle)){
+        (void)ns_platform_event_signal(&broker->event);
     }
 }
 ```
@@ -432,7 +443,7 @@ slot 回调执行。
 │    timer start/cancel/restart                        │
 │    → timer_mgr notify(ctx)                           │
 │    → ns_broker_notify()                              │
-│    → wakeup_signal(broker->wakeup)                   │
+│    → event_signal(&broker->event)                    │
 │    → waitset_wait 返回 → 重新计算 timeout             │
 └─────────────────────────────────────────────────────┘
 

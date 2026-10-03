@@ -212,14 +212,97 @@ int ns_platform_wakeup_wait(
     }
 }
 
-int ns_platform_wakeup_get_waitable(const ns_platform_wakeup_t *wakeup,
-    ns_platform_waitable_t *out_waitable)
+static int ns_macos_set_nonblock(int fd)
 {
-    if(wakeup == NULL || out_waitable == NULL) return NS_E_INVAL;
+    int flags;
 
-    ns_waitable_init(out_waitable);
-    out_waitable->primitive.fd = wakeup->kq;
+    flags = fcntl(fd, F_GETFL, 0);
+    if(flags < 0) return NS_E_INVAL;
+    if(fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) return NS_E_INVAL;
+
     return NS_OK;
+}
+
+static int ns_macos_event_drain(ns_platform_event_t *event)
+{
+    char buf[256];
+
+    for(;;){
+        ssize_t rc = read(event->waitable.primitive.fd, buf, sizeof(buf));
+        if(rc > 0) continue;
+        if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
+        if((rc < 0) && (errno == EINTR)) continue;
+        if(rc == 0) return NS_OK;
+        return NS_E_INVAL;
+    }
+}
+
+int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
+{
+    int fds[2];
+
+    (void)debug_name;
+
+    if(event == NULL) return NS_E_INVAL;
+
+    ns_waitable_init(&event->waitable);
+    event->signal_handle.fd = -1;
+
+    if(pipe(fds) < 0){
+        ns_merrln(PLATFORM, "pipe failed: %s", strerror(errno));
+        return NS_E_NOMEM;
+    }
+
+    if((ns_macos_set_cloexec(fds[0]) != NS_OK) || (ns_macos_set_cloexec(fds[1]) != NS_OK)
+        || (ns_macos_set_nonblock(fds[0]) != NS_OK) || (ns_macos_set_nonblock(fds[1]) != NS_OK)){
+        (void)ns_macos_close_fd(fds[0]);
+        (void)ns_macos_close_fd(fds[1]);
+        return NS_E_NOMEM;
+    }
+
+    event->waitable.primitive.fd = fds[0];
+    event->signal_handle.fd = fds[1];
+    return NS_OK;
+}
+
+int ns_platform_event_signal(ns_platform_event_t *event)
+{
+    char byte = 1;
+
+    if(event == NULL) return NS_E_INVAL;
+
+    for(;;){
+        ssize_t rc = write(event->signal_handle.fd, &byte, sizeof(byte));
+        if(rc == (ssize_t)sizeof(byte)) return NS_OK;
+        if((rc < 0) && (errno == EINTR)) continue;
+        if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK; /* pipe 满 = 已 signaled */
+        ns_merrln(PLATFORM, "event_signal write failed: %s", strerror(errno));
+        return NS_E_INVAL;
+    }
+}
+
+int ns_platform_event_drain(ns_platform_event_t *event)
+{
+    if(event == NULL) return NS_E_INVAL;
+    return ns_macos_event_drain(event);
+}
+
+int ns_platform_event_deinit(ns_platform_event_t *event)
+{
+    int rc_r;
+    int rc_w;
+
+    if(event == NULL) return NS_E_INVAL;
+    if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
+
+    rc_r = (event->waitable.primitive.fd >= 0)
+        ? ns_macos_close_fd(event->waitable.primitive.fd) : NS_OK;
+    rc_w = (event->signal_handle.fd >= 0)
+        ? ns_macos_close_fd(event->signal_handle.fd) : NS_OK;
+
+    event->waitable.primitive.fd = -1;
+    event->signal_handle.fd = -1;
+    return ((rc_r == NS_OK) && (rc_w == NS_OK)) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)

@@ -183,14 +183,78 @@ int ns_platform_wakeup_wait(
     }
 }
 
-int ns_platform_wakeup_get_waitable(const ns_platform_wakeup_t *wakeup,
-    ns_platform_waitable_t *out_waitable)
+static int ns_linux_event_drain(ns_platform_event_t *event)
 {
-    if(wakeup == NULL || out_waitable == NULL) return NS_E_INVAL;
+    uint64_t value;
 
-    ns_waitable_init(out_waitable);
-    out_waitable->primitive.fd = wakeup->fd;
+    for(;;){
+        ssize_t rc = read(event->waitable.primitive.fd, &value, sizeof(value));
+        if(rc == (ssize_t)sizeof(value)) continue;
+        if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
+        if((rc < 0) && (errno == EINTR)) continue;
+        return NS_E_INVAL;
+    }
+}
+
+int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
+{
+    int efd;
+
+    (void)debug_name;
+
+    if(event == NULL) return NS_E_INVAL;
+
+    ns_waitable_init(&event->waitable);
+    event->signal_handle.fd = -1;
+
+    efd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
+    if(efd < 0){
+        ns_merrln(PLATFORM, "eventfd failed: %s", strerror(errno));
+        return NS_E_NOMEM;
+    }
+
+    event->waitable.primitive.fd = efd;
+    event->signal_handle.fd = efd;
     return NS_OK;
+}
+
+int ns_platform_event_signal(ns_platform_event_t *event)
+{
+    uint64_t value = 1u;
+
+    if(event == NULL) return NS_E_INVAL;
+
+    for(;;){
+        ssize_t rc = write(event->signal_handle.fd, &value, sizeof(value));
+        if(rc == (ssize_t)sizeof(value)) return NS_OK;
+        if((rc < 0) && (errno == EINTR)) continue;
+        if((rc < 0) && (errno == EAGAIN)) return NS_OK; /* 计数器已满 = 已处于 signaled */
+        ns_merrln(PLATFORM, "event_signal write failed: %s", strerror(errno));
+        return NS_E_INVAL;
+    }
+}
+
+int ns_platform_event_drain(ns_platform_event_t *event)
+{
+    if(event == NULL) return NS_E_INVAL;
+    return ns_linux_event_drain(event);
+}
+
+int ns_platform_event_deinit(ns_platform_event_t *event)
+{
+    int rc;
+
+    if(event == NULL) return NS_E_INVAL;
+    if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
+    if(event->signal_handle.fd < 0) return NS_OK;
+
+    do{
+        rc = close(event->signal_handle.fd);
+    }while((rc < 0) && (errno == EINTR));
+
+    event->signal_handle.fd = -1;
+    event->waitable.primitive.fd = -1;
+    return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)

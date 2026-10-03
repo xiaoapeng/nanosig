@@ -28,8 +28,11 @@ static void platform_contract_accept_opaque_handles(void)
     ns_platform_thread_fn thread_fn = NULL;
     ns_platform_time_us_t timeout_us = NS_PLATFORM_WAIT_INFINITE_US;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
-    ns_platform_waitable_t wakeup_waitable;
-    int rc = ns_platform_wakeup_get_waitable(wakeup, &wakeup_waitable);
+    ns_platform_event_t event;
+    int rc_init = ns_platform_event_init(&event, "contract");
+    int rc_signal = ns_platform_event_signal(&event);
+    int rc_drain = ns_platform_event_drain(&event);
+    int rc_deinit = ns_platform_event_deinit(&event);
 
     (void)wakeup;
     (void)mutex;
@@ -37,8 +40,11 @@ static void platform_contract_accept_opaque_handles(void)
     (void)thread_fn;
     (void)timeout_us;
     (void)wait_result;
-    (void)wakeup_waitable;
-    (void)rc;
+    (void)event;
+    (void)rc_init;
+    (void)rc_signal;
+    (void)rc_drain;
+    (void)rc_deinit;
 }
 
 static void platform_contract_check_atomic_macros(void)

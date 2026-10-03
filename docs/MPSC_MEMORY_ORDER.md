@@ -130,3 +130,5 @@ read_pos = atomic_load(&ring->read_pos, acquire);
 ## 平台边界
 
 所有原子操作通过 `nanosig_atomic.h` 封装，不直接使用平台互斥锁、条件变量或 wakeup 句柄。C11 `stdatomic.h` 提供跨平台内存序语义。
+
+跨线程 event 的 happens-before 由平台 signal/wait 原语提供：Linux eventfd `write(2)`/`read(2)`、macOS pipe `write(2)`/`read(2)`（及 wakeup 的 `kevent`）、Windows `SetEvent`/`WaitForMultipleObjects`。signal 前的写对 wait 返回后的读可见，库内 event 路径不另加 atomic fence。

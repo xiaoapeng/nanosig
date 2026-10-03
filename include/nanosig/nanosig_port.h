@@ -169,8 +169,11 @@ typedef uint64_t ns_platform_time_us_t;
 /**
  * @brief 平台 wakeup 句柄。
  *
- * wakeup 是 loop 的等待/唤醒原语。创建和销毁可以分配资源；
- * `ns_platform_wakeup_signal` 不允许分配内存。
+ * wakeup 是 loop 的等待/唤醒原语，也是唯一的阻塞单等待原语。创建和销毁
+ * 可以分配资源；`ns_platform_wakeup_signal` 不允许分配内存。
+ *
+ * 需要注册进 waitset 的事件源请使用 `ns_platform_event_t`；wakeup 不再
+ * 暴露内部 fd/handle 转换。
  */
 typedef struct ns_platform_wakeup ns_platform_wakeup_t;
 
@@ -306,18 +309,88 @@ int ns_platform_wakeup_wait(
     ns_platform_time_us_t timeout_us,
     ns_platform_wait_result_t *out_result);
 
+/* ================================================================== */
+/*  平台抽象层 — event                                                   */
+/* ================================================================== */
+
 /**
- * @brief 将 wakeup 转换为 waitset 可注册的 waitable。
+ * @brief 可等待的事件原语（调用方拥有存储）。
  *
- * `out_waitable` 仅填充平台原语字段；调用方在此之后负责设置
- * `events` 和 `user_data`。
+ * event 是 waitable-first 的跨线程事件原语：调用方声明本结构体，通过
+ * `ns_platform_event_init` 初始化，注册进 waitset 后可从任意线程
+ * `ns_platform_event_signal` 触发。
  *
- * @param wakeup      wakeup 句柄。
- * @param out_waitable 输出 waitable，成功时被填充。
- * @return `NS_OK` 成功；`NS_E_INVAL` 参数为 NULL。
+ * `waitable` 是等待/消费侧：注册进 waitset，`ns_platform_event_drain` 从此侧
+ * 消费（`events`、`user_data` 由调用方设置）。`signal_handle` 是触发侧：
+ * `ns_platform_event_signal` 写此句柄。
+ *
+ * 两侧在 Linux/Windows 上指向同一底层对象（eventfd / Event HANDLE），在
+ * macOS 上是 pipe 的读端与写端两个不同 fd。这是实现细节而非契约：调用方
+ * 只应通过 `ns_platform_event_*` API 操作，禁止依赖两侧是否同值或互换使用。
+ *
+ * 本原语不提供阻塞单等待；唯一阻塞单等待原语是 `ns_platform_wakeup_t`。
+ * 单事件阻塞语义请建 waitset 注册 `waitable` 后调用 `ns_platform_waitset_wait`。
+ *
+ * 三平台统一硬语义：
+ * - 布尔语义：event 是布尔量而非计数器，同轮多次 signal 可合并且合法，
+ *   调用方不得依赖 signal 次数等于触发次数。
+ * - signal 遇底层缓冲已满（macOS pipe EAGAIN）视为成功返回 NS_OK，
+ *   因为目标 wait 面已处于 signaled；仅真实写错误才返回错误码。
+ * - drain 幂等；drain 后 wait 不再重复触发。drain 是否复位底层对象
+ *   由平台决定（Windows auto-reset 在 wait 返回时已复位，drain 为 no-op）。
+ * - deinit 前必须先 `ns_platform_waitset_remove`，否则返回 NS_E_BUSY。
+ *
+ * 生命周期约束：
+ * @warning `ns_platform_event_init` 非幂等：对同一 event 重复 init 而不先
+ *          deinit 会覆盖字段并泄漏第一次分配的底层资源（Linux eventfd fd /
+ *          macOS pipe 两个 fd / Windows CreateEvent HANDLE）。必须 init 一次、
+ *          deinit 一次。
+ * @pre `signal` / `drain` / `deinit` 必须在成功 `init` 之后调用；`deinit` 另需
+ *      已 `ns_platform_waitset_remove`。
  */
-int ns_platform_wakeup_get_waitable(const ns_platform_wakeup_t *wakeup,
-    ns_platform_waitable_t *out_waitable);
+typedef struct ns_platform_event {
+    ns_platform_waitable_t waitable;      /**< 等待/消费侧：注册进 waitset，drain 读取此侧 */
+    ns_waitable_handle_t   signal_handle; /**< 触发侧：signal 写入此句柄（linux/win 与 waitable 同值，macos=pipe 写端 fd） */
+} ns_platform_event_t;
+
+/**
+ * @brief 初始化 event。
+ *
+ * @param event 调用方拥有的 event。
+ * @param debug_name 调试名称；平台层不接管字符串所有权。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name);
+
+/**
+ * @brief 触发 event。
+ *
+ * 跨线程安全，不允许分配内存。同轮多次调用可合并。
+ *
+ * @param event event。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_event_signal(ns_platform_event_t *event);
+
+/**
+ * @brief 非阻塞消费 event。
+ *
+ * 幂等；用于 waitset level-triggered 模式下避免 busy-loop。
+ *
+ * @param event event。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_event_drain(ns_platform_event_t *event);
+
+/**
+ * @brief 释放 event。
+ *
+ * 前提：已从 waitset 移除。若仍注册则返回 `NS_E_BUSY`。
+ *
+ * @param event event。
+ * @return `NS_OK` 表示成功，`NS_E_BUSY` 表示仍注册，失败时返回负数状态码。
+ */
+int ns_platform_event_deinit(ns_platform_event_t *event);
 
 /**
  * @brief 创建互斥锁。

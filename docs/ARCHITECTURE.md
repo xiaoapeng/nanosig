@@ -126,7 +126,7 @@ broker 是全局单例，随 `ns_init()` 创建，随 `ns_shutdown()` 销毁。
 - 1 个 broker 线程
 - 1 个 waitset（所有 watcher 的 waitable 注册到这里）
 - 1 个 `ns_timer_mgr_t`
-- 1 个 wakeup（注册到自己的 waitset，用于 timer 通知唤醒）
+- 1 个 `ns_platform_event_t`（其 waitable 注册到自己的 waitset，用于 timer 通知 / op 提交自唤醒）
 
 主循环：
 
