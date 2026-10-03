@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/types.h> /* ssize_t (bare-metal newlib needs the explicit include) */
 #include <stdarg.h>
 #include <ctype.h>
 // #include <stdio.h>
