@@ -923,6 +923,10 @@ static int test_waitset_level_triggered(void)
 
 int main(void)
 {
+    /* 跨 TU 平台 ABI 探针：引用当前平台分支的探针符号；若库与消费者选到不同
+       平台分支（例如 PUBLIC 编译定义未传播），该符号未定义，链接期即失败。 */
+    if(NS_PLATFORM_ABI_PROBE != 0){ fprintf(stderr, "platform ABI probe mismatch\n"); return 1; }
+
     EXPECT_OK(ns_platform_init() == NS_OK);
     if(test_alloc() != 0){ fprintf(stderr, "test_alloc failed\n"); return 1; }
     if(test_mutex() != 0){ fprintf(stderr, "test_mutex failed\n"); return 1; }

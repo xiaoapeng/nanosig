@@ -467,6 +467,5 @@ slot 回调执行。
 
 - v2：N 线程 + N waitset。1 个负责 timeout（timer waitset），其余等待
   无限（IO waitset）。add 时按策略分配到某个 waitset。
-- v2：RTOS event group 支持。`watcher->waitable.event_bit` 预留。
 - v2：watcher 支持 payload（传递更多事件元数据）。
 - v2：broker 线程错误上报（连续错误时通知用户）。

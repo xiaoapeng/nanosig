@@ -12,7 +12,6 @@
 #include <sched.h>
 #include <errno.h>
 #include <unistd.h>
-#include <sys/socket.h>
 
 #include <nanosig/nanosig.h>
 #include "test_macros.h"

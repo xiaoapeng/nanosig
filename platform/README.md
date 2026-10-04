@@ -3,9 +3,11 @@
 `platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `nanosig/nanosig_port.h`
 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS 头文件或写平台分支。
 
-三后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
-Windows（WaitForMultipleObjects + SRWLOCK）。后端必须同步推进，不允许一个 OS
-领先另一个完整阶段。
+四后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
+Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象独立
+二值信号量）。桌面三平台后端必须同步推进，不允许一个 OS 领先另一个完整阶段。
+FreeRTOS 后端面向 RTOS 目标，采用 queue set 语义，与桌面后端不是 lockstep
+关系（见下面“FreeRTOS 后端”节）。
 
 ## loop-only 原语
 
@@ -33,6 +35,23 @@ Windows（WaitForMultipleObjects + SRWLOCK）。后端必须同步推进，不�
 - `ns_platform_waitset_add`（注册 waitable；同一 waitable 已注册时返回 `NS_E_EXISTS`）
 - `ns_platform_waitset_remove`（移除 waitable，未注册返回 `NS_E_INVAL`）
 - `ns_platform_waitset_wait`（等待事件，timeout 映射到平台原生等待能力）
+
+### `ns_platform_waitset_remove` 契约
+
+`ns_platform_waitset_remove` 是平台中立契约，所有后端必须满足：
+
+- 返回值只有两种：`NS_OK`（移除成功）和 `NS_E_INVAL`（waitable 为 NULL、句柄无效、
+  或未注册到该 waitset）。**不得**向调用方暴露 `NS_E_BUSY` 或其他失败码。
+- 移除时，后端负责该 waitable 的**残留就绪 token 生命周期**：后端在内部丢弃或
+  消化该 waitable 尚未被 `ns_platform_waitset_wait` 取走的就绪状态，使得移除返回后
+  该 waitable 不再产生 completion。这段内部处理对调用方不可见。
+- 触发侧（如 event 的 signal 侧）与剩余 waitable 不受影响；同一 waitset 中其他
+  已注册项的待决就绪状态必须被保留。
+- 桌面后端天然满足本契约（`epoll_ctl DEL` / `EV_DELETE` / WFMO 重建数组会一并撤销
+  未决状态）。FreeRTOS queue set 后端需要额外处理残留 token，见“FreeRTOS 后端”节。
+
+因此 `src/ns_broker.c` 的 `ns_platform_waitset_remove` 调用点无需感知平台差异，
+也不需要 drain-重试或 `NS_E_BUSY` 分支。
 
 waitset 不包含任何事件源特定函数，也不与 wakeup 耦合。上层直接构造
 `ns_platform_waitable_t`（Linux/macOS 填 `fd`，Windows 填 `handle`）注册到 waitset。
@@ -77,6 +96,33 @@ Windows 后端：
 
 桌面后端必须同步推进，不能让一个 OS 领先另一个完整阶段。
 
+FreeRTOS 后端：
+
+- 线程使用 `xTaskCreate`；`ns_platform_thread_join` 用一次性 join 信号量等待任务结束，
+  被 join 的任务在 `vTaskDelete(NULL)` 之前 signal 该信号量。
+- mutex 使用 `xSemaphoreCreateMutex`（`xSemaphoreTake` / `xSemaphoreGive`）。
+- wakeup 使用**每对象独立的二值信号量**；`ns_platform_wakeup_signal` 调用
+  `xSemaphoreGive`（已满视为成功）。**禁止**使用 task notification 实现 wakeup：
+  loop 与 broker op-proxy 的唤醒共享每任务 notification value 会互相误消费并触发
+  HardFault。
+- 单调时间使用 `xTaskGetTickCount` 乘以 tick 周期（微秒）。
+- 内存分配使用 `pvPortMalloc` / `vPortFree`。
+- waitset 使用 `xQueueCreateSet` 的 queue set：每个 waitable 的 `primitive.handle`
+  是调用方提供的 queue-set-capable FreeRTOS 对象（二值/计数信号量或队列）。
+  `waitset_wait` 用 `xQueueSelectFromSet` 取就绪成员并映射回 waitable，
+  **不**从成员对象消费数据。
+- `ns_platform_event_t` 用二值信号量实现：`waitable.primitive.handle` 与
+  `signal_handle.handle` 指向同一信号量；`signal` = `xSemaphoreGive`，
+  `drain` = 非阻塞 `xSemaphoreTake`。
+- FreeRTOS 后端只支持 `NS_WAITABLE_EVENT_IN`；含 OUT/ERR 的 waitable 在
+  `waitset_add` 返回 `NS_E_INVAL`。
+- queue set 容量有限：`waitset_add` 按“Σ成员容量 + max(成员容量) ≤ 固定容量”校验，
+  超出返回 `NS_E_TOO_MANY_HANDLES`。加入 set 的成员必须为空，否则返回 `NS_E_INVAL`
+  （FreeRTOS queue set 特有语义）。
+- `waitset_remove` 先 drain 被移除成员、再 `xQueueRemoveFromSet`；queue set 已存在的
+  残留 token 由后端内部消化，调用方只见 `NS_OK`/`NS_E_INVAL`（见上节契约）。
+- `waitset_destroy` 仍要求在无注册项时调用（有注册项返回 `NS_E_EXISTS`）。
+
 ## 生命周期和所有权
 
 平台层 handle 都是不透明类型。创建函数返回的 handle 归调用方所有，必须用匹配
@@ -101,14 +147,30 @@ Linux 使用 `timerfd`，macOS 使用 `kevent` timeout，Windows 使用 Waitable
 completion 数组由调用方提供，`out_count` 返回实际触发数。Windows 后端单次 wait
 最多返回 1 个 completion（auto-reset event 语义）。
 
-## v2 扩展路径
+## FreeRTOS 后端
 
-v1 不创建空 RTOS 或 MCU 后端目录。未来 v2 如果需要 ISR / RTOS 支持，应先扩展
-`nanosig/nanosig_port.h` 的契约并补齐文档，再增加对应后端目录。
+FreeRTOS 后端是 v1 的第四个后端，使用 queue set 语义（见“后端映射”节），
+不是空目录占位。它面向真实 RTOS 目标构建，通过顶层 `NANOSIG_PLATFORM=freertos`
+选择，并由 `NANOSIG_FREERTOS_INCLUDE_DIRS` 提供 FreeRTOS SDK 头文件路径。
+FreeRTOS 后端复用 `primitive.handle` 承载 queue-set 成员句柄。
 
-RTOS 前向兼容：`ns_platform_waitable_t` 的 `event_bit` 字段为 RTOS 预留，waitset
-可映射为 event group（FreeRTOS `xEventGroupWaitBits`、Zephyr `k_poll`）。
-RTOS ISR 安全是 v2 课题，v1 不承诺。
+RTOS ISR 安全是后续课题；v1 FreeRTOS 后端不承诺 ISR 上下文调用。
+
+### host POSIX harness 覆盖面
+
+`NANOSIG_BUILD_FREERTOS_POSIX=ON` 会用钉版 FreeRTOS-Kernel（V11.1.0）的 GCC/Posix
+port 在开发主机上编译该后端，并注册 `test/freertos/` 下的契约测试
+（`nanosig_test_freertos_waitset` / `nanosig_test_freertos_broker`）。该 harness **只覆盖**
+队列集与信号语义：waitable/waitset 的 add/remove/wait、event
+signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往返。
+
+明确**不覆盖**（归下游 MCXN947 硬件冒烟）：
+
+- 线程栈深度/溢出行为（`configCHECK_FOR_STACK_OVERFLOW` 停机）与任务优先级抢占细节。
+- `portTICK_PERIOD_MS` 与 `xTaskGetTickCount` 的真实 tick 精度。
+- `configASSERT` 停机路径（host harness 会把越界挡在 `add` 返回错误，而非触发断言）。
+- 单核竞态与 SMP 宿主差异。
+- task notification 共享悬垂导致的硬件 HardFault 场景（后端已从实现上剔除该路径）。
 
 ## 新增后端清单
 

@@ -18,23 +18,35 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} -LE nightly
       - name: Audits
         run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all
 
   windows:
+    # MinGW-w64 GCC (GNU C, posix thread model) from the runner image. The
+    # sources use GNU extensions and the broker tests use POSIX threads, so a
+    # GNU toolchain is required; MSVC / clang-cl cannot build this tree.
+    # Windows has no sanitizer preset, so the release preset is used
+    # (sanitize-all then becomes a no-op audit).
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Select MinGW-w64 toolchain
+        shell: pwsh
+        run: |
+          if (Test-Path 'C:\mingw64\bin\gcc.exe') {
+            Add-Content -Path $env:GITHUB_PATH -Value 'C:\mingw64\bin'
+          }
+          where.exe gcc
+          gcc -v 2>&1 | Select-String 'Thread model'
       - name: Configure
-        run: cmake --preset windows-debug-asan
+        run: cmake --preset windows-release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
       - name: Build
-        run: cmake --build --preset windows-debug-asan
+        run: cmake --build --preset windows-release
       - name: Test
-        run: ctest --preset windows-debug-asan
+        run: ctest --preset windows-release -LE nightly
       - name: Audits
-        run: cmake --build --preset windows-debug-asan --target sanitize-all
+        run: cmake --build --preset windows-release --target sanitize-all
 
   macos:
     runs-on: macos-latest
@@ -53,6 +65,27 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} -LE nightly
       - name: Audits
         run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all
+
+  freertos:
+    # Host POSIX harness for platform/freertos/port.c on both Linux and macOS.
+    # The preset pulls the pinned FreeRTOS-Kernel (V11.1.0) via FetchContent;
+    # macOS additionally applies the guarded pthread-stack patch inside
+    # cmake/FreeRTOSPosix.cmake, while Linux builds the unmodified upstream
+    # POSIX port. Only the FreeRTOS contract tests are registered here.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset freertos-release
+      - name: Build
+        run: cmake --build --preset freertos-release
+      - name: Test
+        run: ctest --preset freertos-release -LE nightly

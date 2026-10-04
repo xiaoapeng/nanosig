@@ -11,5 +11,6 @@ build-linux*
 .codex
 Testing/
 build-coverage/
+build-freertos/
 *.c.gcov
 *.h.gcov

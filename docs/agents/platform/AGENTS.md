@@ -19,6 +19,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 | `linux/` | Linux loop-only backend source. |
 | `macos/` | macOS loop-only backend source. |
 | `windows/` | Windows loop-only backend source. |
+| `freertos/` | FreeRTOS queue-set backend source (real RTOS backend, not a placeholder). |
 
 ## For AI Agents
 
@@ -27,7 +28,8 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 - Loop-only scope: single wakeup, mutex, monotonic clock, and allocation.
 - Waitset scope: waitset create/destroy/add/remove/wait, and waitable registration state. Waitset decoupled from wakeup.
 - Thread scope: thread create/join.
-- Do not create empty RTOS/MCU backend directories for v1; document future ports instead.
+- FreeRTOS is a first-class backend selected with `NANOSIG_PLATFORM=freertos`; it is not an empty placeholder. Its host coverage comes from the FreeRTOS POSIX harness (`NANOSIG_BUILD_FREERTOS_POSIX=ON` / `freertos-release` preset), which only validates queue-set semantics.
+- Do not create empty RTOS/MCU backend directories; add real backends with source, contract tests, and docs.
 
 ### Testing Requirements
 - Platform edits require the relevant OS preset smoke tests where available, including `ctest --preset macos-release --output-on-failure` on macOS.
@@ -45,5 +47,6 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 - Linux backend uses pthread mutex/thread, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
 - macOS backend uses pthread mutex/thread, kqueue EVFILT_USER wakeups, clock APIs, platform allocation, and kqueue/kevent for waitset.
 - Windows backend uses CreateThread, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
+- FreeRTOS backend uses xTaskCreate + join semaphore, per-object binary-semaphore wakeups (never task notifications), xSemaphoreCreateMutex, xTaskGetTickCount, pvPortMalloc/vPortFree, and queue sets (`xQueueCreateSet`/`xQueueSelectFromSet`, IN-only) for waitset.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

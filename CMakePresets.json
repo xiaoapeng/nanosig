@@ -186,6 +186,26 @@
         "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "OFF"
       }
+    },
+    {
+      "name": "freertos-release",
+      "displayName": "FreeRTOS POSIX harness (Release)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-freertos",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "freertos",
+        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -198,7 +218,8 @@
     { "name": "macos-debug-ubsan", "configurePreset": "macos-debug-ubsan" },
     { "name": "macos-release", "configurePreset": "macos-release" },
     { "name": "windows-debug-asan", "configurePreset": "windows-debug-asan" },
-    { "name": "windows-release", "configurePreset": "windows-release" }
+    { "name": "windows-release", "configurePreset": "windows-release" },
+    { "name": "freertos-release", "configurePreset": "freertos-release" }
   ],
   "testPresets": [
     {
@@ -249,6 +270,11 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "freertos-release",
+      "configurePreset": "freertos-release",
       "output": { "outputOnFailure": true }
     }
   ]

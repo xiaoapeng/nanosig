@@ -909,10 +909,16 @@ static int test_array_q(void)
     EXPECT_EQ(n, 8);
     EXPECT_EQ(strcmp(buf, "12EFCDAB"), 0);
 
-    /* 限定符：l/ll → 8 字节、h → 2 字节、hh → 1 字节 */
+    /* 限定符：l → sizeof(unsigned long)（LP64 8 字节 / LLP64 4 字节），
+       ll → 8 字节，h → 2 字节，hh → 1 字节。按实际宽度断言，避免写死 LP64。 */
     n = ns_snprintf(buf, sizeof(buf), "%.8lq", arr8);
-    EXPECT_EQ(n, 16);
-    EXPECT_EQ(strcmp(buf, "0807060504030201"), 0);
+    if(sizeof(unsigned long) == 8u){
+        EXPECT_EQ(n, 16);
+        EXPECT_EQ(strcmp(buf, "0807060504030201"), 0);
+    } else {
+        EXPECT_EQ(n, 17);
+        EXPECT_EQ(strcmp(buf, "04030201 08070605"), 0);
+    }
 
     n = ns_snprintf(buf, sizeof(buf), "%.8llq", arr8);
     EXPECT_EQ(n, 16);

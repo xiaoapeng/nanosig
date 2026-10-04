@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <nanosig/nanosig_status.h>
+#include <nanosig/nanosig_types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,13 +28,48 @@ extern "C" {
 /*  平台判定                                                            */
 /* ================================================================== */
 
-/** @brief 当前编译目标为 Windows。 */
-#if defined(_WIN32)
+/**
+ * @brief 当前编译目标为 FreeRTOS。
+ *
+ * FreeRTOS 目标由构建系统显式定义 `NANOSIG_PLATFORM_FREERTOS`（例如顶层 CMake 的
+ * `NANOSIG_PLATFORM=freertos` 会给目标 PUBLIC 注入 `-DNANOSIG_PLATFORM_FREERTOS=1`）。
+ * 本分支必须排在宿主检测之前：FreeRTOS 的 POSIX/host 模拟环境同时满足 `__APPLE__`
+ * 或 `__linux__`，显式宏优先。
+ *
+ * 未识别目标不提供 `#else` 兜底；平台选择保持显式，未知目标由构建系统报错。
+ */
+#if defined(NANOSIG_PLATFORM_FREERTOS)
+#define NANOSIG_PLATFORM_FREERTOS 1
+#elif defined(_WIN32)
 #define NANOSIG_PLATFORM_WINDOWS 1
 #elif defined(__APPLE__)
 #define NANOSIG_PLATFORM_APPLE 1
 #elif defined(__linux__) || defined(__unix__)
 #define NANOSIG_PLATFORM_POSIX 1
+#endif
+
+/* ================================================================== */
+/*  平台 ABI 探针符号                                                    */
+/* ================================================================== */
+
+/**
+ * @brief 平台 ABI 一致性链接探针。
+ *
+ * 库按所选平台导出一个不同名字的符号：宿主三后端导出 `ns_platform_abi_host`，
+ * FreeRTOS 后端导出 `ns_platform_abi_freertos`。本头文件按当前 TU 的平台分支声明
+ * 对应符号，测试 / harness TU 引用该符号。
+ *
+ * 若消费 TU 与库在平台选择上不一致（例如 PUBLIC 编译定义未传播），被引用的符号名
+ * 与库实际导出的符号名不同，链接期会直接失败，从而在编译/链接阶段而不是运行期
+ * 暴露 ABI 错配。
+ */
+#if defined(NANOSIG_PLATFORM_FREERTOS)
+extern const int ns_platform_abi_freertos;
+/** 指向当前平台 ABI 探针符号的可移植别名；消费者 TU 引用它以触发跨 TU 链接检查。 */
+#define NS_PLATFORM_ABI_PROBE ns_platform_abi_freertos
+#else
+extern const int ns_platform_abi_host;
+#define NS_PLATFORM_ABI_PROBE ns_platform_abi_host
 #endif
 
 /* ================================================================== */
@@ -47,9 +83,13 @@ extern "C" {
  */
 typedef union ns_waitable_handle {
     int     fd;         /**< Linux/macOS: 文件描述符 */
-    void   *handle;     /**< Windows: HANDLE */
-    int     event_bit;  /**< RTOS: event bit index（v2） */
+    void   *handle;     /**< Windows HANDLE / FreeRTOS queue-set member handle */
 } ns_waitable_handle_t;
+
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
+NS_STATIC_ASSERT(sizeof(((ns_waitable_handle_t *)0)->handle) == sizeof(void *),
+                "handle-based platform requires pointer-sized ns_waitable_handle_t.handle");
+#endif
 
 /* ================================================================== */
 /*  可等待事件位                                                         */
@@ -66,17 +106,18 @@ typedef union ns_waitable_handle {
 /**
  * @brief 可等待事件描述符。
  *
- * `primitive` 字段存储平台原语（fd / HANDLE / event_bit），调用方通过
+ * `primitive` 字段存储平台原语（fd / HANDLE），调用方通过
  * `ns_watcher_init` 或平台层 API 填充，不应直接修改。
  *
  * 本结构体直接内嵌在 `ns_watcher_t` 中。
  *
  * - Linux/macOS：`primitive.fd`，eventfd / kqueue / socket / pipe fd。
  * - Windows：`primitive.handle`，HANDLE。
- * - RTOS（v2）：`primitive.event_bit`，event group 中的 bit 位置。
+ * - FreeRTOS：`primitive.handle`，queue-set-capable 的 FreeRTOS 对象句柄
+ *   （二值/计数信号量或队列）。
  */
 typedef struct ns_platform_waitable {
-    ns_waitable_handle_t primitive;        /**< 平台原语（fd / HANDLE / event_bit） */
+    ns_waitable_handle_t primitive;        /**< 平台原语（fd / HANDLE） */
     void                *user_data;        /**< 关联的用户标签，completion 中原样返回 */
     void                *registered_waitset; /**< 已注册的 waitset，平台层内部维护 */
     uint32_t             events;           /**< 关注的事件位（NS_WAITABLE_EVENT_*） */
@@ -88,8 +129,8 @@ typedef struct ns_platform_waitable {
  *
  * @thread-safety unsafe 只应在初始化线程单线程调用。
  *
- * 本函数把 `primitive` 初始化为全 1 位无效值：Windows 对应
- * `INVALID_HANDLE_VALUE`，Linux/macOS fd 对应 `-1`。
+ * 本函数把 `primitive` 初始化为全 1 位无效值：Windows / FreeRTOS 对应无效句柄
+ * （FreeRTOS 约定为 `(void *)~0`），Linux/macOS fd 对应 `-1`。
  *
  * @param w 待初始化的 waitable，可为 `NULL`。
  */
@@ -111,12 +152,17 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
 /**
  * @brief 检查 `ns_waitable_handle_t` 在当前平台是否有效。
  *
- * Windows：`.handle != NULL`；其他平台：`.fd >= 0`。
+ * - FreeRTOS：`.handle != NULL` 且不是 `(void *)~0` 无效哨兵。
+ * - Windows：`.handle != NULL`。
+ * - Linux/macOS：`.fd >= 0`。
  *
  * @param h `ns_waitable_handle_t` 值。
  * @return 非零表示有效，零表示无效。
  */
-#if defined(_WIN32)
+#if defined(NANOSIG_PLATFORM_FREERTOS)
+#define ns_waitable_handle_is_valid(h) \
+    (((h).handle != NULL) && ((h).handle != (void *)(uintptr_t)~0))
+#elif defined(NANOSIG_PLATFORM_WINDOWS)
 #define ns_waitable_handle_is_valid(h) ((h).handle != NULL)
 #else
 #define ns_waitable_handle_is_valid(h) ((h).fd >= 0)
@@ -128,7 +174,7 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
  * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
  * @param handle_val   `ns_waitable_handle_t` 值。
  */
-#if defined(_WIN32)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
 #define NS_WAITABLE_SET(waitable_ptr, handle_val) \
     ((waitable_ptr)->primitive.handle = (handle_val).handle)
 #else
@@ -144,7 +190,7 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
  * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
  * @return 对应平台的 `ns_waitable_handle_t` 值。
  */
-#if defined(_WIN32)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
 #define NS_WAITABLE_GET(waitable_ptr) \
     ((ns_waitable_handle_t){.handle = (waitable_ptr)->primitive.handle})
 #else
@@ -222,7 +268,7 @@ typedef struct ns_platform_waitset_completion {
  * - Linux：epoll，`data.ptr` 直接指向 caller 的 waitable（零拷贝）。
  * - macOS：kqueue，`udata` 直接指向 caller 的 waitable（零拷贝）。
  * - Windows：WaitForMultipleObjects + 内部数组映射。
- * - RTOS（v2）：event group。
+ * - FreeRTOS：queue set（`xQueueCreateSet` + `xQueueSelectFromSet`）。
  */
 typedef struct ns_platform_waitset ns_platform_waitset_t;
 
@@ -325,7 +371,8 @@ int ns_platform_wakeup_wait(
  * `ns_platform_event_signal` 写此句柄。
  *
  * 两侧在 Linux/Windows 上指向同一底层对象（eventfd / Event HANDLE），在
- * macOS 上是 pipe 的读端与写端两个不同 fd。这是实现细节而非契约：调用方
+ * FreeRTOS 上指向同一二值信号量，在 macOS 上是 pipe 的读端与写端两个不同 fd。
+ * 这是实现细节而非契约：调用方
  * 只应通过 `ns_platform_event_*` API 操作，禁止依赖两侧是否同值或互换使用。
  *
  * 本原语不提供阻塞单等待；唯一阻塞单等待原语是 `ns_platform_wakeup_t`。
@@ -487,6 +534,9 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset);
  * @param waitable 要注册的 waitable（含 events、edge_triggered、user_data）。
  * @return `NS_OK` 成功，`NS_E_EXISTS` 表示同一 waitable 已注册，
  *         `NS_E_TOO_MANY_HANDLES` 容量满。
+ *
+ * @note FreeRTOS 后端只接受 `NS_WAITABLE_EVENT_IN`：含 OUT/ERR 位的 waitable
+ *       返回 `NS_E_INVAL`；加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
  */
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
@@ -494,6 +544,9 @@ int ns_platform_waitset_add(
 
 /**
  * @brief 从 waitset 移除一个 waitable。
+ *
+ * 返回值只有 `NS_OK` 和 `NS_E_INVAL` 两种。实现负责该 waitable 残留就绪 token 的
+ * 内部生命周期，调用方不需要、也不会看到 `NS_E_BUSY` 或其他失败码。
  *
  * @param waitset waitset 句柄。
  * @param waitable 要移除的 waitable。

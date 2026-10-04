@@ -741,6 +741,7 @@ out_free:
 void ns_broker_global_shutdown(void)
 {
     ns_event_broker_t *broker = g_broker;
+    int rc;
 
     if(broker == NULL) return;
 
@@ -765,9 +766,12 @@ void ns_broker_global_shutdown(void)
 
     ns_broker_remove_all_watchers(broker);
 
-    (void)ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
-    (void)ns_platform_waitset_destroy(broker->waitset);
-    (void)ns_platform_event_deinit(&broker->event);
+    rc = ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
+    if(rc != NS_OK) ns_merrln(BROKER, "shutdown: waitset_remove failed: %d", rc);
+    rc = ns_platform_waitset_destroy(broker->waitset);
+    if(rc != NS_OK) ns_merrln(BROKER, "shutdown: waitset_destroy failed: %d", rc);
+    rc = ns_platform_event_deinit(&broker->event);
+    if(rc != NS_OK) ns_merrln(BROKER, "shutdown: event_deinit failed: %d", rc);
     (void)ns_platform_mutex_destroy(broker->watcher_mutex);
     (void)ns_platform_mutex_destroy(broker->op_lock);
 
