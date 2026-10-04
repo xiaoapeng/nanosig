@@ -176,4 +176,4 @@ cmake --build <build-dir> --target sanitize-all
    - 严重度图标用 🟠/🟡/🟢
    - 定位和 Review 各一行，无反引号
 
-6. **默认直接向主线 master push**：后续改动默认直接提交并 push 到 `master`，不再走特性分支 + PR。push 到 `master` 会触发 `.github/workflows/ci.yml`（快速 CI：linux asan/ubsan/release、macos asan/ubsan/release、windows、freertos）；但不会触发 `.github/workflows/nightly.yml`（nightly 仅 `schedule` + `workflow_dispatch` 触发），需要 TSAN 全量验证时手动执行 `gh workflow run nightly.yml --ref master`。因 CI 在 push 之后才运行、没有 PR 门禁，推送前应至少本地跑一遍 `ctest --preset <平台>-release -LE nightly`；一旦 push 上去后 CI 失败，需立即修复并再次 push。
+6. **默认走特性分支 + PR，合并用 rebase**：改动默认提交到特性分支并开 PR；`.github/workflows/ci.yml` 的 9 个必需检查（linux asan/ubsan/release、macos asan/ubsan/release、windows、freertos ubuntu+macos）以及手动触发的 nightly（`gh workflow run nightly.yml --ref <branch>`）全部通过后再合并，**不要直接 push 到 `master`**。合并统一使用 **Rebase and merge**（`gh pr merge --rebase`，不用 squash / merge commit），保持 `master` 线性历史、无 merge 节点；合并后删除特性分支。push 到 `master` 虽然也会触发 `ci.yml`，但那是事后兜底而非门禁，不作为交付路径。
