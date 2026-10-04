@@ -62,7 +62,6 @@ static int broker_worker_entry(void *arg)
 
     test_thread_signal_ready(&g_broker_thread);
     rc = ns_loop_run(ctx->loop);
-    (void)ns_loop_deinit(ctx->loop);
     return rc;
 }
 
@@ -197,6 +196,8 @@ static int test_edge_level_impl(int edge_triggered)
     connected = 0;
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
+    EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+    ctx.loop = NULL;
     g_edge_level_drain_fd = -1;
     test_destroy_raw_waitable(raw);
     EXPECT_OK(ns_shutdown() == NS_OK);
@@ -212,6 +213,7 @@ fail:
         if(ctx.loop != NULL) (void)ns_loop_quit(ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(ctx.loop != NULL){ (void)ns_loop_deinit(ctx.loop); ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -271,14 +273,16 @@ static int test_watcher_event_out_err(void)
 /* ------------------------------------------------------------------ */
 
 static atomic_int g_out_event_slot_called;
-static uint32_t g_out_event_triggered;
+static atomic_uint g_out_event_triggered;
 
 static void slot_out_event(void *user_data, const void *payload)
 {
+    broker_test_ctx_t *ctx = (broker_test_ctx_t *)user_data;
     const ns_watcher_event_t *ev = (const ns_watcher_event_t *)payload;
-    (void)user_data;
-    g_out_event_triggered = ev->triggered_events;
+
+    ns_atomic_store_explicit(&g_out_event_triggered, ev->triggered_events, ns_memory_order_release);
     ns_atomic_store_explicit(&g_out_event_slot_called, 1, ns_memory_order_release);
+    (void)ns_loop_quit(ctx->loop);
 }
 
 static int test_watcher_out_event_delivery(void)
@@ -302,7 +306,7 @@ static int test_watcher_out_event_delivery(void)
     ctx.loop = NULL;
     ctx.triggered_events = 0u;
     ns_atomic_init(&g_out_event_slot_called, 0);
-    g_out_event_triggered = 0u;
+    ns_atomic_store_explicit(&g_out_event_triggered, 0u, ns_memory_order_relaxed);
     ns_waitable_init(&raw);
 
     EXPECT_OK(ns_init() == NS_OK);
@@ -322,7 +326,7 @@ static int test_watcher_out_event_delivery(void)
     if(rc != NS_OK) goto fail;
     watcher_ok = 1;
 
-    rc = ns_signal_connect(&watcher.signal, slot_out_event, ctx.loop, NULL, &conn);
+    rc = ns_signal_connect(&watcher.signal, slot_out_event, ctx.loop, &ctx, &conn);
     if(rc != NS_OK) goto fail;
     connected = 1;
 
@@ -346,7 +350,11 @@ static int test_watcher_out_event_delivery(void)
     }
     EXPECT_OK(ns_atomic_load_explicit(&g_out_event_slot_called, ns_memory_order_acquire) != 0);
 
-    EXPECT_OK((g_out_event_triggered & NS_WAITABLE_EVENT_OUT) != 0u);
+    EXPECT_OK((ns_atomic_load_explicit(&g_out_event_triggered, ns_memory_order_acquire) & NS_WAITABLE_EVENT_OUT) != 0u);
+
+    test_thread_join(&g_broker_thread);
+    worker_started = 0;
+    EXPECT_OK(g_broker_thread.rc == 0);
 
     EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
     added = 0;
@@ -354,6 +362,8 @@ static int test_watcher_out_event_delivery(void)
     connected = 0;
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
+    EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+    ctx.loop = NULL;
     (void)close(sv[0]);
     (void)close(sv[1]);
     EXPECT_OK(ns_shutdown() == NS_OK);
@@ -369,6 +379,7 @@ fail:
         if(ctx.loop != NULL) (void)ns_loop_quit(ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(ctx.loop != NULL){ (void)ns_loop_deinit(ctx.loop); ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 #endif

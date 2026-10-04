@@ -100,9 +100,9 @@ static void stress_fill_payload(uint8_t *buf, size_t size, uint32_t pid, uint32_
 typedef struct {
     ns_mpsc_record_ring_t *ring;
     uint32_t id;
-    volatile int stop;
-    uint64_t pushed;
-    int failed;
+    atomic_int stop;
+    atomic_uint_fast64_t pushed;
+    atomic_int failed;
     atomic_int done;
 #if defined(_WIN32)
     HANDLE thread;
@@ -113,9 +113,9 @@ typedef struct {
 
 typedef struct {
     ns_mpsc_record_ring_t *ring;
-    volatile int stop;
-    uint64_t popped;
-    int failed;
+    atomic_int stop;
+    atomic_uint_fast64_t popped;
+    atomic_int failed;
 #if defined(_WIN32)
     HANDLE thread;
 #else
@@ -141,7 +141,7 @@ static void *stress_producer_fn(void *arg)
     stress_producer_t *ctx = (stress_producer_t *)arg;
     uint32_t seq = 0u;
 
-    while(!ctx->stop){
+    while(!ns_atomic_load_explicit(&ctx->stop, ns_memory_order_acquire)){
         size_t psz = stress_payload_size(ctx->id, seq);
         uint8_t payload[PAYLOAD_MAX];
         uint8_t hdr[8]; /* 4-byte pid + 4-byte seq */
@@ -158,11 +158,11 @@ static void *stress_producer_fn(void *arg)
         parts[1].size = psz;
 
         do{
-            if(ctx->stop) goto done;
+            if(ns_atomic_load_explicit(&ctx->stop, ns_memory_order_acquire)) goto done;
             rc = ns_mpsc_record_ring_try_pushv(ctx->ring, parts, 2u);
             if(rc == NS_E_QUEUE_FULL) thread_yield();
             if(rc != NS_OK && rc != NS_E_QUEUE_FULL){
-                ctx->failed = 1;
+                ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
 #if defined(_WIN32)
                 return 0u;
 #else
@@ -171,7 +171,7 @@ static void *stress_producer_fn(void *arg)
             }
         }while(rc == NS_E_QUEUE_FULL);
 
-        ++ctx->pushed;
+        (void)ns_atomic_fetch_add_explicit(&ctx->pushed, 1, ns_memory_order_relaxed);
         ++seq;
     }
 
@@ -195,7 +195,7 @@ static void *stress_consumer_fn(void *arg)
 
     memset(expected_seq, 0, sizeof(expected_seq));
 
-    while(!ctx->stop){
+    while(!ns_atomic_load_explicit(&ctx->stop, ns_memory_order_acquire)){
         void *record = NULL;
         size_t record_size = 0u;
         size_t payload_size;
@@ -206,11 +206,11 @@ static void *stress_consumer_fn(void *arg)
         rc = ns_mpsc_record_ring_try_acquire(ctx->ring, &record, &record_size);
         if(rc == NS_E_EMPTY){
             thread_yield();
-            if(ctx->stop) break;
+            if(ns_atomic_load_explicit(&ctx->stop, ns_memory_order_acquire)) break;
             continue;
         }
         if(rc != NS_OK){
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
 #if defined(_WIN32)
             return 0u;
 #else
@@ -219,7 +219,7 @@ static void *stress_consumer_fn(void *arg)
         }
 
         if(record_size < 8u){
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
             (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
@@ -232,7 +232,7 @@ static void *stress_consumer_fn(void *arg)
         memcpy(&seq, (uint8_t *)record + 4, 4);
 
         if(pid >= PRODUCER_COUNT){
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
             (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
@@ -245,7 +245,7 @@ static void *stress_consumer_fn(void *arg)
         if(record_size != (8u + payload_size)){
             fprintf(stderr, "SIZE VIOLATION: pid=%u seq=%u expected_size=%u got=%u\n",
                     pid, seq, (unsigned int)(8u + payload_size), (unsigned int)record_size);
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
             (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
@@ -260,7 +260,7 @@ static void *stress_consumer_fn(void *arg)
             if(((uint8_t *)record)[8u + i] != expected){
                 fprintf(stderr, "PAYLOAD VIOLATION: pid=%u seq=%u offset=%u\n",
                         pid, seq, (unsigned int)i);
-                ctx->failed = 1;
+                ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
                 (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
                 return 0u;
@@ -273,7 +273,7 @@ static void *stress_consumer_fn(void *arg)
         if(seq != expected_seq[pid]){
             fprintf(stderr, "ORDER VIOLATION: pid=%u expected_seq=%u got=%u\n",
                     pid, expected_seq[pid], seq);
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
             (void)ns_mpsc_record_ring_release(ctx->ring, record);
 #if defined(_WIN32)
             return 0u;
@@ -283,9 +283,9 @@ static void *stress_consumer_fn(void *arg)
         }
 
         expected_seq[pid] = seq + 1u;
-        ++ctx->popped;
+        (void)ns_atomic_fetch_add_explicit(&ctx->popped, 1, ns_memory_order_relaxed);
         if(ns_mpsc_record_ring_release(ctx->ring, record) != NS_OK){
-            ctx->failed = 1;
+            ns_atomic_store_explicit(&ctx->failed, 1, ns_memory_order_relaxed);
 #if defined(_WIN32)
             return 0u;
 #else
@@ -362,12 +362,15 @@ int main(void)
     memset(&consumer, 0, sizeof(consumer));
 
     consumer.ring = &ring;
-    consumer.stop = 0;
+    ns_atomic_init(&consumer.stop, 0);
+    ns_atomic_init(&consumer.popped, 0);
 
     for(i = 0u; i < PRODUCER_COUNT; ++i){
         producers[i].ring = &ring;
         producers[i].id = i;
-        producers[i].stop = 0;
+        ns_atomic_init(&producers[i].stop, 0);
+        ns_atomic_init(&producers[i].pushed, 0);
+        ns_atomic_init(&producers[i].failed, 0);
         ns_atomic_init(&producers[i].done, 0);
     }
 
@@ -386,8 +389,8 @@ int main(void)
             fprintf(stderr, "FAIL: producer %u start\n", i);
             /* Signal already-started producers to stop */
             uint32_t j;
-            for(j = 0u; j < i; ++j) producers[j].stop = 1;
-            consumer.stop = 1;
+            for(j = 0u; j < i; ++j) ns_atomic_store_explicit(&producers[j].stop, 1, ns_memory_order_release);
+            ns_atomic_store_explicit(&consumer.stop, 1, ns_memory_order_release);
             for(j = 0u; j < i; ++j) join_thread_handle(producers[j].thread);
             join_thread_handle(consumer.thread);
             return 1;
@@ -409,15 +412,15 @@ int main(void)
 
         if((uintmax_t)(now - last_report) >= (uintmax_t)REPORT_INTERVAL_S){
             for(i = 0u; i < PRODUCER_COUNT; ++i){
-                if(producers[i].failed){
+                if(ns_atomic_load_explicit(&producers[i].failed, ns_memory_order_acquire)){
                     fprintf(stderr, "FAIL: producer %u failed\n", i);
                     rc = 1;
                     goto stop;
                 }
-                total_pushed += producers[i].pushed;
+                total_pushed += ns_atomic_load_explicit(&producers[i].pushed, ns_memory_order_relaxed);
             }
-            total_popped = consumer.popped;
-            if(consumer.failed){
+            total_popped = ns_atomic_load_explicit(&consumer.popped, ns_memory_order_relaxed);
+            if(ns_atomic_load_explicit(&consumer.failed, ns_memory_order_acquire)){
                 fprintf(stderr, "FAIL: consumer failed\n");
                 rc = 1;
                 goto stop;
@@ -449,8 +452,8 @@ int main(void)
 
 stop:
     /* Signal all threads to stop */
-    for(i = 0u; i < PRODUCER_COUNT; ++i) producers[i].stop = 1;
-    consumer.stop = 1;
+    for(i = 0u; i < PRODUCER_COUNT; ++i) ns_atomic_store_explicit(&producers[i].stop, 1, ns_memory_order_release);
+    ns_atomic_store_explicit(&consumer.stop, 1, ns_memory_order_release);
 
     /* Join all threads */
     for(i = 0u; i < PRODUCER_COUNT; ++i) join_thread_handle(producers[i].thread);
@@ -459,12 +462,12 @@ stop:
     /* Final report */
     {
         uint64_t total_pushed = 0u;
-        uint64_t total_popped = consumer.popped;
-        int any_failed = consumer.failed;
+        uint64_t total_popped = ns_atomic_load_explicit(&consumer.popped, ns_memory_order_relaxed);
+        int any_failed = ns_atomic_load_explicit(&consumer.failed, ns_memory_order_acquire);
 
         for(i = 0u; i < PRODUCER_COUNT; ++i){
-            total_pushed += producers[i].pushed;
-            if(producers[i].failed) any_failed = 1;
+            total_pushed += ns_atomic_load_explicit(&producers[i].pushed, ns_memory_order_relaxed);
+            if(ns_atomic_load_explicit(&producers[i].failed, ns_memory_order_acquire)) any_failed = 1;
         }
 
         fprintf(stderr, "\n=== RESULT ===\n");

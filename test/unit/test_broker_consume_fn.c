@@ -64,7 +64,6 @@ static int broker_worker_entry(void *arg)
     test_thread_signal_ready(&g_broker_thread);
     rc = ns_loop_run(ctx->loop);
     ns_atomic_store_explicit(&ctx->thread_rc, rc, ns_memory_order_release);
-    (void)ns_loop_deinit(ctx->loop);
     return rc;
 }
 
@@ -103,7 +102,7 @@ static void consume_slot(void *user_data, const void *payload)
     (void)ns_loop_quit(ctx->loop);
 }
 
-static int g_consume_call_count = 0;
+static atomic_int g_consume_call_count;
 static int g_consume_return_value = 1;
 static int g_consume_ctx_data = 42;
 
@@ -111,7 +110,7 @@ static int test_consume_fn(ns_watcher_t *w)
 {
     ns_waitable_handle_t h = ns_watcher_handle(w);
 
-    g_consume_call_count++;
+    (void)ns_atomic_fetch_add_explicit(&g_consume_call_count, 1, ns_memory_order_relaxed);
 
 #if !defined(_WIN32)
     {
@@ -145,7 +144,7 @@ static int test_consume_fn_impl(void)
     int added = 0;
     int rc;
 
-    g_consume_call_count = 0;
+    ns_atomic_store_explicit(&g_consume_call_count, 0, ns_memory_order_relaxed);
     g_consume_return_value = 1;
     ns_atomic_init(&ctx.slot_called, 0);
     ctx.loop = NULL;
@@ -199,7 +198,7 @@ static int test_consume_fn_impl(void)
     }}
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) != 0);
 
-    EXPECT_OK(g_consume_call_count >= 1);
+    EXPECT_OK(ns_atomic_load_explicit(&g_consume_call_count, ns_memory_order_acquire) >= 1);
     EXPECT_OK(ctx.consume_handle == &g_consume_ctx_data);
     EXPECT_OK((ctx.triggered_events & NS_WAITABLE_EVENT_IN) != 0u);
 
@@ -211,6 +210,8 @@ static int test_consume_fn_impl(void)
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
     if(worker_started){ test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -223,6 +224,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -244,7 +246,7 @@ static int test_consume_fn_no_emit(void)
     int added = 0;
     int rc;
 
-    g_consume_call_count = 0;
+    ns_atomic_store_explicit(&g_consume_call_count, 0, ns_memory_order_relaxed);
     g_consume_return_value = 0;
     ns_atomic_init(&ctx.slot_called, 0);
     ctx.loop = NULL;
@@ -285,7 +287,7 @@ static int test_consume_fn_no_emit(void)
 
     { int i; for(i = 0; i < 500000; ++i) test_yield(); }
 
-    EXPECT_OK(g_consume_call_count >= 1);
+    EXPECT_OK(ns_atomic_load_explicit(&g_consume_call_count, ns_memory_order_acquire) >= 1);
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) == 0);
 
     EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
@@ -297,6 +299,8 @@ static int test_consume_fn_no_emit(void)
     test_destroy_raw_waitable(raw);
     /* slot 未调用（consume_fn 阻止了 emit），loop 仍在 run，需主线程 quit 才能退出 */
     if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -309,6 +313,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -408,6 +413,8 @@ static int test_consume_fn_prevents_refire(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
+    EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+    ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -420,6 +427,7 @@ fail:
         if(ctx.loop != NULL) (void)ns_loop_quit(ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(ctx.loop != NULL){ (void)ns_loop_deinit(ctx.loop); ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -574,6 +582,8 @@ static int test_consume_fn_pipe_level_triggered(void)
     (void)close(pipefd[0]);
     (void)close(pipefd[1]);
     if(worker_started){ test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -587,6 +597,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 #endif
@@ -596,12 +607,12 @@ fail:
 /*  Test: consume_fn returning negative suppresses emit                 */
 /* ------------------------------------------------------------------ */
 
-static int g_neg_consume_call_count = 0;
+static atomic_int g_neg_consume_call_count;
 
 static int test_consume_fn_negative(ns_watcher_t *w)
 {
     (void)w;
-    g_neg_consume_call_count++;
+    (void)ns_atomic_fetch_add_explicit(&g_neg_consume_call_count, 1, ns_memory_order_relaxed);
     return -1;
 }
 
@@ -618,7 +629,7 @@ static int test_consume_fn_negative_return(void)
     int added = 0;
     int rc;
 
-    g_neg_consume_call_count = 0;
+    ns_atomic_store_explicit(&g_neg_consume_call_count, 0, ns_memory_order_relaxed);
     ns_atomic_init(&ctx.slot_called, 0);
     ctx.loop = NULL;
     ns_atomic_init(&loop_ctx.slot_called, 0);
@@ -658,7 +669,7 @@ static int test_consume_fn_negative_return(void)
 
     { int i; for(i = 0; i < 500000; ++i) test_yield(); }
 
-    EXPECT_OK(g_neg_consume_call_count >= 1);
+    EXPECT_OK(ns_atomic_load_explicit(&g_neg_consume_call_count, ns_memory_order_acquire) >= 1);
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) == 0);
 
     EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
@@ -670,6 +681,8 @@ static int test_consume_fn_negative_return(void)
     test_destroy_raw_waitable(raw);
     /* slot 未调用（consume_fn 返回 0 跳过 emit），loop 仍在 run，需主线程 quit 才能退出 */
     if(worker_started){ (void)ns_loop_quit(loop_ctx.loop); test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -682,6 +695,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -690,13 +704,13 @@ fail:
 /*  Test: consume_fn without set_consume_handle -> handle is NULL       */
 /* ------------------------------------------------------------------ */
 
-static int g_no_handle_consume_count = 0;
+static atomic_int g_no_handle_consume_count;
 
 static int test_consume_fn_no_handle(ns_watcher_t *w)
 {
     ns_waitable_handle_t h = ns_watcher_handle(w);
 
-    g_no_handle_consume_count++;
+    (void)ns_atomic_fetch_add_explicit(&g_no_handle_consume_count, 1, ns_memory_order_relaxed);
 
 #if !defined(_WIN32)
     {
@@ -735,7 +749,7 @@ static int test_consume_fn_no_handle_set(void)
     int added = 0;
     int rc;
 
-    g_no_handle_consume_count = 0;
+    ns_atomic_store_explicit(&g_no_handle_consume_count, 0, ns_memory_order_relaxed);
     ns_atomic_init(&ctx.slot_called, 0);
     ctx.loop = NULL;
     ns_atomic_init(&loop_ctx.slot_called, 0);
@@ -778,7 +792,7 @@ static int test_consume_fn_no_handle_set(void)
         test_yield();
     }}
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) == 1);
-    EXPECT_OK(g_no_handle_consume_count >= 1);
+    EXPECT_OK(ns_atomic_load_explicit(&g_no_handle_consume_count, ns_memory_order_acquire) >= 1);
 
     EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
     added = 0;
@@ -788,6 +802,8 @@ static int test_consume_fn_no_handle_set(void)
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
     if(worker_started){ test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -800,6 +816,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
@@ -822,7 +839,7 @@ static int test_consume_fn_edge_triggered(void)
     int added = 0;
     int rc;
 
-    g_consume_call_count = 0;
+    ns_atomic_store_explicit(&g_consume_call_count, 0, ns_memory_order_relaxed);
     g_consume_return_value = 1;
     ns_atomic_init(&ctx.slot_called, 0);
     ctx.loop = NULL;
@@ -868,7 +885,7 @@ static int test_consume_fn_edge_triggered(void)
         test_yield();
     }}
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) != 0);
-    EXPECT_OK(g_consume_call_count >= 1);
+    EXPECT_OK(ns_atomic_load_explicit(&g_consume_call_count, ns_memory_order_acquire) >= 1);
     EXPECT_OK(ctx.consume_handle == &g_consume_ctx_data);
 
     EXPECT_OK(ns_broker_remove(&watcher) == NS_OK);
@@ -879,6 +896,8 @@ static int test_consume_fn_edge_triggered(void)
     watcher_ok = 0;
     test_destroy_raw_waitable(raw);
     if(worker_started){ test_thread_join(&g_broker_thread); }
+    EXPECT_OK(ns_loop_deinit(loop_ctx.loop) == NS_OK);
+    loop_ctx.loop = NULL;
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 
@@ -891,6 +910,7 @@ fail:
         if(loop_ctx.loop != NULL) (void)ns_loop_quit(loop_ctx.loop);
         test_thread_join(&g_broker_thread);
     }
+    if(loop_ctx.loop != NULL){ (void)ns_loop_deinit(loop_ctx.loop); loop_ctx.loop = NULL; }
     (void)ns_shutdown();
     return 1;
 }
