@@ -85,6 +85,7 @@ int main(void)
 - [数据结构](docs/DATA_STRUCTURES.md)
 - [定时器设计](docs/TIMER_DESIGN.md)
 - [Broker 设计](docs/BROKER_DESIGN.md)
+- [CI 流程](docs/CI.md) — 快速 CI 与夜间 TSAN 流水线
 - [审计](docs/audit/) — 7 份审计报告
 - [Bench 基线](bench/results/) — 跨平台性能基线
 

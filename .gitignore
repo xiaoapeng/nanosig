@@ -6,11 +6,12 @@ build-linux*
 .omc/
 .claude/
 .codegraph/
-.vscode/settings.json
+.vscode/
 .clawbench/
 .codex
 Testing/
 build-coverage/
 build-freertos/
+build-tsan/
 *.c.gcov
 *.h.gcov

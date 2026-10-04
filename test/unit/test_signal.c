@@ -183,7 +183,6 @@ static int cross_thread_entry(void *arg)
 
     rc = ns_loop_run(ctx->loop);
 
-    ns_loop_deinit(ctx->loop);
     return rc;
 }
 
@@ -235,6 +234,9 @@ static int test_cross_thread_emit(void)
     test_thread_join(&g_cross_thread);
 
     EXPECT_OK(g_cross_thread.rc == 0);
+
+    EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+    ctx.loop = NULL;
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
@@ -498,7 +500,6 @@ static int concurrent_entry(void *arg)
 
     rc = ns_loop_run(ctx->loop);
 
-    ns_loop_deinit(ctx->loop);
     return rc;
 }
 
@@ -550,6 +551,9 @@ static int test_concurrent_connect_emit(void)
     EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
 
     test_thread_join(&g_concurrent_thread);
+
+    EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+    ctx.loop = NULL;
 
     /* At least some slots should have been called */
     EXPECT_OK(ns_atomic_load_explicit(&ctx.slot_called, ns_memory_order_acquire) > 0);
@@ -736,7 +740,6 @@ static int struct_member_entry(void *arg)
 
     test_thread_signal_ready(&g_struct_member_thread);
     (void)ns_loop_run(ctx->loop);
-    ns_loop_deinit(ctx->loop);
     return rc;
 }
 
@@ -782,6 +785,9 @@ static int test_signal_struct_member_cross_thread(void)
         EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
 
         test_thread_join(&g_struct_member_thread);
+
+        EXPECT_OK(ns_loop_deinit(ctx.loop) == NS_OK);
+        ctx.loop = NULL;
 
         EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     }
