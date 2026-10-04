@@ -17,6 +17,7 @@ This directory holds the public design documentation for the PD closeout and imp
 | `DATA_STRUCTURES.md` | Public opaque type list and internal structure design draft for later phases. |
 | `EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig adaptation rules. |
 | `THREAD_LOOP_BINDING.md` | Loop lifecycle model (explicit passing, no thread binding) and connect behavior. |
+| `CI.md` | CI 流程：快速 CI / 夜间 TSAN 流水线、测试标签、sanitize-all 审计、本地复现命令。 |
 | `agents/AGENTS.md` | Central index for moved directory-specific AGENTS instructions. |
 
 ## Subdirectories
