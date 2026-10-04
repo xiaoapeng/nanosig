@@ -30,6 +30,27 @@ option(NANOSIG_BUILD_DEMOS "Build nanosig demo executables" ON)
 option(NANOSIG_BUILD_BENCH "Build nanosig benchmarks" OFF)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
+# ── 平台后端选择 ────────────────────────────────────────────────
+# host    : 桌面三后端（默认）。
+# freertos: FreeRTOS queue-set 后端；需 NANOSIG_FREERTOS_INCLUDE_DIRS
+#           提供 FreeRTOS SDK 头文件路径，或开启 host POSIX harness 自动填充。
+set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host or freertos")
+set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host freertos)
+
+set(NANOSIG_FREERTOS_INCLUDE_DIRS "" CACHE STRING
+    "FreeRTOS SDK include dirs (required when NANOSIG_PLATFORM=freertos)")
+
+# FreeRTOS 后端可配置常量；仅 NANOSIG_PLATFORM=freertos 时编入。
+set(NANOSIG_FREERTOS_WAITSET_CAP "32" CACHE STRING
+    "FreeRTOS queue-set token capacity (Sigma member capacity + max member capacity)")
+set(NANOSIG_FREERTOS_THREAD_STACK_WORDS "1024" CACHE STRING
+    "FreeRTOS platform task stack depth in StackType_t words")
+set(NANOSIG_FREERTOS_TASK_PRIORITY "1" CACHE STRING
+    "FreeRTOS platform task priority")
+
+option(NANOSIG_BUILD_FREERTOS_POSIX
+    "Build the FreeRTOS POSIX host harness and FreeRTOS contract tests" OFF)
+
 set(NANOSIG_DS_SOURCES
     src/ds/ns_hashtbl.c
     src/ds/ns_mpsc_record_ring.c
@@ -37,20 +58,40 @@ set(NANOSIG_DS_SOURCES
     src/ds/ns_ringbuf.c
 )
 
-if(WIN32)
+if(NANOSIG_PLATFORM STREQUAL "freertos")
+    if(NANOSIG_BUILD_FREERTOS_POSIX)
+        include(cmake/FreeRTOSPosix.cmake)
+        nanosig_configure_freertos_posix()
+    endif()
+    if(NOT NANOSIG_FREERTOS_INCLUDE_DIRS)
+        message(FATAL_ERROR
+            "NANOSIG_PLATFORM=freertos requires NANOSIG_FREERTOS_INCLUDE_DIRS "
+            "(or configure with -DNANOSIG_BUILD_FREERTOS_POSIX=ON)")
+    endif()
     set(NANOSIG_PLATFORM_SOURCES
-        platform/windows/port.c
+        platform/freertos/port.c
     )
-elseif(APPLE)
-    set(NANOSIG_PLATFORM_SOURCES
-        platform/macos/port.c
-    )
-elseif(UNIX AND NOT APPLE)
-    set(NANOSIG_PLATFORM_SOURCES
-        platform/linux/port.c
-    )
+elseif(NANOSIG_PLATFORM STREQUAL "host")
+    if(WIN32)
+        set(NANOSIG_PLATFORM_SOURCES
+            platform/windows/port.c
+        )
+    elseif(APPLE)
+        set(NANOSIG_PLATFORM_SOURCES
+            platform/macos/port.c
+        )
+    elseif(UNIX AND NOT APPLE)
+        set(NANOSIG_PLATFORM_SOURCES
+            platform/linux/port.c
+        )
+    else()
+        message(FATAL_ERROR
+            "nanosig host backends support only Linux, macOS, and Windows; "
+            "use NANOSIG_PLATFORM=freertos for RTOS targets")
+    endif()
 else()
-    message(FATAL_ERROR "nanosig supports only Linux, macOS, and Windows platform backends")
+    message(FATAL_ERROR
+        "NANOSIG_PLATFORM must be 'host' or 'freertos' (got '${NANOSIG_PLATFORM}')")
 endif()
 
 add_library(nanosig STATIC
@@ -64,6 +105,18 @@ add_library(nanosig STATIC
 )
 add_library(nanosig::nanosig ALIAS nanosig)
 
+# Deterministic float formatting: the %e extreme-value path derives its digits
+# from a power-of-10 polynomial approximation, which is sensitive to FP
+# contraction (FMA). arm64 always has FMA and Clang/GCC contract by default,
+# while MSVC /fp:precise and x86-64 baseline builds do not — producing
+# different low-order digits. Disabling contraction keeps the formatter output
+# identical across supported compilers/architectures.
+if(NOT MSVC)
+    set_source_files_properties(src/ns_formatio.c PROPERTIES
+        COMPILE_OPTIONS "-ffp-contract=off"
+    )
+endif()
+
 target_compile_features(nanosig PUBLIC c_std_11)
 target_include_directories(nanosig PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -73,6 +126,23 @@ target_include_directories(nanosig PUBLIC
 target_include_directories(nanosig PRIVATE
     ${PROJECT_SOURCE_DIR}
 )
+
+if(NANOSIG_PLATFORM STREQUAL "freertos")
+    # PUBLIC: consumers (contract tests / app) must select the same platform
+    # branch and see the same waitable layout as the library. The backend
+    # constants are PUBLIC too so the contract tests can assert against the
+    # same configured capacity/stack/priority values.
+    target_compile_definitions(nanosig PUBLIC
+        NANOSIG_PLATFORM_FREERTOS=1
+        NANOSIG_FREERTOS_WAITSET_CAP=${NANOSIG_FREERTOS_WAITSET_CAP}
+        NANOSIG_FREERTOS_THREAD_STACK_WORDS=${NANOSIG_FREERTOS_THREAD_STACK_WORDS}
+        NANOSIG_FREERTOS_TASK_PRIORITY=${NANOSIG_FREERTOS_TASK_PRIORITY}
+    )
+    target_include_directories(nanosig PUBLIC ${NANOSIG_FREERTOS_INCLUDE_DIRS})
+    if(TARGET nanosig_freertos_kernel)
+        target_link_libraries(nanosig PRIVATE nanosig_freertos_kernel)
+    endif()
+endif()
 
 if(UNIX)
     target_link_libraries(nanosig PRIVATE Threads::Threads)
@@ -107,7 +177,7 @@ function(nanosig_add_unit_test name source)
     )
 endfunction()
 
-if(NANOSIG_BUILD_TESTS)
+if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     # Event broker tests — split by concern for faster parallel builds
     nanosig_add_unit_test(nanosig_test_broker_lifecycle test/unit/test_broker_lifecycle.c)
     target_compile_definitions(nanosig_test_broker_lifecycle PRIVATE NANOSIG_TEST)
@@ -180,7 +250,17 @@ if(NANOSIG_BUILD_TESTS)
     endforeach()
 endif()
 
-if(NANOSIG_BUILD_DEMOS)
+# ── FreeRTOS contract tests (host POSIX harness only) ────────────────
+# These exercise platform/freertos/port.c against real queue-set semantics.
+# Host-only tests above are intentionally NOT registered in this configuration.
+if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "freertos" AND NANOSIG_BUILD_FREERTOS_POSIX)
+    nanosig_add_unit_test(nanosig_test_freertos_waitset test/freertos/test_freertos_waitset.c)
+    set_tests_properties(nanosig_test_freertos_waitset PROPERTIES TIMEOUT 60)
+    nanosig_add_unit_test(nanosig_test_freertos_broker test/freertos/test_freertos_broker.c)
+    set_tests_properties(nanosig_test_freertos_broker PROPERTIES TIMEOUT 60)
+endif()
+
+if(NANOSIG_BUILD_DEMOS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_unit_test(nanosig_demo_same_thread demos/demo_same_thread.c)
     nanosig_add_unit_test(nanosig_demo_cross_thread demos/demo_cross_thread.c)
     set_tests_properties(nanosig_demo_cross_thread PROPERTIES TIMEOUT 10)
@@ -188,14 +268,14 @@ if(NANOSIG_BUILD_DEMOS)
     set_tests_properties(nanosig_demo_timer_cross_thread PROPERTIES TIMEOUT 10)
 endif()
 
-if(NANOSIG_BUILD_BENCH)
+if(NANOSIG_BUILD_BENCH AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_unit_test(nanosig_bench_same_thread bench/bench_same_thread.c)
     nanosig_add_unit_test(nanosig_bench_cross_thread bench/bench_cross_thread.c)
     nanosig_add_unit_test(nanosig_bench_throughput bench/bench_throughput.c)
     set_tests_properties(nanosig_bench_throughput PROPERTIES TIMEOUT 30)
 endif()
 
-if(NANOSIG_BUILD_API_CHECKS)
+if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_api_compile_check(nanosig_api_check_macro_matrix
         test/unit/test_macro_expansion.c
     )

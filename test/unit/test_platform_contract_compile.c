@@ -101,7 +101,6 @@ static void platform_contract_check_waitset_types(void)
     ns_waitable_init(&w);
     w.primitive.fd = 0;
     w.primitive.handle = NULL;
-    w.primitive.event_bit = 0;
     w.user_data = NULL;
     w.registered_waitset = NULL;
     w.events = NS_WAITABLE_EVENT_IN;

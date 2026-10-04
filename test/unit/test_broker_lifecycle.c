@@ -115,17 +115,30 @@ static int test_watcher_invalid_paths(void)
 
     EXPECT_OK(ns_watcher_deinit(NULL) == NS_E_INVAL);
     EXPECT_OK(ns_watcher_deinit(&zero_watcher) == NS_E_INVAL);
-    { ns_waitable_handle_t h = {.fd = 0}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_SHUTDOWN); }
+    /* Before ns_init() the broker runtime is down, so a valid handle must
+     * yield NS_E_SHUTDOWN. Use a real platform waitable: on Windows an fd of
+     * 0 is an invalid HANDLE and would be rejected as NS_E_INVAL first. */
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+    EXPECT_OK(ns_watcher_init(&watcher, RAW_TO_HANDLE(raw), NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_SHUTDOWN);
+    test_destroy_raw_waitable(raw);
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_INVAL);
 
     EXPECT_OK(ns_init() == NS_OK);
     { ns_waitable_handle_t h = {.fd = 0}; EXPECT_OK(ns_watcher_init(NULL, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
-    { ns_waitable_handle_t h = {.fd = -1}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
-    { ns_waitable_handle_t h = {.fd = 0}; EXPECT_OK(ns_watcher_init(&watcher, h, invalid_event, 0, NULL) == NS_E_INVAL); }
-    EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_INVAL);
+    /* 无效句柄：POSIX 用负 fd；Windows 的无效句柄是 NULL（联合体里 .fd=-1 会留下
+       非零 HANDLE 位，被判为有效）。 */
 #if defined(_WIN32)
     { ns_waitable_handle_t h = {.handle = NULL}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
+#else
+    { ns_waitable_handle_t h = {.fd = -1}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
 #endif
+    /* 有效句柄 + 非法 events 位 → NS_E_INVAL；须用真实句柄，否则会先因句柄无效返回。 */
+    raw = test_create_raw_waitable();
+    EXPECT_OK(test_raw_waitable_is_valid(raw));
+    { ns_waitable_handle_t h = RAW_TO_HANDLE(raw); EXPECT_OK(ns_watcher_init(&watcher, h, invalid_event, 0, NULL) == NS_E_INVAL); }
+    EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_INVAL);
+    test_destroy_raw_waitable(raw);
     EXPECT_OK(ns_broker_add(NULL) == NS_E_INVAL);
     EXPECT_OK(ns_broker_remove(NULL) == NS_E_INVAL);
 
@@ -395,12 +408,20 @@ static int test_broker_add_invalid_fd(void)
 
     EXPECT_OK(ns_init() == NS_OK);
 
+    /* POSIX：负 fd 能通过 ns_watcher_init，但 ns_broker_add 注册时应失败。
+       Windows：唯一无效句柄是 NULL，会在 ns_watcher_init 阶段被拒绝；
+       Windows waitset 只拒绝 NULL 句柄，故按平台语义断言。 */
+#if defined(_WIN32)
+    { ns_waitable_handle_t h = {.handle = NULL};
+    EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
+#else
     { ns_waitable_handle_t h = {.fd = -1};
     if(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_OK){
         EXPECT_OK(ns_broker_add(&watcher) != NS_OK);
         (void)ns_broker_remove(&watcher);
         EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     } }
+#endif
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;

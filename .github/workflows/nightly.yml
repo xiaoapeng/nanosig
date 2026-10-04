@@ -1,5 +1,9 @@
 name: nightly
 
+# Deep, slow checks that are kept off the push/PR path so ci.yml stays fast.
+# ci.yml (push/PR) covers asan/ubsan/release on the quick + stress suites with
+# `ctest -LE nightly`; this workflow runs the full suite including the
+# "nightly"-labeled long integration tests, under ThreadSanitizer.
 on:
   schedule:
     - cron: "17 2 * * *"
@@ -14,17 +18,7 @@ jobs:
         run: cmake --preset linux-debug-tsan
       - name: Build
         run: cmake --build --preset linux-debug-tsan
+      # No -LE: run everything, including the "nightly"-labeled long tests
+      # that ci.yml deliberately skips.
       - name: Test
         run: ctest --preset linux-debug-tsan
-
-  windows-appverifier-placeholder:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ilammy/msvc-dev-cmd@v1
-      - name: Configure ASAN
-        run: cmake --preset windows-debug-asan
-      - name: Build
-        run: cmake --build --preset windows-debug-asan
-      - name: Test
-        run: ctest --preset windows-debug-asan

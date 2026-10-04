@@ -128,7 +128,7 @@ API 总数计算口径：
 - **未测试**：`ns_timer_deinit` 在 timer signal 仍有 in-flight slot 调用时调用（`@pre` 已要求先 disconnect，但未断言）。
 - **未测试**：`ns_broker_add` / `ns_broker_remove` 与 broker 自身遍历 `watcher_head` 并发——实现中 `ns_broker_remove_all_watchers` 在 shutdown 路径上才会无锁遍历，已在 mutex 内，但 `ns_broker_run` 的 completion 路径（`ns_broker_emit_completion` → `ns_signal_emit_raw`）不持 `watcher_mutex`，仅持 `signal->mutex`；并发 add+emit 路径未做端到端测试。
 - **未测试**：`ns_mpsc_record_ring` 单消费者约束违反——`test_mpsc_record_ring_stress.c` 假定单消费者，无多 consumer 用例。
-- **未测试**：跨平台 waitable（`event_bit` for RTOS 路径为 v2 占位）目前未实现并发测试。
+- **未测试**：跨平台 waitset 的原生事件源（Linux fd / macOS kqueue / Windows HANDLE / FreeRTOS queue-set 成员）目前未提供跨平台并发用例。
 - **未覆盖**：未提供 v1 不承诺的 ISR-safe 路径；任何在 ISR 中调用 `ns_signal_emit` / `ns_timer_start` 等 API 行为未定义。
 
 ## 结论

@@ -586,12 +586,17 @@ static int test_fire_expired_partial(void)
     EXPECT_OK(ns_timer_start(&t_long)  == NS_OK);
 
     /* Wait for short timer to expire. Poll next_timeout — when it drops to
-     * 0 we know t_short is due; then fire_expired must fire exactly one. */
-    for(;;){
-        EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
-        if(timeout == 0u) break;
-        /* Busy-wait a bit — 1μs will elapse in a single loop iteration on any
-         * modern host. If not, fall through after a bounded number of tries. */
+     * 0 we know t_short is due; then fire_expired must fire exactly one.
+     * The broker thread may fire the short timer first, in which case
+     * next_timeout jumps to the long timer's 10s deadline; the poll must
+     * therefore be bounded, or it spins until the long timer itself expires. */
+    {
+        int spin;
+
+        for(spin = 0; spin < 1000; ++spin){
+            EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
+            if(timeout == 0u) break;
+        }
     }
 
     EXPECT_OK(ns_timer_mgr_fire_expired() == NS_OK);

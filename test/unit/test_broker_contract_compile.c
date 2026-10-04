@@ -13,7 +13,6 @@ static void broker_contract_check_types(void)
     watcher.waitable.user_data = &watcher;
     watcher.waitable.primitive.fd = 0;
     watcher.waitable.primitive.handle = (void *)0;
-    watcher.waitable.primitive.event_bit = 0;
 
     event.triggered_events = NS_WAITABLE_EVENT_IN;
     event.consume_handle = NULL;

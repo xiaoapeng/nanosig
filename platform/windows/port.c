@@ -33,6 +33,9 @@ struct ns_platform_thread {
     void *arg;
 };
 
+/* 宿主后端 ABI 探针符号；FreeRTOS 后端导出对称的 ns_platform_abi_freertos。 */
+const int ns_platform_abi_host = 0;
+
 static DWORD ns_windows_timeout_ms(ns_platform_time_us_t timeout_us)
 {
     uint64_t timeout_ms;
