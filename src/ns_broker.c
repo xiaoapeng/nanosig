@@ -33,7 +33,11 @@
 #include "nanosig/internal/ns_timer_mgr.h"
 
 #include <nanosig/ns_debug.h>
+/* Default SYS; overridable at build time (e.g. project CMake
+ * target_compile_definitions(nanosig PRIVATE NS_DBG_MODULE_LEVEL_BROKER=NS_DBG_DEBUG)). */
+#ifndef NS_DBG_MODULE_LEVEL_BROKER
 #define NS_DBG_MODULE_LEVEL_BROKER NS_DBG_SYS
+#endif
 
 #ifdef NANOSIG_TEST
 /* Test hook: non-NS_OK value injects waitset_wait failure.

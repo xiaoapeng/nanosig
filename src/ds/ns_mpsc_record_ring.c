@@ -12,7 +12,11 @@
 
 #include <nanosig/nanosig_mpsc_record_ring.h>
 
+/* Default SYS; overridable at build time (e.g. project CMake
+ * target_compile_definitions(nanosig PRIVATE NS_DBG_MODULE_LEVEL_MPSC=NS_DBG_DEBUG)). */
+#ifndef NS_DBG_MODULE_LEVEL_MPSC
 #define NS_DBG_MODULE_LEVEL_MPSC NS_DBG_SYS
+#endif
 #include <nanosig/ns_debug.h>
 
 typedef struct ns_mpsc_record_header {

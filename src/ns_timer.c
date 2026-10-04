@@ -10,7 +10,11 @@
 
 #include <nanosig/nanosig.h>
 
+/* Default SYS; overridable at build time (e.g. project CMake
+ * target_compile_definitions(nanosig PRIVATE NS_DBG_MODULE_LEVEL_TIMER=NS_DBG_DEBUG)). */
+#ifndef NS_DBG_MODULE_LEVEL_TIMER
 #define NS_DBG_MODULE_LEVEL_TIMER NS_DBG_SYS
+#endif
 #include <nanosig/ns_debug.h>
 
 typedef struct ns_timer_mgr {
