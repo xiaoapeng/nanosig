@@ -175,3 +175,5 @@ cmake --build <build-dir> --target sanitize-all
    - 编号从 1 开始连续编号
    - 严重度图标用 🟠/🟡/🟢
    - 定位和 Review 各一行，无反引号
+
+6. **默认直接向主线 master push**：后续改动默认直接提交并 push 到 `master`，不再走特性分支 + PR。push 到 `master` 会触发 `.github/workflows/ci.yml`（快速 CI：linux asan/ubsan/release、macos asan/ubsan/release、windows、freertos）；但不会触发 `.github/workflows/nightly.yml`（nightly 仅 `schedule` + `workflow_dispatch` 触发），需要 TSAN 全量验证时手动执行 `gh workflow run nightly.yml --ref master`。因 CI 在 push 之后才运行、没有 PR 门禁，推送前应至少本地跑一遍 `ctest --preset <平台>-release -LE nightly`；一旦 push 上去后 CI 失败，需立即修复并再次 push。
