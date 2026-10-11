@@ -34,8 +34,11 @@ option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 # host    : 桌面三后端（默认）。
 # freertos: FreeRTOS queue-set 后端；需 NANOSIG_FREERTOS_INCLUDE_DIRS
 #           提供 FreeRTOS SDK 头文件路径，或开启 host POSIX harness 自动填充。
-set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host or freertos")
-set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host freertos)
+# zephyr  : Zephyr k_poll 后端。**不通过顶层 CMake 构建**：Zephyr 有自己的
+#           构建系统，本后端经仓库根目录的 zephyr/module.yml 作为 Zephyr module
+#           编入（见 zephyr/CMakeLists.txt）。顶层给出 zephyr 时只打印引导信息。
+set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host, freertos, or zephyr (zephyr builds via Zephyr module)")
+set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host freertos zephyr)
 
 set(NANOSIG_FREERTOS_INCLUDE_DIRS "" CACHE STRING
     "FreeRTOS SDK include dirs (required when NANOSIG_PLATFORM=freertos)")
@@ -89,9 +92,20 @@ elseif(NANOSIG_PLATFORM STREQUAL "host")
             "nanosig host backends support only Linux, macOS, and Windows; "
             "use NANOSIG_PLATFORM=freertos for RTOS targets")
     endif()
+elseif(NANOSIG_PLATFORM STREQUAL "zephyr")
+    # Zephyr 有独立构建系统；后端经 zephyr/module.yml 作为 module 编入。
+    # 顶层构建不链接 Zephyr kernel，故这里给出引导信息而非静默失败。
+    message(FATAL_ERROR
+        "NANOSIG_PLATFORM=zephyr 不通过顶层 CMake 构建。\n"
+        "Zephyr 后端以 Zephyr module 形式接入，请用 Zephyr 构建系统构建测试应用：\n"
+        "  west build -b native_sim/native/64 ${CMAKE_CURRENT_SOURCE_DIR}/test/zephyr \\\n"
+        "      -- -DEXTRA_ZEPHYR_MODULES=${CMAKE_CURRENT_SOURCE_DIR}\n"
+        "或在 west workspace 中把本仓库作为 module 后构建 test/zephyr。\n"
+        "顶层构建请使用 -DNANOSIG_PLATFORM=host（默认）。")
 else()
     message(FATAL_ERROR
-        "NANOSIG_PLATFORM must be 'host' or 'freertos' (got '${NANOSIG_PLATFORM}')")
+        "NANOSIG_PLATFORM must be 'host', 'freertos', or 'zephyr' "
+        "(got '${NANOSIG_PLATFORM}')")
 endif()
 
 add_library(nanosig STATIC

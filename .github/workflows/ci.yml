@@ -69,6 +69,42 @@ jobs:
       - name: Audits
         run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all
 
+  zephyr:
+    # Real Zephyr native_sim (ztest) contract tests for platform/zephyr/port.c.
+    # Linux only: native_sim is a host-arch POSIX board. Zephyr is pinned to the
+    # 3.7 LTS tag; native_sim uses the host toolchain, so no Zephyr SDK download
+    # is required. The repository is injected as an extra Zephyr module via
+    # EXTRA_ZEPHYR_MODULES (see zephyr/module.yml). This job is a PR-blocking
+    # required check and must be added to branch protection alongside the other
+    # checks.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ZEPHYR_VERSION: v3.7.0
+      EXTRA_ZEPHYR_MODULES: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build device-tree-compiler
+      - name: Install west
+        run: pip install west
+      - name: Init west workspace (Zephyr ${{ env.ZEPHYR_VERSION }})
+        run: |
+          west init -m https://github.com/zephyrproject-rtos/zephyr --mr "${ZEPHYR_VERSION}" zephyrproject
+      - name: West update
+        working-directory: zephyrproject
+        run: west update --narrow -o=--depth=1
+      - name: Install Zephyr Python requirements
+        run: pip install -r zephyrproject/zephyr/scripts/requirements.txt
+      - name: Build nanosig ztest (native_sim/native/64)
+        working-directory: zephyrproject
+        run: west build -b native_sim/native/64 -d build-nanosig "${GITHUB_WORKSPACE}/test/zephyr"
+      - name: Run ztest
+        working-directory: zephyrproject
+        run: ./build-nanosig/zephyr/zephyr.exe
+
   freertos:
     # Host POSIX harness for platform/freertos/port.c on both Linux and macOS.
     # The preset pulls the pinned FreeRTOS-Kernel (V11.1.0) via FetchContent;
