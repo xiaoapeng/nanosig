@@ -332,6 +332,44 @@ static int test_waitset_max_completions_zero(void)
     return 0;
 }
 
+/** max_completions == 0 → 立即返回，不做实际等待（跨后端统一契约） */
+static int test_waitset_max_completions_zero_no_wait(void)
+{
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t cc[1];
+    ns_platform_time_us_t t0, t1;
+    size_t cnt = 99u;
+
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
+
+    w = test_create_raw_waitable();
+    EXPECT_OK(ns_platform_waitset_add(ws, &w) == NS_OK);
+
+    /* 未触发的非空 waitset + 有限超时：容量 0 时立即返回，不睡满超时。 */
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 200000u, cc, 0u, &cnt) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+    EXPECT_OK(cnt == 0u);
+    EXPECT_OK((t1 - t0) < 100000u);
+
+    /* 空 waitset + 无限超时：容量 0 时同样立即返回，不睡满封顶值。 */
+    EXPECT_OK(ns_platform_waitset_remove(ws, &w) == NS_OK);
+    test_destroy_raw_waitable(w);
+
+    cnt = 99u;
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(
+        ws, NS_PLATFORM_WAIT_INFINITE_US, cc, 0u, &cnt) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+    EXPECT_OK(cnt == 0u);
+    EXPECT_OK((t1 - t0) < 100000u);
+
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
+
+    return 0;
+}
+
 static int test_waitset_destroy_with_entries(void)
 {
     ns_platform_waitset_t *ws = NULL;
@@ -366,6 +404,61 @@ static int test_waitset_wait_timeout(void)
 
     EXPECT_OK(ns_platform_waitset_wait(ws, 0u, completions, 4, &count) == NS_OK);
     EXPECT_OK(count == 0u);
+
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
+
+    return 0;
+}
+
+/** 空 waitset + 有限超时 → 睡眠该时长后返回 0 个 completion */
+static int test_waitset_wait_empty_finite(void)
+{
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_completion_t completions[4];
+    size_t count = 99u;
+    ns_platform_time_us_t t0, t1;
+
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
+
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, 50000u, completions, 4, &count) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+
+    EXPECT_OK(count == 0u);
+    EXPECT_OK((t1 - t0) >= 40000u);
+
+    EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
+
+    return 0;
+}
+
+/** 空 waitset + 无限超时 → 被 NS_PLATFORM_WAIT_EMPTY_MAX_US 封顶，不永久阻塞 */
+static int test_waitset_wait_empty_infinite_capped(void)
+{
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_completion_t completions[4];
+    size_t count = 99u;
+    ns_platform_time_us_t t0, t1;
+    ns_platform_time_us_t elapsed;
+    ns_platform_time_us_t lower;
+
+    EXPECT_OK(ns_platform_waitset_create(&ws) == NS_OK);
+
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, completions, 4, &count) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+
+    EXPECT_OK(count == 0u);
+
+    /* 空 waitset 不允许真无限阻塞：实测等待必须落在 [下界, MAX + 1s]。
+       下界在大封顶值（> 1s）时收紧为 MAX - 1s，小封顶值时取 MAX / 2，
+       兼顾"证明封顶生效"与 tick / 调度余量。 */
+    elapsed = t1 - t0;
+    lower = (NS_PLATFORM_WAIT_EMPTY_MAX_US > 1000000u)
+        ? (NS_PLATFORM_WAIT_EMPTY_MAX_US - 1000000u)
+        : (NS_PLATFORM_WAIT_EMPTY_MAX_US / 2u);
+    EXPECT_OK(elapsed >= lower);
+    EXPECT_OK(elapsed <= (NS_PLATFORM_WAIT_EMPTY_MAX_US + 1000000u));
 
     EXPECT_OK(ns_platform_waitset_destroy(ws) == NS_OK);
 
@@ -940,10 +1033,13 @@ int main(void)
     if(test_waitset_add_remove() != 0){ fprintf(stderr, "test_waitset_add_remove failed\n"); return 1; }
     if(test_waitset_add_signaled() != 0){ fprintf(stderr, "test_waitset_add_signaled failed\n"); return 1; }
     if(test_waitset_wait_timeout() != 0){ fprintf(stderr, "test_waitset_wait_timeout failed\n"); return 1; }
+    if(test_waitset_wait_empty_finite() != 0){ fprintf(stderr, "test_waitset_wait_empty_finite failed\n"); return 1; }
+    if(test_waitset_wait_empty_infinite_capped() != 0){ fprintf(stderr, "test_waitset_wait_empty_infinite_capped failed\n"); return 1; }
     if(test_waitset_wait_signal() != 0){ fprintf(stderr, "test_waitset_wait_signal failed\n"); return 1; }
     if(test_waitset_multi() != 0){ fprintf(stderr, "test_waitset_multi failed\n"); return 1; }
     if(test_waitset_multi_signal() != 0){ fprintf(stderr, "test_waitset_multi_signal failed\n"); return 1; }
     if(test_waitset_max_completions_zero() != 0){ fprintf(stderr, "test_waitset_max_completions_zero failed\n"); return 1; }
+    if(test_waitset_max_completions_zero_no_wait() != 0){ fprintf(stderr, "test_waitset_max_completions_zero_no_wait failed\n"); return 1; }
     if(test_waitset_destroy_with_entries() != 0){ fprintf(stderr, "test_waitset_destroy_with_entries failed\n"); return 1; }
     if(test_waitset_double_signal() != 0){ fprintf(stderr, "test_waitset_double_signal failed\n"); return 1; }
     if(test_waitset_signal_after_wait() != 0){ fprintf(stderr, "test_waitset_signal_after_wait failed\n"); return 1; }

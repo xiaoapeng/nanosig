@@ -203,6 +203,48 @@ static void test_wait_signal_and_timeout(void)
 }
 
 /* ------------------------------------------------------------------ */
+/*  空 waitset：无限等待被封顶（不永久阻塞）                              */
+/* ------------------------------------------------------------------ */
+
+static void test_wait_empty_infinite_capped(void)
+{
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_completion_t c[4];
+    ns_platform_time_us_t t0 = 0u;
+    ns_platform_time_us_t t1 = 0u;
+    ns_platform_time_us_t elapsed;
+    size_t count = 99u;
+
+    CHECK(ns_platform_waitset_create(&ws) == NS_OK);
+
+    /* 非阻塞：立即返回 0 个完成。 */
+    CHECK(ns_platform_waitset_wait(ws, 0u, c, 4u, &count) == NS_OK);
+    CHECK(count == 0u);
+
+    /* 有限超时：睡眠该时长后返回 0 个完成。 */
+    CHECK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    CHECK(ns_platform_waitset_wait(ws, 10000u, c, 4u, &count) == NS_OK);
+    CHECK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+    CHECK(count == 0u);
+    CHECK((t1 - t0) >= 5000u);
+
+    /* 空 waitset + 无限超时：必须返回，且等待接近封顶值。 */
+    CHECK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    count = 99u;
+    CHECK(ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &count) == NS_OK);
+    CHECK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+    CHECK(count == 0u);
+
+    elapsed = t1 - t0;
+    CHECK(elapsed >= (ns_platform_time_us_t)((NS_PLATFORM_WAIT_EMPTY_MAX_US > 1000000u)
+              ? (NS_PLATFORM_WAIT_EMPTY_MAX_US - 1000000u)
+              : (NS_PLATFORM_WAIT_EMPTY_MAX_US / 2u)));
+    CHECK(elapsed <= (ns_platform_time_us_t)(NS_PLATFORM_WAIT_EMPTY_MAX_US + 1000000u));
+
+    CHECK(ns_platform_waitset_destroy(ws) == NS_OK);
+}
+
+/* ------------------------------------------------------------------ */
 /*  drain 幂等；两次 drain 之间 wait 不重复触发                          */
 /* ------------------------------------------------------------------ */
 
@@ -525,6 +567,7 @@ static void runner_task(void *arg)
     test_add_rejects_nonempty_member();
     test_add_ignores_edge_triggered();
     test_wait_signal_and_timeout();
+    test_wait_empty_infinite_capped();
     test_drain_idempotent();
     test_wait_truncates_completions();
     test_remove_preserves_other_pending();

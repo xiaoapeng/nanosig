@@ -160,6 +160,14 @@ wakeup、mutex、线程和 waitset 的 create/destroy 可以分配和释放资�
 
 带超时的等待函数使用微秒。`NS_PLATFORM_WAIT_INFINITE_US` 表示无限等待，0 表示非阻塞。
 
+**空 waitset 的例外**：`ns_platform_waitset_wait` 在 waitset 为空（调用时无任何已注册
+waitable）且 timeout 为 `NS_PLATFORM_WAIT_INFINITE_US` 时不会真正永久阻塞——调用时没有
+事件源，永久阻塞只会静默挂死线程。此时后端把等待封顶到 `NS_PLATFORM_WAIT_EMPTY_MAX_US`
+（默认 1 秒，可编译期覆盖）后返回 `NS_OK`，让调用方周期性重估状态。封顶是等待时间的
+**上界**而非固定睡眠：等待期间若另一线程注册的 waitable 就绪，后端可能提前返回该
+completion（Windows/Zephyr 用调用时快照，看不到后续注册）。waitable 非空时不受影响，
+仍是真无限等待；有限超时本就有界，也不受影响。
+
 单 wakeup 等待（`ns_platform_wakeup_wait`）：等待操作本身成功时返回 `NS_OK`，
 具体结果通过 `ns_platform_wait_result_t` 区分 signaled 与 timeout。
 

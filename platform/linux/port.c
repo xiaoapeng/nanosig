@@ -545,6 +545,11 @@ int ns_platform_waitset_wait(
     *out_count = 0u;
     if(max_completions == 0u) return NS_OK;
 
+    /* 空 waitset 没有可唤醒的事件源，无限等待会永久睡死；封顶为有界等待。 */
+    if((waitset->count == 0u) && (timeout_us == NS_PLATFORM_WAIT_INFINITE_US)){
+        timeout_us = NS_PLATFORM_WAIT_EMPTY_MAX_US;
+    }
+
     if(timeout_us != 0u && timeout_us != NS_PLATFORM_WAIT_INFINITE_US){
         struct itimerspec its;
         its.it_interval.tv_sec = 0;
