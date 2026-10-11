@@ -38,8 +38,9 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 ### `freertos`
 
 - runner：`ubuntu-latest` + `macos-latest`（`fail-fast: false`，`timeout-minutes: 20`）
-- 预置：`freertos-release`，通过 FetchContent 拉取固定版本 FreeRTOS-Kernel（V11.1.0）
-- 步骤：Configure → Build → Test（`-LE nightly`）。只注册 FreeRTOS 契约测试，不跑 `sanitize-all`。
+- 预置：`freertos-release`、`freertos-debug-asan`、`freertos-debug-ubsan`，通过 FetchContent 拉取固定版本 FreeRTOS-Kernel（V11.1.0）
+- 步骤：对三个预置各跑 Configure → Build → Test（`-LE nightly`）。注册 FreeRTOS 契约测试与编译期平台契约检查 `nanosig_api_check_platform_contract`（`-DNANOSIG_PLATFORM_FREERTOS=1` 的 `-fsyntax-only` 检查，随 ctest 自动执行），不跑 `sanitize-all`。
+- TSAN 不覆盖：freertos harness 在 `NANOSIG_ENABLE_TSAN=ON` 下 POSIX port 挂死（无输出），故不提供 `freertos-debug-tsan` 预置；线程竞态检查由 `linux-debug-tsan` 夜间流水线承担。
 - macOS 会在 `cmake/FreeRTOSPosix.cmake` 中应用带保护的 pthread 栈补丁；Linux 使用未改动的上游 POSIX port。
 
 ### `zephyr`
@@ -72,6 +73,12 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 
 常规编译 / 测试时，MPSC 压力测试通过 CMake `ENVIRONMENT` 属性固定为 20 秒（`NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20`）。完整稳定性验证可手动运行测试二进制、去掉该环境变量覆盖，使用默认时长。
 
+## API 编译期契约检查（`api-compile-checks`）
+
+- `nanosig_add_api_compile_check`（`cmake/ApiCompileChecks.cmake`）为每个契约 TU 生成 `-fsyntax-only` 的自定义目标与同名 ctest 用例；可选 `DEFINES` 追加平台宏，因此在同一台 host 上即可覆盖各平台宏分支，不依赖目标工具链。
+- host 预设：`api-compile-checks` 覆盖 macro-matrix、broker、data-structures、types、cpp-compat，以及**平台契约的平台宏矩阵**（bare host + `-DNANOSIG_PLATFORM_WINDOWS=1` + `_ZEPHYR=1` + `_FREERTOS=1`）。
+- `NANOSIG_PLATFORM=freertos`：同样注册 `api-compile-checks`（平台契约 + `-DNANOSIG_PLATFORM_FREERTOS=1`），并由 `ctest --preset freertos-* -LE nightly` 自动执行。
+
 ## Sanitizer 与 `sanitize-all`
 
 - 开关：`NANOSIG_ENABLE_ASAN`、`NANOSIG_ENABLE_TSAN`、`NANOSIG_ENABLE_UBSAN`（见 `cmake/Sanitizers.cmake`）。ASAN 与 TSAN 互斥。
@@ -97,7 +104,7 @@ gh workflow run nightly.yml --ref <branch>
 gh run watch
 ```
 
-预置列表（`CMakePresets.json`）：`linux-release`、`linux-debug-asan`、`linux-debug-tsan`、`linux-debug-ubsan`、`linux-coverage`、`macos-release`、`macos-debug-asan`、`macos-debug-ubsan`、`windows-release`、`windows-debug-asan`、`freertos-release`。
+预置列表（`CMakePresets.json`）：`linux-release`、`linux-debug-asan`、`linux-debug-tsan`、`linux-debug-ubsan`、`linux-coverage`、`macos-release`、`macos-debug-asan`、`macos-debug-ubsan`、`windows-release`、`windows-debug-asan`、`freertos-release`、`freertos-debug-asan`、`freertos-debug-ubsan`。
 
 ## 已知限制
 

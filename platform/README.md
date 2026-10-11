@@ -46,6 +46,11 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 - 移除时，后端负责该 waitable 的**残留就绪 token 生命周期**：后端在内部丢弃或
   消化该 waitable 尚未被 `ns_platform_waitset_wait` 取走的就绪状态，使得移除返回后
   该 waitable 不再产生 completion。这段内部处理对调用方不可见。
+- **该就绪状态仅指 waitset 内部记账，不涉及成员对象承载的数据**：fd / socket / HANDLE /
+  `k_poll` 对象的未读数据不受 remove 影响，remove 既不消费也不 reset。FreeRTOS queue set
+  是**唯一例外（已知取舍）**：后端受 `xQueueRemoveFromSet`“成员必须为空”约束，为摘除成员
+  必须先排空它，因此对**数据队列**成员会一并丢弃队列中未取走的消息。该清空是向 queue set
+  约束妥协、而非有意设计（见“FreeRTOS 后端”节）。
 - 触发侧（如 event 的 signal 侧）与剩余 waitable 不受影响；同一 waitset 中其他
   已注册项的待决就绪状态必须被保留。
 - 桌面后端天然满足本契约（`epoll_ctl DEL` / `EV_DELETE` / WFMO 重建数组会一并撤销
@@ -106,7 +111,12 @@ FreeRTOS 后端：
   `xSemaphoreGive`（已满视为成功）。**禁止**使用 task notification 实现 wakeup：
   loop 与 broker op-proxy 的唤醒共享每任务 notification value 会互相误消费并触发
   HardFault。
-- 单调时间使用 `xTaskGetTickCount` 乘以 tick 周期（微秒）。
+- 单调时间以 `xTaskGetTickCount` 为源：后端把可能回绕的 `TickType_t` 扩展为 64 位累加 tick
+  （用无符号回绕差值 `now - last` 累加，`taskENTER_CRITICAL`/`taskEXIT_CRITICAL` 保护），
+  再换算微秒，因此 tick 回绕后仍保持单调。**前提**：FreeRTOS 自身的 tick 回绕不能太快——
+  相邻两次采样之间必须最多发生一次回绕（采样间隔小于一个 `TickType_t` 回绕周期），否则会
+  少计整周期、表现为时间跳变。典型 32 位 tick @`configTICK_RATE_HZ=1000` 回绕周期约 49.7 天；
+  `configUSE_16_BIT_TICKS=1` 时周期仅约 65.5 秒 @1kHz，需相应提高采样频率或改用更宽的 tick。
 - 内存分配使用 `pvPortMalloc` / `vPortFree`。
 - waitset 使用 `xQueueCreateSet` 的 queue set：每个 waitable 的 `primitive.handle`
   是调用方提供的 queue-set-capable FreeRTOS 对象（二值/计数信号量或队列）。
@@ -117,11 +127,21 @@ FreeRTOS 后端：
   `drain` = 非阻塞 `xSemaphoreTake`。
 - FreeRTOS 后端只支持 `NS_WAITABLE_EVENT_IN`；含 OUT/ERR 的 waitable 在
   `waitset_add` 返回 `NS_E_INVAL`。
+- `edge_triggered` 参数忽略（同 Windows/Zephyr）：queue set 没有原生电平/边沿模式，
+  其就绪是“每次 send/give 记一次就绪”的 token 语义——`waitset_wait` 取走 token 后
+  不消费成员数据，也不对仍非空的成员重复上报。因此它既非可切换的电平也非严格边沿；
+  调用方应把每次就绪的成员处理到空，否则已就绪但未处理的剩余部分要等下一次
+  `xQueueSend`/`xSemaphoreGive` 才会再次上报（按电平假设的 `wait→处理一部分→再 wait`
+  会漏掉剩余就绪）。
 - queue set 容量有限：`waitset_add` 按“Σ成员容量 + max(成员容量) ≤ 固定容量”校验，
   超出返回 `NS_E_TOO_MANY_HANDLES`。加入 set 的成员必须为空，否则返回 `NS_E_INVAL`
   （FreeRTOS queue set 特有语义）。
-- `waitset_remove` 先 drain 被移除成员、再 `xQueueRemoveFromSet`；queue set 已存在的
-  残留 token 由后端内部消化，调用方只见 `NS_OK`/`NS_E_INVAL`（见上节契约）。
+- `waitset_remove`：受 queue set 约束（`xQueueRemoveFromSet` 要求成员为空），后端先**排空
+  被移除成员**再 `xQueueRemoveFromSet`；queue set 已存在的残留 token 由后端内部消化，
+  调用方只见 `NS_OK`/`NS_E_INVAL`。**注意（已知取舍）**：对**数据队列**成员，排空意味着
+  remove 会丢弃队列中所有未取走的消息（payload）——这是为满足 `xQueueRemoveFromSet`“成员
+  必须为空”而做的妥协，而非有意设计；需要保留数据的调用方必须先自行取走。该行为是
+  FreeRTOS 后端特有，其它后端 remove 不消费成员数据（见上节契约）。
 - `waitset_destroy` 仍要求在无注册项时调用（有注册项返回 `NS_E_EXISTS`）。
 
 ## 生命周期和所有权
@@ -163,7 +183,13 @@ RTOS ISR 安全是后续课题；v1 FreeRTOS 后端不承诺 ISR 上下文调用
 port 在开发主机上编译该后端，并注册 `test/freertos/` 下的契约测试
 （`nanosig_test_freertos_waitset` / `nanosig_test_freertos_broker`）。该 harness **只覆盖**
 队列集与信号语义：waitable/waitset 的 add/remove/wait、event
-signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往返。
+signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往返；并注册编译期平台
+契约检查 `nanosig_api_check_platform_contract`（`-DNANOSIG_PLATFORM_FREERTOS=1` 的
+`-fsyntax-only` 检查，随 `ctest` 执行）。
+
+Sanitizer 覆盖：`freertos-debug-asan` / `freertos-debug-ubsan` presets 在该 harness 上
+分别启用 ASAN / UBSAN（macOS 实测通过）。TSAN 不可用——把 `NANOSIG_ENABLE_TSAN=ON`
+加进 freertos 构建后 POSIX port 起不来（无输出即挂死），故见下方不覆盖清单。
 
 明确**不覆盖**（归下游 MCXN947 硬件冒烟）：
 
@@ -172,6 +198,10 @@ signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往�
 - `configASSERT` 停机路径（host harness 会把越界挡在 `add` 返回错误，而非触发断言）。
 - 单核竞态与 SMP 宿主差异。
 - task notification 共享悬垂导致的硬件 HardFault 场景（后端已从实现上剔除该路径）。
+- tick 回绕：POSIX port 的 `TickType_t` 为 `unsigned long`（64 位宿主上为 64 位），
+  回绕扩展逻辑与其"回绕不能太快"前提无法在 host harness 触发，需真实 32/16 位 tick 目标验证。
+- TSAN：freertos harness 在 `NANOSIG_ENABLE_TSAN=ON` 下 POSIX port 挂死（无输出），故不提供
+  `freertos-debug-tsan` preset；线程竞态检查由 host 后端（linux-debug-tsan）承担。
 
 ## Zephyr 后端
 

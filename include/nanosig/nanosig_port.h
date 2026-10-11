@@ -133,7 +133,7 @@ typedef struct ns_platform_waitable {
     void                *user_data;        /**< 关联的用户标签，completion 中原样返回 */
     void                *registered_waitset; /**< 已注册的 waitset，平台层内部维护 */
     uint32_t             events;           /**< 关注的事件位（NS_WAITABLE_EVENT_*） */
-    int                  edge_triggered;   /**< 1 = 边沿触发，0 = 电平触发 */
+    int                  edge_triggered;   /**< 1 = 边沿，0 = 电平；Linux 映射 `EPOLLET`、macOS 映射 `EV_CLEAR`，Windows/Zephyr/FreeRTOS 忽略 */
 } ns_platform_waitable_t;
 
 /**
@@ -141,8 +141,8 @@ typedef struct ns_platform_waitable {
  *
  * @thread-safety unsafe 只应在初始化线程单线程调用。
  *
- * 本函数把 `primitive` 初始化为全 1 位无效值：Windows / FreeRTOS 对应无效句柄
- * （FreeRTOS 约定为 `(void *)~0`），Linux/macOS fd 对应 `-1`。
+ * 本函数把 `primitive` 初始化为全 1 位无效值：Windows / FreeRTOS / Zephyr 对应无效句柄
+ * （FreeRTOS / Zephyr 约定为 `(void *)~0` 哨兵），Linux/macOS fd 对应 `-1`。
  *
  * @param w 待初始化的 waitable，可为 `NULL`。
  */
@@ -358,7 +358,8 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup);
  * @brief 等待单个 wakeup。
  *
  * 超时精度随后端原生等待能力而定：Linux poll 和 Windows
- * WaitForSingleObject 以毫秒为粒度，macOS kevent 使用 timespec timeout。
+ * WaitForSingleObject 以毫秒为粒度，macOS kevent 使用 timespec timeout，
+ * FreeRTOS / Zephyr 为系统 tick 粒度（微秒值向上取整到一个 tick）。
  *
  * @param wakeup wakeup 句柄。
  * @param timeout_us 超时时间，单位为微秒；`NS_PLATFORM_WAIT_INFINITE_US`
@@ -394,7 +395,7 @@ int ns_platform_wakeup_wait(
  * 本原语不提供阻塞单等待；唯一阻塞单等待原语是 `ns_platform_wakeup_t`。
  * 单事件阻塞语义请建 waitset 注册 `waitable` 后调用 `ns_platform_waitset_wait`。
  *
- * 三平台统一硬语义：
+ * 各后端统一硬语义：
  * - 布尔语义：event 是布尔量而非计数器，同轮多次 signal 可合并且合法，
  *   调用方不得依赖 signal 次数等于触发次数。
  * - signal 遇底层缓冲已满（macOS pipe EAGAIN）视为成功返回 NS_OK，
@@ -413,7 +414,7 @@ int ns_platform_wakeup_wait(
  */
 typedef struct ns_platform_event {
     ns_platform_waitable_t waitable;      /**< 等待/消费侧：注册进 waitset，drain 读取此侧 */
-    ns_waitable_handle_t   signal_handle; /**< 触发侧：signal 写入此句柄（linux/win 与 waitable 同值，macos=pipe 写端 fd） */
+    ns_waitable_handle_t   signal_handle; /**< 触发侧：signal 写入此句柄（Linux/Windows/FreeRTOS/Zephyr 与 waitable 同值，macOS=pipe 写端 fd） */
 } ns_platform_event_t;
 
 /**
@@ -493,6 +494,14 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex);
  *
  * 单位为微秒。该时间只保证单调递增，不能解释为真实日历时间。
  *
+ * @note FreeRTOS 后端以 `xTaskGetTickCount` 为时间源，在内部把可能回绕的 `TickType_t`
+ *       扩展为 64 位累加 tick（无符号回绕差值 + 临界区）后再换算微秒，回绕后仍保持单调。
+ *       **前提**：FreeRTOS 自身的 tick 回绕不能太快——相邻两次采样之间必须最多发生一次
+ *       回绕（采样间隔小于一个 `TickType_t` 回绕周期），否则会少计整周期而出现时间跳变。
+ *       典型配置下回绕周期很长（32 位 tick @`configTICK_RATE_HZ=1000` 约 49.7 天），远大于
+ *       正常采样间隔；若 `configTICK_RATE_HZ` 与 tick 位宽使回绕周期明显更短，需提高采样
+ *       频率或改用更宽的 tick。
+ *
  * @param out_now_us 输出当前单调时间。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -554,6 +563,9 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset);
  * @note FreeRTOS 与 Zephyr 后端只接受 `NS_WAITABLE_EVENT_IN`：含 OUT/ERR 位的
  *       waitable 返回 `NS_E_INVAL`；Zephyr 还只接受 `k_poll_signal`（event 类）
  *       waitable。FreeRTOS 在加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
+ *       FreeRTOS 忽略 `edge_triggered`（后端无原生电平/边沿模式，同 Windows/Zephyr）；
+ *       其就绪是 queue set 的 token 语义（每次 send/give 记一次、取走 token 不消费
+ *       成员数据、不对仍非空的成员重复上报），调用方应把每次就绪处理到空。
  */
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
@@ -564,6 +576,13 @@ int ns_platform_waitset_add(
  *
  * 返回值只有 `NS_OK` 和 `NS_E_INVAL` 两种。实现负责该 waitable 残留就绪 token 的
  * 内部生命周期，调用方不需要、也不会看到 `NS_E_BUSY` 或其他失败码。
+ *
+ * @note 就绪 token 生命周期只涉及 waitset 内部的就绪记账，不消费成员对象自身的数据：
+ *       fd / socket / HANDLE / `k_poll` 对象的未读数据不受 remove 影响，remove 不
+ *       reset、不消费。**FreeRTOS 后端是已知例外/取舍**：其 queue set 的
+ *       `xQueueRemoveFromSet` 要求成员为空，后端为摘除成员而先排空它，因此对**数据队列**
+ *       成员会丢弃队列中所有未取走的消息（payload）——这是向 queue set 约束妥协的结果，
+ *       而非有意设计。需要保留数据的调用方必须在调用本函数前自行取走。
  *
  * @param waitset waitset 句柄。
  * @param waitable 要移除的 waitable。
@@ -576,15 +595,17 @@ int ns_platform_waitset_remove(
 /**
  * @brief 等待事件（微秒输入）。
  *
- * 阻塞直到至少一个 waitable 触发或超时。timeout 单位为微秒，
- * 通过 timerfd（Linux）、kevent timeout（macOS）或 WaitableTimer（Windows）
- * 实现微秒级精度。
+ * 阻塞直到至少一个 waitable 触发或超时。timeout 单位为微秒；
+ * Linux（timerfd）、macOS（kevent timeout）、Windows（WaitableTimer）可达微秒级精度，
+ * FreeRTOS / Zephyr 受系统 tick 限制（微秒值向上取整到一个 tick，不保证微秒级）。
  * 用于 broker 的 timer deadline 等待场景。
  *
  * @param waitset waitset 句柄。
  * @param timeout_us 超时时间；0 = 非阻塞，`NS_PLATFORM_WAIT_INFINITE_US` = 无限等待。
  * @param completions 输出数组，由调用方提供。
- * @param max_completions 数组容量，最大 64。
+ * @param max_completions 输出数组容量；实际写入数不超过同时就绪的成员数。各后端
+ *        可注册成员上限为 Linux/macOS 64、Windows 63（预留 1 个内部 timer slot）、
+ *        FreeRTOS/Zephyr 默认 32，故容量取 64 可覆盖所有后端可能的最大同时就绪数。
  * @param out_count 实际触发数。
  * @return `NS_OK` 成功，失败时返回负数状态码。
  */

@@ -40,7 +40,7 @@
 
 ## Constraints
 - **平台判定**：新增显式 `NANOSIG_PLATFORM_FREERTOS`（可经 `-D` 定义）；未知目标继续 `FATAL_ERROR`，禁止 `#else` 静默兜底为 FreeRTOS。
-- **`waitset_remove` 契约不变**：FreeRTOS 后端在 `remove` 内部 purge 残留 token，对调用方始终返回 `NS_OK`/`NS_E_INVAL`；broker 与 `platform/README.md` 的既有契约语义不变，**不加** broker drain-重试。
+- **`waitset_remove` 契约不变**：FreeRTOS 后端在 `remove` 内部 purge 残留 token，对调用方始终返回 `NS_OK`/`NS_E_INVAL`；broker 与 `platform/README.md` 的既有契约语义不变，**不加** broker drain-重试。注意 purge 受 `xQueueRemoveFromSet`“成员必须为空”约束，对**数据队列**成员会连同队列中未取走的消息（payload）一起丢弃——该“清空”是 FreeRTOS 后端特有（已知取舍），其它后端（fd/socket、HANDLE、`k_poll`）remove 不消费成员数据，须在 `nanosig_port.h`/`platform/README.md` 明确。
 - **后端常量全部可配置**：waitset 容量、线程栈 words、任务优先级均暴露为可配置宏（下游可用 toolchain/`-D`/Kconfig 覆盖），并提供安全默认值；`waitset_add` 仍须做容量上限校验，杜绝越界触发内核 `configASSERT` 停机。
 - **wakeup = 每对象独立 binary semaphore**，禁止 task notification（loop 唤醒与 broker op-proxy 唤醒可能指向同一任务，notification 共享 per-task 值会互相误消费 → op 滞留 → `req->wakeup` 悬垂 → HardFault）。此修复必须保留。
 - **event = binary semaphore**：同一对象既是 waitable 成员又是 signal 目标；`event_deinit` 仍注册时返回 `NS_E_BUSY`（沿用已有 `ns_platform_event_*` 契约）。
@@ -60,7 +60,7 @@
 - [ ] `include/nanosig/nanosig_port.h` 提供显式 `NANOSIG_PLATFORM_FREERTOS`；未定义且非 host 时保持原有 `FATAL_ERROR` 语义（顶层 CMake）。
 - [ ] 顶层 `CMakeLists.txt` 能在显式选择时编入 `platform/freertos/port.c`，并更新 `FATAL_ERROR` 文案为四平台；`platform/` 之外无新增 OS 分支。
 - [ ] `api-compile-checks` 覆盖 FreeRTOS 分支（编译期契约），host 上可通过。
-- [ ] `waitset_remove` 在 FreeRTOS 后端内部 purge，调用方永远看到 `NS_OK`/`NS_E_INVAL`；broker 代码零改动，Linux/macOS/Windows 回归全绿。
+- [ ] `waitset_remove` 在 FreeRTOS 后端内部 purge，调用方永远看到 `NS_OK`/`NS_E_INVAL`；数据队列成员被清空的行为已文档化并有断言，其它后端 remove 不消费成员数据；broker 代码零改动，Linux/macOS/Windows 回归全绿。
 - [ ] `waitset_add` 对超过可配置容量返回错误（不得触发 `configASSERT`）。
 - [ ] 后端常量（容量/栈/优先级）可经宏配置，且有安全默认值。
 - [ ] FreeRTOS POSIX port 在现有 CI runner 跑通 waitset/broker/event 契约测试（含 wakeup 独立 semaphore、event signal/drain/去注册 busy 防御）。

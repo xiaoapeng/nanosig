@@ -82,7 +82,7 @@
       "name": "linux-coverage",
       "displayName": "Linux Coverage (gcov/lcov)",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-coverage",
+      "binaryDir": "${sourceDir}/build",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -191,7 +191,7 @@
       "name": "freertos-release",
       "displayName": "FreeRTOS POSIX harness (Release)",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-freertos",
+      "binaryDir": "${sourceDir}/build",
       "condition": {
         "type": "inList",
         "string": "${hostSystemName}",
@@ -206,6 +206,46 @@
         "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "OFF"
       }
+    },
+    {
+      "name": "freertos-debug-asan",
+      "displayName": "FreeRTOS POSIX harness (Debug ASAN)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "freertos",
+        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
+        "NANOSIG_ENABLE_ASAN": "ON",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF"
+      }
+    },
+    {
+      "name": "freertos-debug-ubsan",
+      "displayName": "FreeRTOS POSIX harness (Debug UBSAN)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "freertos",
+        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -219,7 +259,9 @@
     { "name": "macos-release", "configurePreset": "macos-release" },
     { "name": "windows-debug-asan", "configurePreset": "windows-debug-asan" },
     { "name": "windows-release", "configurePreset": "windows-release" },
-    { "name": "freertos-release", "configurePreset": "freertos-release" }
+    { "name": "freertos-release", "configurePreset": "freertos-release" },
+    { "name": "freertos-debug-asan", "configurePreset": "freertos-debug-asan" },
+    { "name": "freertos-debug-ubsan", "configurePreset": "freertos-debug-ubsan" }
   ],
   "testPresets": [
     {
@@ -275,6 +317,16 @@
     {
       "name": "freertos-release",
       "configurePreset": "freertos-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "freertos-debug-asan",
+      "configurePreset": "freertos-debug-asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "freertos-debug-ubsan",
+      "configurePreset": "freertos-debug-ubsan",
       "output": { "outputOnFailure": true }
     }
   ]

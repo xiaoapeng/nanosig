@@ -111,6 +111,9 @@ jobs:
     # macOS additionally applies the guarded pthread-stack patch inside
     # cmake/FreeRTOSPosix.cmake, while Linux builds the unmodified upstream
     # POSIX port. Only the FreeRTOS contract tests are registered here.
+    # The same job also runs the harness under ASAN and UBSAN. TSAN is
+    # deliberately excluded: the upstream POSIX port hangs (no output) before
+    # any test runs when built with NANOSIG_ENABLE_TSAN=ON.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -125,3 +128,15 @@ jobs:
         run: cmake --build --preset freertos-release
       - name: Test
         run: ctest --preset freertos-release -LE nightly
+      - name: Configure (ASAN)
+        run: cmake --preset freertos-debug-asan
+      - name: Build (ASAN)
+        run: cmake --build --preset freertos-debug-asan
+      - name: Test (ASAN)
+        run: ctest --preset freertos-debug-asan -LE nightly
+      - name: Configure (UBSAN)
+        run: cmake --preset freertos-debug-ubsan
+      - name: Build (UBSAN)
+        run: cmake --build --preset freertos-debug-ubsan
+      - name: Test (UBSAN)
+        run: ctest --preset freertos-debug-ubsan -LE nightly
