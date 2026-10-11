@@ -97,6 +97,21 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+### FREERTOS-007: `waitset_add` / `event_signal` / `event_drain` 未排除 `(void *)~0` 无效哨兵
+
+- **来源**: Zephyr review（ZEPHYR-002）发现的同根因问题；作者指示随 Zephyr 修复一并加固。
+  原 FreeRTOS review（001-006）未覆盖该点。
+- **修复**: platform/freertos/port.c 统一用 `ns_waitable_handle_is_valid`：`waitset_add`
+  用 `NS_WAITABLE_GET(waitable)` 判定（替换 `handle == NULL`）；`event_signal` 用
+  `signal_handle`、`event_drain` / `event_deinit` 用 `waitable` 判定。无效句柄返回
+  `NS_E_INVAL`（deinit 为安全 no-op），避免 `(void *)~0` 被 `uxQueueMessagesWaiting` /
+  `xSemaphoreTake` / `vSemaphoreDelete` 解引用。
+- **文档**: include/nanosig/nanosig_port.h（`ns_platform_waitset_add` @note）、
+  platform/freertos/port.c（文件头注释）。
+- **分支**: fix/zephyr-review-002-007
+- **修复 commit**: `220dd1d`
+- **日期**: 2026-10-11
+
 ---
 
 ## 现在打开的问题
