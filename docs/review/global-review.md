@@ -26,6 +26,25 @@
   A3 header audit 暴露 nanosig_rbtree.h 缺 `@thread-safety` 标注，
   已作为 RBTREE-013 打开（详见 rbtree-code-review.md）。
 
+### 2026-10-11 — 空 waitset 无限等待封顶统一 + max_completions 契约（GLOBAL-004 / GLOBAL-005）
+
+- **GLOBAL-004**: `ns_platform_waitset_wait` 在"空 waitset + `NS_PLATFORM_WAIT_INFINITE_US`"
+  上五个后端行为分裂（Linux / macOS / FreeRTOS 永久阻塞，Windows / Zephyr 返回
+  `NS_E_INVAL`），且公开 docstring 未规定该输入的行为。作者选定"封顶为最大等待值"：
+  新增公开常量 `NS_PLATFORM_WAIT_EMPTY_MAX_US`（默认 1 秒，可编译期覆盖），五个后端在
+  该输入上统一封顶后返回 `NS_OK` + `out_count == 0`。封顶是等待时间的**上界**而非固定
+  睡眠（等待期间另一线程注册的 waitable 就绪时可能提前返回）；waitable 非空时仍是真
+  无限等待（broker 稳态依赖这一点），有限超时不受影响。docstring 与 platform/README.md
+  同步补充例外说明；host / FreeRTOS / Zephyr 三处契约测试覆盖。
+- **GLOBAL-005**: Windows `waitset_wait` 缺 `max_completions == 0` 早返回，容量为 0 时
+  仍会真正等待（有限超时等满 timeout；空 waitset + 无限超时则等满封顶值），与其余四
+  后端不一致，且 docstring 未规定 0 的语义。修复为入口补一行早返回，五后端统一立即
+  返回 `NS_OK` + `out_count == 0`；docstring 明确该语义，host 契约测试
+  `test_waitset_max_completions_zero_no_wait` 覆盖。
+
+- **修复 commit**: `6cf940d`（PR #7，rebase 合并，无 merge 节点）
+- **修复日期**: 2026-10-11
+
 (无其它历史)
 
 ---
@@ -98,169 +117,6 @@
 
 #### 定位
 docs/plans/共识计划.md:122
-
----
-
-### GLOBAL-004: 空 waitset + 无限超时的行为在五个后端间分裂（3 永久阻塞 / 2 报错）
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: design（跨模块契约缺口）
-
-#### 问题描述
-
-`ns_platform_waitset_wait` 的公开契约只写 `NS_PLATFORM_WAIT_INFINITE_US` = "无限等待"
-（include/nanosig/nanosig_port.h:604、platform/README.md:161），**未定义 waitset 为空
-（无任何已注册 waitable）时的行为**。五个后端实际分裂：
-
-| 后端 | 空 waitset + INFINITE |
-|------|----------------------|
-| Linux | 永久阻塞（timerfd 常驻 epoll 但未 arm，`epoll_wait(-1)` 不返回） |
-| macOS | 永久阻塞（无限时 `timeout_ptr` 保持 NULL） |
-| FreeRTOS | 永久阻塞（`portMAX_DELAY`） |
-| Windows | `WaitForMultipleObjects(0,…)` → `WAIT_FAILED`(ERROR_INVALID_PARAMETER) → `NS_E_INVAL` |
-| Zephyr | `NS_E_INVAL` |
-
-空 waitset 上不存在任何可唤醒的事件源（Zephyr 的 `k_poll` 用活跃 slot 快照构造
-event 数组，阻塞期间另一线程 `waitset_add` 的成员对该次 wait 不可见），因此
-"永久阻塞"等价于**静默挂死**：线程永远拿不回控制权，没有错误码也没有日志，在
-RTOS 上极难与优先级反转 / 丢中断区分。该缺口由 Zephyr 后端 review 发现
-（详见 zephyr-code-review.md 的 ZEPHYR-001），但根因是跨模块契约问题。
-
-**可达性**：公开 API 层完全可达（`create` 后不 `add` 就 `wait`，或 add 后再 remove）；
-nanosig 自身不可达——broker 在起线程前就把 `broker->event.waitable` 注册进 waitset
-（src/ns_broker.c:695-701），直到 join 之后才摘除（src/ns_broker.c:772）。因此本改动
-只影响直接调用平台 API 的调用方，不改变库自身热路径。
-
-#### review 建议
-
-把语义定死并在契约层统一五个后端。三个候选：① 返回专用错误码（如 `NS_E_EMPTY`）；
-② 保持永久阻塞（POSIX poll/epoll/kevent 语义）；③ **封顶为最大等待值**后按普通超时
-返回。作者选定 ③。
-
-#### 作者建议
-
-（2026-10-11 作者决定）空 waitset + 无限超时统一**封顶为最大等待值**为 **1 秒**，
-到期返回 `NS_OK`（`out_count == 0`）；封顶值用公开常量 `NS_PLATFORM_WAIT_EMPTY_MAX_US`
-（默认 1000000 µs，可编译期覆盖）。**非空 waitset 仍是真无限等待**（broker 无定时器时
-的稳态依赖这一点）；封顶只是等待时间的**上界**，等待期间另一线程注册的 waitable 就绪时
-后端可能提前返回该 completion（Windows/Zephyr 用调用时快照，看不到后续注册）。
-
-封顶值由 10 秒调整为 **1 秒**（2026-10-11，作者要求让 CI 跑更快）：该值只影响"误用空
-waitset 无限等待"这一路径，1 秒仍是有效防御；10 秒会让 host / FreeRTOS / Zephyr 三处
-契约测试每次都实等近 10 秒，1 秒在同样验证契约的前提下缩短测试与 CI 时长。需要更长
-封顶可在编译期 `-DNS_PLATFORM_WAIT_EMPTY_MAX_US=<n>` 覆盖。
-
-按此决定已实现（工作区，未提交）：include/nanosig/nanosig_port.h、五个
-platform/*/port.c 的 `waitset_wait`、platform/README.md，以及 host / Zephyr / FreeRTOS
-三处契约测试。
-
-#### 可重现的失败场景
-
-```c
-ns_platform_waitset_t *ws = NULL;
-ns_platform_waitset_completion_t c[4];
-size_t n = 0u;
-
-ns_platform_waitset_create(&ws);            /* 不 add 任何 waitable */
-ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &n);
-```
-
-修复前：Linux / macOS / FreeRTOS 不返回（挂死）；Windows / Zephyr 返回 `NS_E_INVAL`。
-修复后（统一）：等待时间被封顶到 `NS_PLATFORM_WAIT_EMPTY_MAX_US`（上界，非固定睡眠），
-返回 `NS_OK`；通常 `n == 0`，若等待期间另一线程注册的 waitable 就绪则可能提前返回该
-completion（Windows/Zephyr 用调用时快照，看不到后续注册）。
-
-#### 定位
-
-include/nanosig/nanosig_port.h:245
-platform/linux/port.c:531
-platform/macos/port.c:603
-platform/windows/port.c:432
-platform/freertos/port.c:628
-platform/zephyr/port.c:493
-
----
-
-### GLOBAL-005: Windows 后端缺 `max_completions == 0` 早返回，容量为 0 时仍会真正等待
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: design（跨后端行为不一致 + 契约缺口）
-
-#### 问题描述
-
-四个后端（Linux / macOS / FreeRTOS / Zephyr）在 `ns_platform_waitset_wait` 入口都有
-`if(max_completions == 0u) return NS_OK;` 早返回；**Windows 没有**——它的入口只判
-`waitset->count == 0u && timeout_us == 0u`（platform/windows/port.c:450）。于是同一个
-退化输入在各后端行为不同：
-
-| 输入 | Linux / macOS / FreeRTOS / Zephyr | Windows |
-|------|----------------------------------|---------|
-| `max_completions == 0` + 非空 waitset + 有限超时 | 立即 `NS_OK`、`out_count == 0` | 修复前：真等满 timeout 后 `NS_OK`；修复后：立即 `NS_OK` |
-| `max_completions == 0` + 空 waitset + 无限超时 | 立即 `NS_OK` | 修复前：`WaitForMultipleObjects(0,…)` → 立即 `NS_E_INVAL`；修复后：立即 `NS_OK` |
-
-`max_completions == 0` 时调用方拿不到任何 completion（写入被
-`*out_count < max_completions` 挡住），所以 Windows 的等待纯属浪费，且与其余四后端
-不一致。`ns_platform_waitset_wait` 的 docstring 只写了 `max_completions` 是"输出数组
-容量"，**没有规定 0 的语义**，因此这是契约缺口而非 Windows 单方面的偏差。
-
-本条由 GLOBAL-004 的同一改动顺带暴露：GLOBAL-004 把"空 waitset + 无限超时"从 Windows 的
-立即报错改为"等满封顶值返回"，一度使 Windows 在该退化输入上从"立即返回"变成"最多阻塞
-1 秒"。按作者建议补上早返回后，Windows 恢复为立即返回，五个后端在该退化输入上完全一致。
-
-#### review 建议
-
-推荐给 Windows 入口补上与其他四后端一致的早返回：
-
-```c
-*out_count = 0u;
-if(max_completions == 0u) return NS_OK;   /* 与 Linux/macOS/FreeRTOS/Zephyr 对齐 */
-if(waitset->count == 0u && timeout_us == 0u) return NS_OK;
-```
-
-这样 GLOBAL-004 的封顶语义在退化输入下也完全一致，改动量一行。替代方案是在
-docstring 写明"`max_completions == 0` 时立即返回 `NS_OK`、不等待"并让 Windows 遵循
-（等价于改代码）；若选择保留 Windows 现状，则必须承认同一输入在后端间不一致，与
-"统一空 waitset 语义"的目标相冲突。
-
-#### 作者建议
-
-（2026-10-11 作者决定）**修**：给 Windows 入口补上与其他四后端一致的早返回
-`if(max_completions == 0u) return NS_OK;`，并在 `ns_platform_waitset_wait` 的
-docstring 明确 `max_completions == 0` 的语义（立即返回 `NS_OK` + `out_count == 0`、
-不做等待），把原先的隐含约定升级为文档化契约。测试由 host 契约测试
-（`test_waitset_max_completions_zero_no_wait`）覆盖——该二进制在 Linux / macOS /
-Windows 三种 host 构建下都运行，正好覆盖被修的 Windows 后端；FreeRTOS / Zephyr
-本就合规，未新增用例。
-
-按此决定已实现（工作区，未提交）：platform/windows/port.c、
-include/nanosig/nanosig_port.h、test/unit/test_platform_backend.c。提交后本条移入
-"修复历史"。
-
-#### 可重现的失败场景
-
-```c
-ns_platform_waitset_t *ws = NULL;
-ns_platform_waitset_completion_t c[1];
-size_t n = 99u;
-
-ns_platform_waitset_create(&ws);
-/* 先注册一个（不触发信号的）waitable，使 waitset 非空 */
-ns_platform_waitset_add(ws, &ev.waitable);
-ns_platform_waitset_wait(ws, 500000u, c, 0u, &n);   /* max_completions == 0 */
-```
-
-Linux / macOS / FreeRTOS / Zephyr：立即返回 `NS_OK`、`n == 0`（耗时 < 1 ms）。
-修复前 Windows：等满 500 ms 后返回 `NS_OK`、`n == 0`；修复后五个后端都是立即返回。
-
-#### 定位
-
-platform/windows/port.c:449
-platform/linux/port.c:546
-platform/macos/port.c:620
-platform/freertos/port.c:641
-platform/zephyr/port.c:509
 
 ---
 

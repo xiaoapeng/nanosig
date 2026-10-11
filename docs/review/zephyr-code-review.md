@@ -11,105 +11,21 @@
 
 ## 修复历史
 
-（暂无。）
+### 2026-10-11 — ZEPHYR-001 闭环：空 waitset + 无限超时统一为有界封顶
+
+- **ZEPHYR-001**: 空 waitset + `NS_PLATFORM_WAIT_INFINITE_US` 的语义未定义（五个后端
+  3 永久阻塞 / 2 报错），Zephyr 侧走 `k_sleep` 且真无限等待等价于静默挂死。按作者决定
+  统一为"封顶为最大等待值"：`platform/zephyr/port.c` 在 `n == 0` 分支把无限超时封顶到
+  `NS_PLATFORM_WAIT_EMPTY_MAX_US`（默认 1 秒，可编译期覆盖），随后 `k_sleep` 返回
+  `NS_OK` + `out_count == 0`；`test/zephyr/src/main.c` 新增
+  `test_wait_empty_infinite_is_capped` 覆盖。
+
+- **修复 commit**: `6cf940d`（PR #7，rebase 合并，无 merge 节点）
+- **修复日期**: 2026-10-11
 
 ---
 
 ## 现在打开的问题
-
-### ZEPHYR-001: 空 waitset + 无限超时的语义未定义（五个后端 3 永久阻塞 / 2 报错），需统一为有界行为
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: design（含 doc 契约缺口）
-
-#### 问题描述
-
-`ns_platform_waitset_wait` 在"无可等待 slot"（空 waitset，或全部 slot 句柄为空）时，对 `timeout_us == NS_PLATFORM_WAIT_INFINITE_US` 直接返回 `NS_E_INVAL`（port.c:531），只对有限超时走 `k_sleep` 睡眠路径（port.c:532）。
-
-公开契约把无限超时定义为"无限等待"（nanosig_port.h:604、platform/README.md:161），但**没有**规定空 waitset 的语义。五个后端在该输入下并不统一，且除 Windows 外都是底层原语的副作用而非显式设计：
-
-| 后端 | timeout = 0 | 有限 timeout | INFINITE |
-|------|-------------|--------------|----------|
-| Linux | 立即返回 NS_OK/0（`epoll_wait(timeout=0)`） | 睡眠到点 → NS_OK/0 | `timeout_ms = -1` → 永久阻塞（linux/port.c:562；timerfd 常驻 epoll 但未 arm，永不就绪） |
-| macOS | kevent timeout 0 → NS_OK/0 | kevent 睡眠 → NS_OK/0 | `timeout_ptr == NULL` → 永久阻塞（macos/port.c:622-632） |
-| Windows | 显式提前返回 NS_OK/0（windows/port.c:449） | armed timer → NS_OK/0 | `WaitForMultipleObjects(0, …)` → `WAIT_FAILED`(ERROR_INVALID_PARAMETER) → NS_E_INVAL（windows/port.c:476、504） |
-| FreeRTOS | select(0) → NS_OK/0 | select(ticks) → NS_OK/0 | select(`portMAX_DELAY`) → 永久阻塞（freertos/port.c:646） |
-| Zephyr | NS_OK/0 | `k_sleep` → NS_OK/0 | NS_E_INVAL |
-
-即 3 个后端永久阻塞（Linux/macOS/FreeRTOS）、2 个后端报错（Windows/Zephyr）。因此这是**契约缺口**而非单纯的 Zephyr 偏差："空 waitset + 无限超时"目前没有可预期行为。`port.c:527-528` 的注释只描述了有限超时路径；该例外未出现在 nanosig_port.h、platform/README.md 或已批准计划中（计划 Z8 只写 `NS_PLATFORM_WAIT_INFINITE_US → K_FOREVER`）。按 §2.4 文档仲裁，该行为既非公共头文档化的设计，也不是计划记录的取舍。
-
-#### review 建议
-
-建议把语义定死为"**空 waitset + `NS_PLATFORM_WAIT_INFINITE_US` 是错误，返回 `NS_E_EMPTY`**"，并在契约层统一五个后端——当前 Zephyr 的**方向**正确，但错误码不精确、契约缺失。有限超时/0 的行为（睡眠或立即返回、`out_count == 0`）保持不变并写进 docstring。
-
-理由：
-
-1. 空 waitset 上不存在任何潜在唤醒源；且 `k_poll` 在阻塞前用活跃 slot **快照**构造 `k_poll_event[]`（port.c:511-525），阻塞期间由另一线程 `waitset_add` 加入的成员对该次 wait **不可见**——"永久阻塞等后续注册"在本后端根本不成立，其唯一含义是"永久挂起且不可唤醒"。
-2. 静默挂死是 RTOS 上最难诊断的失效模式（无错误码、无日志，与优先级反转/丢中断无法区分）；立即返回错误码可诊断。
-3. 平台原生语义也支持"拒绝空等待集"：Windows 的 `WaitForMultipleObjects` 要求 nCount ∈ [1,64]，空集直接 ERROR_INVALID_PARAMETER——"报错"并非 Zephyr 独创，Windows 后端实际上已如此。
-4. 若确需"阻塞等外部唤醒"，nanosig 已有专用原语 `ns_platform_event_t` / `ns_platform_wakeup_t`（nanosig_port.h:395 明确"唯一阻塞单等待原语是 `ns_platform_wakeup_t`"），broker 自身就把 `broker->event` 常驻注册进 waitset（src/ns_broker.c:700），因此 in-tree 永远不会走到空集合路径——该路径只能由直接调用平台 API 的调用方触发。
-
-具体落地（跨模块，建议同步记入 `docs/review/global-review.md`）：
-
-- (`ZEPHYR-001-a`) 用 `NS_E_EMPTY`（nanosig_status.h:30）替代 `NS_E_INVAL`：`NS_E_INVAL` 的契约语义是"NULL 指针、类型错配"（nanosig_status.h:17），而 `NS_E_EMPTY` 在本仓库既有语义就是"集合/队列为空"（nanosig_hashtbl.h:215、nanosig_mpsc_record_ring.h:193、src/ns_broker.c:293），既精确又让调用方能区分"参数写错"与"集合为空"。
-- (`ZEPHYR-001-b`) 在 `ns_platform_waitset_wait` docstring（nanosig_port.h:604-612）补"空 waitset"小节，写明 0 / 有限 / INFINITE 三种 timeout 的行为与返回码，并同步 platform/README.md:161。
-- (`ZEPHYR-001-c`) 其余四个后端各加显式判断（Windows 把现已"偶然"落到错误码的路径改为显式处理；Linux 补上显式守卫；macOS/FreeRTOS 把"永久阻塞"改为可预期返回），使行为可预期，而非取决于各底层原语的偶然语义。
-- (`ZEPHYR-001-d`) 五个后端各补契约测试：空 waitset + 0 → `NS_OK` 且 `out_count == 0`；空 waitset + 有限 timeout → `NS_OK`、`out_count == 0` 且实测等待 ≥ timeout；空 waitset + INFINITE → `NS_E_EMPTY`。
-- (`ZEPHYR-001-e`) **第三选项（对调用方最无感）**：空 waitset + INFINITE 不返回错误，而是**封顶为最大等待值**（如 10 秒）后按普通超时返回 `NS_OK`。代价是把"静默永久挂死"换成"每 10 秒静默空转一次"，可诊断性弱于错误码，但调用方无需改动、五后端天然一致、且不需要动 Windows 的 `WaitForMultipleObjects(0,…)` 失败路径。**作者采纳本选项**，见"作者建议"。
-
-（作者采纳 (e) 后，(a)/(c) 的 `NS_E_EMPTY` 改为统一的封顶语义，(d) 的 INFINITE 断言改为"在封顶值附近返回 `NS_OK` 且 `out_count == 0`"，(b) 的契约文档小节照做。）
-
-备选方案（若作者倾向"与 POSIX poll/epoll/kevent 一致、空集合永久阻塞"）：Zephyr 侧改用 `k_sleep(K_FOREVER)`（Zephyr 文档：K_FOREVER 使线程挂起，仅 `k_wakeup()` 可唤醒，而 nanosig 未暴露该路径），并在 docstring 写明"空 waitset + INFINITE 永久阻塞、不返回"；但该方案反而需要改 Windows（把 `WaitForMultipleObjects(0,…)` 的失败路径改成真正的永久等待），且要把"永久不可唤醒"的后果写进契约。
-
-#### 作者建议
-
-（2026-10-11 作者决定）不返回错误码、也不永久阻塞：空 waitset + 无限超时统一**封顶为最大等待值**为 **1 秒**；到期后按普通超时返回 `NS_OK`（`out_count == 0`）。封顶值作为公开常量 `NS_PLATFORM_WAIT_EMPTY_MAX_US`（默认 1000000 µs，可编译期覆盖），五个后端行为一致；**waitable 非空时仍是真无限等待**（broker 稳态依赖这一点），有限超时不受影响。
-
-封顶值由 10 秒调整为 **1 秒**（2026-10-11，作者要求让 CI 跑更快）：只影响"误用空 waitset 无限等待"这一路径，1 秒仍是有效防御，同时避免 host / FreeRTOS / Zephyr 契约测试每次都实等近 10 秒。
-
-按此决定已实现（工作区，未提交）：
-include/nanosig/nanosig_port.h
-platform/linux/port.c
-platform/macos/port.c
-platform/windows/port.c
-platform/freertos/port.c
-platform/zephyr/port.c
-platform/README.md
-test/unit/test_platform_backend.c
-test/unit/test_platform_contract_compile.c
-test/zephyr/src/main.c
-test/freertos/test_freertos_waitset.c
-
-跨模块的同一改动记录在 docs/review/global-review.md（GLOBAL-004）。提交后本条移入"修复历史"。
-
-#### 可重现的失败场景
-
-```c
-ns_platform_waitset_t *ws = NULL;
-ns_platform_waitset_completion_t c[4];
-size_t n = 0u;
-
-ns_platform_waitset_create(&ws);            /* 不 add 任何 waitable */
-ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &n);
-```
-
-观察到：Zephyr / Windows 立即返回 `NS_E_INVAL`、`n == 0`；Linux / macOS / FreeRTOS 进入阻塞（不返回）。
-
-#### 定位
-
-platform/zephyr/port.c:529-534
-include/nanosig/nanosig_port.h:604
-platform/README.md:161
-platform/linux/port.c:562
-platform/windows/port.c:449
-platform/windows/port.c:476
-platform/macos/port.c:622-632
-platform/freertos/port.c:646
-
-（以上行号对应审查基线 master 111b5a3；修复已落地于工作区，见"作者建议"。）
-
----
 
 ### ZEPHYR-002: `waitset_add` 只判 NULL，未排除 `(void *)~0` 无效哨兵，会把哨兵交给 `k_poll`
 
