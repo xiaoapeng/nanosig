@@ -15,7 +15,9 @@
  * - 时间：`xTaskGetTickCount`；内存：`pvPortMalloc` / `vPortFree`。
  *
  * 本后端只支持 `NS_WAITABLE_EVENT_IN`；含 OUT/ERR 的 waitable 在
- * `ns_platform_waitset_add` 返回 `NS_E_INVAL`。
+ * `ns_platform_waitset_add` 返回 `NS_E_INVAL`。后端忽略 `waitable.edge_triggered`
+ * （同 Windows/Zephyr）；就绪语义是 queue set 的 token 语义：每次 send/give 记一次
+ * 就绪，取走 token 不消费成员数据，也不对仍非空的成员重复上报。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -131,11 +133,39 @@ static TickType_t ns_freertos_us_to_ticks(ns_platform_time_us_t timeout_us)
     return (TickType_t)ticks;
 }
 
+/*
+ * FreeRTOS 的 TickType_t 会在 2^(8*sizeof(TickType_t)) 个 tick 后回绕，典型 32 位目标
+ * 在 configTICK_RATE_HZ=1000 时约 49.7 天（configUSE_16_BIT_TICKS=1 时更短）。公共头
+ * 文件承诺 ns_platform_clock_monotonic_us "只保证单调递增"，直接换算原始 tick 会在回绕
+ * 瞬间让时间倒流。这里维护一个回绕扩展的 64 位 tick 累加器：用无符号回绕差值
+ * (now - last) 累加，回绕后差值仍为非负，累加值只增不减，从而消除时间倒流。
+ *
+ * 前提（重要）：FreeRTOS 自身的 tick 回绕不能太快——必须保证相邻两次采样之间最多只发生
+ * 一次回绕，即采样间隔小于一个 TickType_t 回绕周期。单次采样无法区分"回绕了 1 圈"和
+ * "回绕了 N 圈"，若采样间隔跨越多个周期就会少计整周期、表现为时间跳变。因此
+ * configTICK_RATE_HZ 与 tick 位宽的组合必须让回绕周期远大于正常采样间隔：nanosig 的
+ * timer 路径在每次阻塞等待前后都会采样时钟，常规配置（32 位 tick @1kHz ≈ 49.7 天，或
+ * 16 位 tick @1kHz ≈ 65.5 秒）满足；若回绕周期明显更短，需提高采样频率或改用更宽的 tick。
+ */
+static TickType_t ns_freertos_ticks_last;
+static uint64_t   ns_freertos_ticks_accum;
+
 static ns_platform_time_us_t ns_freertos_now_us(void)
 {
-    TickType_t ticks = xTaskGetTickCount();
+    uint64_t extended;
 
-    return ((ns_platform_time_us_t)ticks * 1000000u) / (uint64_t)configTICK_RATE_HZ;
+    taskENTER_CRITICAL();
+    {
+        TickType_t now   = xTaskGetTickCount();
+        uint64_t   delta = (uint64_t)(TickType_t)(now - ns_freertos_ticks_last);
+
+        ns_freertos_ticks_last   = now;
+        ns_freertos_ticks_accum += delta;
+        extended                 = ns_freertos_ticks_accum;
+    }
+    taskEXIT_CRITICAL();
+
+    return (extended * 1000000u) / (uint64_t)configTICK_RATE_HZ;
 }
 
 static UBaseType_t ns_freertos_member_capacity(QueueSetMemberHandle_t member)
@@ -532,12 +562,10 @@ int ns_platform_waitset_add(
     rc = xQueueAddToSet(member, waitset->set);
     if(rc != pdPASS) return NS_E_INVAL;
 
+    /* 入口已排除 count >= CAP，且 count 与 slots[] 在 add/remove 中成对维护，
+       故此处必有空槽（i < CAP）；无需回滚分支。 */
     for(i = 0; i < (size_t)NANOSIG_FREERTOS_WAITSET_CAP; i++){
         if(waitset->slots[i] == NULL) break;
-    }
-    if(i == (size_t)NANOSIG_FREERTOS_WAITSET_CAP){
-        (void)xQueueRemoveFromSet(member, waitset->set);
-        return NS_E_TOO_MANY_HANDLES;
     }
 
     waitset->slots[i] = waitable;

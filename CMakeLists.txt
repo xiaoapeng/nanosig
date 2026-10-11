@@ -294,8 +294,22 @@ if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
         test/unit/test_macro_expansion.c
     )
 
+    # 平台契约头按平台宏矩阵各语法检查一遍：bare（host）+ Windows + Zephyr +
+    # FreeRTOS。同一 TU 在不同 NANOSIG_PLATFORM_* 下都必须能编过，从而在 host 上
+    # 覆盖 FreeRTOS/Zephyr/Windows 的宏分支（编译期契约），不依赖目标工具链。
+    set(_nanosig_platform_contract_src test/unit/test_platform_contract_compile.c)
+
     nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        test/unit/test_platform_contract_compile.c
+        ${_nanosig_platform_contract_src}
+    )
+    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_windows
+        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_WINDOWS=1
+    )
+    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_zephyr
+        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_ZEPHYR=1
+    )
+    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_freertos
+        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_FREERTOS=1
     )
 
     nanosig_add_api_compile_check(nanosig_api_check_broker_contract
@@ -318,10 +332,27 @@ if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
         DEPENDS
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
+            nanosig_api_check_platform_contract_windows
+            nanosig_api_check_platform_contract_zephyr
+            nanosig_api_check_platform_contract_freertos
             nanosig_api_check_broker_contract
             nanosig_api_check_data_structures
             nanosig_api_check_types
             nanosig_api_check_cpp_compat
+    )
+endif()
+
+# FreeRTOS 也注册平台契约编译检查，使 `api-compile-checks` 目标在
+# NANOSIG_PLATFORM=freertos 下存在（AC：api-compile-checks 覆盖 FreeRTOS 分支）。
+# POSIX harness 与真实目标都只对公共头做 -fsyntax-only，不链接。
+if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "freertos")
+    nanosig_add_api_compile_check(nanosig_api_check_platform_contract
+        test/unit/test_platform_contract_compile.c DEFINES -DNANOSIG_PLATFORM_FREERTOS=1
+    )
+
+    add_custom_target(api-compile-checks
+        DEPENDS
+            nanosig_api_check_platform_contract
     )
 endif()
 

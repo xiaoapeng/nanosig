@@ -93,9 +93,10 @@ NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, signal) == 0u, "ns_watcher_t.signal m
  * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
- * @param handle 平台句柄（Linux/macOS 填 `.fd`，Windows 填 `.handle`）。
+ * @param handle 平台句柄（Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr 填 `.handle`）。
  * @param events `NS_WAITABLE_EVENT_*` 位组合。
- * @param edge_triggered 非零表示边沿触发，零表示电平触发。
+ * @param edge_triggered 非零表示边沿触发，零表示电平触发；Linux 映射 `EPOLLET`、
+ *        macOS 映射 `EV_CLEAR`，Windows/Zephyr/FreeRTOS 后端忽略该参数。
  * @param consume_fn 可选消费函数；为 NULL 时 broker 跳过 fd 消费，直接 emit signal。
  *        非 NULL 时 broker 线程在 emit 前调用，
  *        返回 `> 0` 时 emit，`0` 或负数跳过 emit。

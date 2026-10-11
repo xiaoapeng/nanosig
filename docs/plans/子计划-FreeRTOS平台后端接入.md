@@ -49,7 +49,7 @@
 - **D1 平台选择机制（H1/H9/P4）**：新增 CMake cache 变量 `NANOSIG_PLATFORM`（取值 `host`|`freertos`，默认 `host` 时按宿主 `WIN32/APPLE/UNIX` 选择）。FreeRTOS 分支判定必须置于 `WIN32/APPLE/UNIX` **之前**；选择 FreeRTOS 时以 **`PUBLIC`** 注入 `NANOSIG_PLATFORM_FREERTOS=1`（沿用 `CMakeLists.txt:83` 的 PUBLIC 先例），保证 `src/*.c` 与消费者 TU 展开同一分支。
 - **D2 平台宏分支顺序（H1）**：`nanosig_port.h` 平台判定段先判 `NANOSIG_PLATFORM_FREERTOS`，再判 `_WIN32/__APPLE__/__linux__|__unix__`；**无** `#else` 兜底。POSIX host 上编译 FreeRTOS 后端时，因宏先判，正确选到 FreeRTOS 分支。
 - **D3 `waitset_remove` 语义（H2/H5）**：定义后端契约为"**排空被移除成员 → 从 set 摘除 → 容忍一条 stale token**"：
-  - 仅对**被移除的那个成员**做非阻塞排空（`xSemaphoreTake`/`xQueueReceive` 至空），表示"remove 丢弃该 watcher 的未处理就绪事件"，与平台中立语义（disconnect 不撤回已入队调用）一致；
+  - 仅对**被移除的那个成员**做非阻塞排空（`xSemaphoreTake`/`xQueueReceive` 至空），使成员为空以满足 `xQueueRemoveFromSet`，并消化该 watcher 的未处理就绪状态。**注意：对数据队列成员，排空会连同队列中未取走的消息（payload）一起丢弃**——该“清空”是 FreeRTOS queue set 特有行为（已知取舍；其它后端 remove 只取消注册、不消费成员数据），必须在 `nanosig_port.h` 的 `ns_platform_waitset_remove` 与 `platform/README.md` 明确；
   - **禁止**用 `xQueueSelectFromSet` 去"摘 token"（会先吃掉他人 token）；
   - wait 阶段对 slot 表未命中的 stale token 直接跳过；
   - `waitset_add` 增加 **stale-token flush**：非阻塞 select 并丢弃"成员句柄不在任何活跃 slot"的 token，防止 re-add/句柄复用产生假完成（H5）。
@@ -67,7 +67,7 @@
 - [ ] AC-1：顶层 CMake 新增 `NANOSIG_PLATFORM`（`host`|`freertos`，默认 `host`）；`freertos` 分支位于 `WIN32/APPLE/UNIX` 之前，选中时以 `PUBLIC` 注入 `NANOSIG_PLATFORM_FREERTOS=1` 并编入 `platform/freertos/port.c`；选择 `freertos` 时要求 `NANOSIG_FREERTOS_INCLUDE_DIRS`（`NANOSIG_BUILD_FREERTOS_POSIX=ON` 时自动填充，否则必须提供），缺失则 `FATAL_ERROR`；未列出平台维持 `FATAL_ERROR`。
 - [ ] AC-2：`nanosig_port.h` 平台判定段先判 `NANOSIG_PLATFORM_FREERTOS`、无 `#else`；`ns_waitable_handle_is_valid`/`NS_WAITABLE_SET`/`NS_WAITABLE_GET` 在 FreeRTOS 下走 handle 分支并排除 `(void *)~0`；**TU 内**分支/union 一致性用 `NS_STATIC_ASSERT`，**跨 TU 传播**由符号名链接探针保证（见 V1）。
 - [ ] AC-3：`platform/freertos/port.c` 实现全部 `ns_platform_*`；`platform/` 外无新增平台分支（`rg` 指定命令，port.h 平台判定段为既有例外）。
-- [ ] AC-4：`waitset_remove` 按 D3 语义实现；调用方只看到 `NS_OK`/`NS_E_INVAL`；`src/ns_broker.c` 调用点零改动；三后端回归全绿。
+- [ ] AC-4：`waitset_remove` 按 D3 语义实现；调用方只看到 `NS_OK`/`NS_E_INVAL`；数据队列成员被清空的行为在 `nanosig_port.h`/`platform/README.md` 文档化并有断言（其它后端 remove 不消费成员数据）；`src/ns_broker.c` 调用点零改动；三后端回归全绿。
 - [ ] AC-5：`waitset_add` 按 **token 容量** 校验（D4）；容量/栈/优先级可经宏配置；越界返回 `NS_E_TOO_MANY_HANDLES`；有 pending 时 remove 的返回值与后续 wait 行为有断言。
 - [ ] AC-6：`cmake -DNANOSIG_PLATFORM=freertos -DNANOSIG_BUILD_FREERTOS_POSIX=ON ...` 能编入并链接 `platform/freertos/port.c`，且该构建**只**注册 FreeRTOS 契约测试（不注册 host-only 测试）；host 默认构建（`NANOSIG_PLATFORM=host`）行为完全不变。
 - [ ] AC-7：FreeRTOS POSIX port（内核 V11.1.0）harness 跑通 waitset add/remove/wait、event signal/drain/deinit-busy、broker 冒烟；**并在文档列明 D5 不覆盖清单**。
@@ -89,7 +89,7 @@
 ### Step 3 — P3：`platform/freertos/port.c`
 - 原语：`init/shutdown`、`alloc/free`（`pvPortMalloc`/`vPortFree`）、`mutex`（`xSemaphoreCreateMutex`）、`wakeup`（每对象独立 binary semaphore）、`event`（binary semaphore 同时为 waitable 与 signal 目标）、`waitset`（`xQueueCreateSet` + `slots[]`）、`thread`（`xTaskCreate` + 自删；join 用 join 信号量，替换轮询）、`clock`（`xTaskGetTickCount`）。
 - `waitset_add`：仅接受 `NS_WAITABLE_EVENT_IN`；成员为空；重复 `NS_E_EXISTS`；按 D4 做 token 容量校验；执行 stale-token flush。
-- `waitset_remove`：按 D3 实现（排空本成员 + 摘除 + 容忍 stale token）；返回 `NS_OK`/`NS_E_INVAL`。
+- `waitset_remove`：按 D3 实现（排空本成员 + 摘除 + 容忍 stale token；**数据队列成员会被清空**，需文档化）；返回 `NS_OK`/`NS_E_INVAL`。
 - `waitset_wait`：`xQueueSelectFromSet`，仅首个可阻塞；member→waitable 映射；**不 take**；stale token 跳过。
 - 可配置常量：`NANOSIG_FREERTOS_WAITSET_CAP`、`NANOSIG_FREERTOS_THREAD_STACK_WORDS`、`NANOSIG_FREERTOS_TASK_PRIORITY`（默认 32 / 1024 / `tskIDLE_PRIORITY+1`）。
 - 文件头注释自洽（不得写 task notification）；无下游品牌字样；内部写 union 统一走 `NS_WAITABLE_SET`。
