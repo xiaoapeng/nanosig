@@ -228,6 +228,26 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
 typedef uint64_t ns_platform_time_us_t;
 
 /**
+ * @brief 空 waitset 上"无限等待"的封顶值，单位为微秒。
+ *
+ * `ns_platform_waitset_wait` 在 waitset 为空（调用时无任何已注册 waitable）且
+ * timeout 为 `NS_PLATFORM_WAIT_INFINITE_US` 时**不会永久阻塞**：调用时没有任何
+ * 事件源，真无限等待的后果就是线程静默挂死、连错误码都拿不到。此时后端把等待
+ * **封顶**到本值后正常返回，使调用方总能周期性拿回控制权重估状态。本值默认
+ * 1 秒：它只在调用方误用"空 waitset + 无限超时"时生效，取小值使契约测试无需实等。
+ *
+ * 封顶是等待时间的**上界**，不是"保证睡满本值"：等待期间若出现就绪成员（例如
+ * 另一线程在期间注册且已就绪的 waitable），后端可能提前返回该 completion——能否
+ * 看到后续注册取决于后端是否用调用时快照（Windows/Zephyr 用快照，看不到），与
+ * 本值无关。waitable 非空时不受影响，仍是真无限等待；有限超时本就有界，也不受影响。
+ *
+ * 可在编译期覆盖：`-DNS_PLATFORM_WAIT_EMPTY_MAX_US=<n>`。
+ */
+#ifndef NS_PLATFORM_WAIT_EMPTY_MAX_US
+#define NS_PLATFORM_WAIT_EMPTY_MAX_US 1000000u
+#endif
+
+/**
  * @brief 平台 wakeup 句柄。
  *
  * wakeup 是 loop 的等待/唤醒原语，也是唯一的阻塞单等待原语。创建和销毁
@@ -602,10 +622,17 @@ int ns_platform_waitset_remove(
  *
  * @param waitset waitset 句柄。
  * @param timeout_us 超时时间；0 = 非阻塞，`NS_PLATFORM_WAIT_INFINITE_US` = 无限等待。
+ *        例外：waitset **为空**（调用时无任何已注册 waitable）时，无限等待被封顶到
+ *        `NS_PLATFORM_WAIT_EMPTY_MAX_US`，避免没有任何事件源时的静默挂死。封顶是等待
+ *        时间的**上界**，不是保证睡满：等待期间若另一线程注册的 waitable 就绪，后端
+ *        可能提前返回该 completion（Windows/Zephyr 用调用时快照，看不到后续注册）。
+ *        有限超时本就有界，不受影响。
  * @param completions 输出数组，由调用方提供。
  * @param max_completions 输出数组容量；实际写入数不超过同时就绪的成员数。各后端
  *        可注册成员上限为 Linux/macOS 64、Windows 63（预留 1 个内部 timer slot）、
  *        FreeRTOS/Zephyr 默认 32，故容量取 64 可覆盖所有后端可能的最大同时就绪数。
+ *        为 0 表示"这次不接收任何 completion"：函数立即返回 `NS_OK` 且
+ *        `out_count == 0`，不做任何等待（没有可写入空间时等待没有意义），五个后端一致。
  * @param out_count 实际触发数。
  * @return `NS_OK` 成功，失败时返回负数状态码。
  */

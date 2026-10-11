@@ -16,6 +16,18 @@
 #error "NS_PLATFORM_WAIT_INFINITE_US must be UINT64_MAX"
 #endif
 
+#ifndef NS_PLATFORM_WAIT_EMPTY_MAX_US
+#error "NS_PLATFORM_WAIT_EMPTY_MAX_US must be defined by nanosig_port.h"
+#endif
+
+#if NS_PLATFORM_WAIT_EMPTY_MAX_US == 0u
+#error "NS_PLATFORM_WAIT_EMPTY_MAX_US must be > 0"
+#endif
+
+#if NS_PLATFORM_WAIT_EMPTY_MAX_US >= NS_PLATFORM_WAIT_INFINITE_US
+#error "NS_PLATFORM_WAIT_EMPTY_MAX_US must stay below NS_PLATFORM_WAIT_INFINITE_US"
+#endif
+
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 _Static_assert(sizeof(ns_platform_time_us_t) == sizeof(uint64_t), "platform time must be uint64_t microseconds");
 #endif

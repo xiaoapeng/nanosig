@@ -525,10 +525,13 @@ int ns_platform_waitset_wait(
     }
 
     /* 无可等待事件（空 waitset 或全部句柄为空）：k_poll 不接受 0 个 event，
-       按 timeout 睡眠后返回超时。 */
+       按 timeout 睡眠后返回超时。无限等待在该分支封顶，避免永久睡死——
+       没有事件源时 `k_poll` 无法被唤醒，真无限等待等价于静默挂死。 */
     if(n == 0u){
         if(timeout_us == 0u) return NS_OK;
-        if(timeout_us == NS_PLATFORM_WAIT_INFINITE_US) return NS_E_INVAL;
+        if(timeout_us == NS_PLATFORM_WAIT_INFINITE_US){
+            timeout_us = NS_PLATFORM_WAIT_EMPTY_MAX_US;
+        }
         (void)k_sleep(ns_zephyr_us_to_timeout(timeout_us));
         return NS_OK;
     }

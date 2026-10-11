@@ -158,6 +158,45 @@ ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
 }
 
 /* ------------------------------------------------------------------ */
+/*  空 waitset：无限等待被封顶（不永久阻塞）                              */
+/* ------------------------------------------------------------------ */
+
+ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
+{
+    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_completion_t c[4];
+    ns_platform_time_us_t t0 = 0u;
+    ns_platform_time_us_t t1 = 0u;
+    ns_platform_time_us_t elapsed;
+    ns_platform_time_us_t lower;
+    size_t count = 99u;
+
+    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+
+    /* 非阻塞：立即返回 0 个完成。 */
+    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "empty non-blocking wait");
+    zassert_true(count == 0u, "empty waitset yields no completion");
+
+    /* 空 waitset + 无限超时：必须返回，且等待接近封顶值。 */
+    zassert_ok(ns_platform_clock_monotonic_us(&t0), "clock read");
+    count = 99u;
+    zassert_ok(ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &count),
+               "empty infinite wait must not block forever");
+    zassert_ok(ns_platform_clock_monotonic_us(&t1), "clock read");
+    zassert_true(count == 0u, "capped empty wait yields no completion");
+
+    elapsed = t1 - t0;
+    lower = (NS_PLATFORM_WAIT_EMPTY_MAX_US > 1000000u)
+        ? (NS_PLATFORM_WAIT_EMPTY_MAX_US - 1000000u)
+        : (NS_PLATFORM_WAIT_EMPTY_MAX_US / 2u);
+    zassert_true(elapsed >= lower, "empty infinite wait must wait ~cap");
+    zassert_true(elapsed <= (NS_PLATFORM_WAIT_EMPTY_MAX_US + 1000000u),
+                 "empty infinite wait must not exceed cap");
+
+    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+}
+
+/* ------------------------------------------------------------------ */
 /*  remove 只摘除 slot，不 reset 底层信号                                */
 /* ------------------------------------------------------------------ */
 

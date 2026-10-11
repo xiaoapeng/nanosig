@@ -446,7 +446,14 @@ int ns_platform_waitset_wait(
     if((waitset == NULL) || (completions == NULL) || (out_count == NULL)) return NS_E_INVAL;
 
     *out_count = 0u;
+    if(max_completions == 0u) return NS_OK;   /* 容量为 0：无可接收空间，不等待 */
     if(waitset->count == 0u && timeout_us == 0u) return NS_OK;
+
+    /* 空 waitset 没有可唤醒的事件源，无限等待会永久睡死；封顶为有界等待
+       （否则 WaitForMultipleObjects 收到 0 个 handle + INFINITE 会直接失败）。 */
+    if((waitset->count == 0u) && (timeout_us == NS_PLATFORM_WAIT_INFINITE_US)){
+        timeout_us = NS_PLATFORM_WAIT_EMPTY_MAX_US;
+    }
 
     /* 从 waitables 构建临时 handles 数组 */
     for(i = 0u; i < waitset->count; i++){
