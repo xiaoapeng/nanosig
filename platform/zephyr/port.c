@@ -23,6 +23,9 @@
  *
  * - **只接受 `NS_WAITABLE_EVENT_IN`**：含 OUT/ERR 的 waitable 在
  *   `ns_platform_waitset_add` 返回 `NS_E_INVAL`。
+ * - **无效句柄**：`NULL` 与 `ns_waitable_init` 的 `(void *)~0` 哨兵都视为无效，
+ *   `event_signal` / `event_drain` / `waitset_add` 统一返回 `NS_E_INVAL`，
+ *   不把哨兵交给 `k_poll` / 内核。
  * - **只接受 signal 类 waitable**：`primitive` 被解释为
  *   `struct k_poll_signal *`；v1 不支持 `k_sem`/FIFO/pipe/socket 等异构 waitable。
  * - **`k_poll_signal` 是电平触发**：`raise` 后 `signaled` 保持置位，直到
@@ -303,7 +306,7 @@ int ns_platform_event_signal(ns_platform_event_t *event)
 {
     struct k_poll_signal *sig;
 
-    if((event == NULL) || (event->signal_handle == NULL)) return NS_E_INVAL;
+    if((event == NULL) || !ns_waitable_handle_is_valid(event->signal_handle)) return NS_E_INVAL;
 
     sig = (struct k_poll_signal *)event->signal_handle;
 
@@ -317,7 +320,7 @@ int ns_platform_event_drain(ns_platform_event_t *event)
 {
     struct k_poll_signal *sig;
 
-    if((event == NULL) || (event->waitable.primitive == NULL)) return NS_E_INVAL;
+    if((event == NULL) || !ns_waitable_handle_is_valid(event->waitable.primitive)) return NS_E_INVAL;
 
     sig = (struct k_poll_signal *)event->waitable.primitive;
 
@@ -331,7 +334,7 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
 
-    if(event->waitable.primitive != NULL){
+    if(ns_waitable_handle_is_valid(event->waitable.primitive)){
         ns_platform_free(event->waitable.primitive);
     }
 
@@ -377,12 +380,15 @@ int ns_platform_waitset_add(
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= (size_t)NS_ZEPHYR_WAITSET_CAP) return NS_E_TOO_MANY_HANDLES;
 
-    if(waitable->primitive == NULL) return NS_E_INVAL;
+    /* 无效句柄（`ns_waitable_init` 的 `(void *)~0` 哨兵或 NULL）返回 NS_E_INVAL，
+       与 Linux/macOS 一致；否则哨兵会被交给 k_poll 解引用。 */
+    if(!ns_waitable_handle_is_valid(waitable->primitive)) return NS_E_INVAL;
 
+    /* 入口已排除 count >= CAP，且 count 与 slots[] 在 add/remove 中成对维护，
+       故此处必有空槽（i < CAP）；无需不可达的越界返回分支。 */
     for(i = 0; i < (size_t)NS_ZEPHYR_WAITSET_CAP; i++){
         if(waitset->slots[i] == NULL) break;
     }
-    if(i == (size_t)NS_ZEPHYR_WAITSET_CAP) return NS_E_TOO_MANY_HANDLES;
 
     waitset->slots[i] = waitable;
     waitset->count++;
