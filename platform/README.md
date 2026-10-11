@@ -3,11 +3,12 @@
 `platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `nanosig/nanosig_port.h`
 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS 头文件或写平台分支。
 
-四后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
+五后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
 Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象独立
-二值信号量）。桌面三平台后端必须同步推进，不允许一个 OS 领先另一个完整阶段。
-FreeRTOS 后端面向 RTOS 目标，采用 queue set 语义，与桌面后端不是 lockstep
-关系（见下面“FreeRTOS 后端”节）。
+二值信号量）、Zephyr（k_poll + k_poll_signal + 每对象独立 k_sem）。桌面三平台
+后端必须同步推进，不允许一个 OS 领先另一个完整阶段。FreeRTOS 与 Zephyr 后端
+面向 RTOS 目标，与桌面后端不是 lockstep 关系（见下面“FreeRTOS 后端”和
+“Zephyr 后端”节）。
 
 ## loop-only 原语
 
@@ -172,12 +173,65 @@ signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往�
 - 单核竞态与 SMP 宿主差异。
 - task notification 共享悬垂导致的硬件 HardFault 场景（后端已从实现上剔除该路径）。
 
+## Zephyr 后端
+
+Zephyr 后端是 v1 的第五个后端，使用 `k_poll` 语义，面向 Zephyr RTOS 目标。
+它以 **Zephyr module** 形式接入（仓库根 `zephyr/module.yml`），**不**通过顶层
+`NANOSIG_PLATFORM=zephyr` 构建（该取值只打印引导信息）。后端复用
+`primitive.handle` 承载 `k_poll` 可等待对象指针。
+
+- 内存使用 `k_malloc` / `k_free`；线程对象（含内嵌内核栈）用
+  `k_aligned_alloc(Z_KERNEL_STACK_OBJ_ALIGN, ...)` 对齐，避免依赖
+  `CONFIG_DYNAMIC_THREAD`。
+- 线程使用 `k_thread_create` / `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
+  内嵌在 `struct ns_platform_thread` 中。
+- mutex 使用 `k_mutex`。
+- wakeup 使用**每对象独立 `k_sem`**（上限 1）；`signal` = `k_sem_give`
+  （已满视为成功），`wait` = `k_sem_take`。
+- 单调时间使用 `k_uptime_ticks` 经 `k_ticks_to_us_floor64` 换算。
+- waitset 使用 `k_poll`：每次 `wait` 由活跃 slot 重建 `struct k_poll_event[]`，
+  固定 `K_POLL_TYPE_SIGNAL` + `K_POLL_MODE_NOTIFY_ONLY`。
+- `ns_platform_event_t` 用 `k_poll_signal` 实现：`waitable.primitive.handle` 与
+  `signal_handle.handle` 指向同一 `k_poll_signal`；`signal` =
+  `k_poll_signal_raise`（`-EAGAIN` 视为成功），`drain` = `k_poll_signal_reset`。
+- Zephyr 后端只支持 `NS_WAITABLE_EVENT_IN`，且 v1 只接受 signal 类
+  （`k_poll_signal`）waitable；含 OUT/ERR 的 waitable 在 `waitset_add` 返回
+  `NS_E_INVAL`。异构 waitable（`k_sem`/FIFO/pipe/socket）为非目标。
+- `k_poll_signal` 是**电平触发**：`raise` 后保持 signaled，直到 `event_drain`
+  调用 `k_poll_signal_reset`。`reset` 是唯一复位点，且按 Zephyr 建议只应由 poller
+  线程（调用 `ns_platform_waitset_wait` 的线程）执行。
+- `waitset_remove` 只摘除 slot、**不** reset 底层信号；移除后该 waitable 不再产生
+  completion，但若仍为 signaled，re-add 后会立即再次触发，直到调用方 drain。
+  返回值仍只有 `NS_OK`/`NS_E_INVAL`。
+- `edge_triggered` 参数忽略（`k_poll` 无原生边沿触发，同 Windows 后端）。
+- 微秒→tick 转换使用 `K_USEC`（**向上取整**），目标频率由
+  `CONFIG_SYS_CLOCK_TICKS_PER_SEC` 决定；禁止向下取整导致忙等。
+- waitset 容量由 `CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP`（或裸
+  `-DNANOSIG_ZEPHYR_WAITSET_CAP`）配置，默认 32；溢出返回
+  `NS_E_TOO_MANY_HANDLES`。
+- `platform/zephyr/port.c` 用 `#error` 强制 `CONFIG_POLL=y`、
+  `CONFIG_MULTITHREADING=y`、`CONFIG_HEAP_MEM_POOL_SIZE > 0`。
+
+### native_sim 契约测试覆盖面
+
+`test/zephyr/` 是 ztest 应用，在 `native_sim/native/64` 上运行（Linux 宿主）。
+CI 的 `zephyr` job 钉版 Zephyr 3.7 LTS，用宿主工具链构建，不下载 Zephyr SDK。
+覆盖 waitable/waitset 的 add/remove/wait、event 生命周期与 drain 幂等、IN-only、
+容量溢出、电平触发与 remove-不-reset 语义、wakeup/mutex/thread/clock、broker
+端到端往返。
+
+明确**不覆盖**（归硬件冒烟）：真实 tick 精度、线程栈溢出停机、SMP 竞态、
+非 signal 类 k_poll 对象的就绪映射。
+
+RTOS ISR 安全是后续课题；v1 Zephyr 后端不承诺 ISR 上下文调用（不提供
+`*_from_isr`）。
+
 ## 新增后端清单
 
 新增一个平台后端时，需要：
 
 1. **实现文件**：在 `platform/` 下创建 `<platform>/port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。
-2. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。
+2. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。使用自带构建系统的 RTOS（如 Zephyr）改为提供 `<platform>/module.yml` + `<platform>/CMakeLists.txt` 作为 module 入口，顶层只给出引导式错误。
 3. **编译检查**：`cmake --build` 零警告通过。
 4. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
 5. **完整构建 + 测试**：`cmake --build <preset> --target api-compile-checks` + `ctest <preset>` 全通过。

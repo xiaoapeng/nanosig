@@ -257,24 +257,32 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 
 ## 7 平台层快速参考
 
-详见 `platform/README.md`。四后端对比：
+详见 `platform/README.md`。五后端对比：
 
-| 能力 | Linux | macOS | Windows | FreeRTOS |
-|------|-------|-------|---------|----------|
-| mutex | pthread_mutex_t | pthread_mutex_t | SRWLOCK | xSemaphoreCreateMutex |
-| 线程 | pthread_create / join | pthread_create / join | CreateThread / WaitForSingleObject | xTaskCreate / join 信号量 |
-| wakeup | eventfd / pipe | kqueue EVFILT_USER | auto-reset event | 每对象独立二值信号量 |
-| 单调时间 | clock_gettime(CLOCK_MONOTONIC) | clock_gettime(CLOCK_MONOTONIC) | QueryPerformanceCounter | xTaskGetTickCount |
-| waitset | epoll_create1 / epoll_ctl / epoll_wait | kqueue / kevent | WaitForMultipleObjects | queue set（xQueueCreateSet / xQueueSelectFromSet） |
-| 边沿触发 | EPOLLET | EV_CLEAR | 不支持 | 不支持（仅 IN） |
-| waitset 容量 | 无硬上限 | 无硬上限 | 64 handle | 32 token（可配置） |
-| timeout 后端 | timerfd | kevent timespec | WaitableTimer | xQueueSelectFromSet tick |
+| 能力 | Linux | macOS | Windows | FreeRTOS | Zephyr |
+|------|-------|-------|---------|----------|--------|
+| mutex | pthread_mutex_t | pthread_mutex_t | SRWLOCK | xSemaphoreCreateMutex | k_mutex |
+| 线程 | pthread_create / join | pthread_create / join | CreateThread / WaitForSingleObject | xTaskCreate / join 信号量 | k_thread_create / k_thread_join（内嵌 K_KERNEL_STACK_MEMBER 栈） |
+| wakeup | eventfd / pipe | kqueue EVFILT_USER | auto-reset event | 每对象独立二值信号量 | 每对象独立 k_sem（上限 1） |
+| 单调时间 | clock_gettime(CLOCK_MONOTONIC) | clock_gettime(CLOCK_MONOTONIC) | QueryPerformanceCounter | xTaskGetTickCount | k_uptime_ticks |
+| waitset | epoll_create1 / epoll_ctl / epoll_wait | kqueue / kevent | WaitForMultipleObjects | queue set（xQueueCreateSet / xQueueSelectFromSet） | k_poll（K_POLL_TYPE_SIGNAL + K_POLL_MODE_NOTIFY_ONLY） |
+| event | eventfd | kqueue EVFILT_USER | auto-reset event | 每对象独立二值信号量 | k_poll_signal（电平触发） |
+| 边沿触发 | EPOLLET | EV_CLEAR | 不支持 | 不支持（仅 IN） | 不支持（仅 IN） |
+| waitset 容量 | 无硬上限 | 无硬上限 | 64 handle | 32 token（可配置） | 32（可配置，NANOSIG_ZEPHYR_WAITSET_CAP） |
+| timeout 后端 | timerfd | kevent timespec | WaitableTimer | xQueueSelectFromSet tick | k_timeout_t（K_USEC 向上取整） |
+
+Zephyr 后端语义边界（详见 `platform/README.md` 的“Zephyr 后端”节）：
+
+- **`k_poll` 单 poller**：waitset 的 wait 与 `k_poll_signal_reset` 必须在同一 poller 线程（`event_drain` 是唯一 reset 点）；同一底层对象不得被其他普通路径并发竞争。
+- **仅 IN、仅 signal 类 waitable**：含 OUT/ERR 的 waitable 在 `waitset_add` 返回 `NS_E_INVAL`；v1 只接受 event 内嵌的 `k_poll_signal`，`k_sem`/FIFO/pipe/socket 为非目标。
+- **tick 精度**：微秒→tick 向上取整；精度下限由 `CONFIG_SYS_CLOCK_TICKS_PER_SEC` 决定，`native_sim` 默认 100 Hz（10 ms）。
+- **不覆盖**（归硬件冒烟）：真实 tick 精度、栈溢出停机、SMP 竞态、非 signal 类就绪映射；ISR 安全为非目标。
 
 ---
 
 ## 8 v1 交付范围
 
 - **P0–P9 完成**（2026-06-20）。涵盖：脚手架、公开 API 收口、三桌面后端 loop 平台、公开数据结构、MPSC record ring、loop 管理、signal/slot、waitset 契约、timer + broker、验收 demo、bench、审计。
-- **后续增量**：FreeRTOS queue-set 后端（`NANOSIG_PLATFORM=freertos`），与桌面后端非 lockstep；host POSIX harness 只覆盖队列集语义，硬件相关项归下游冒烟。
+- **后续增量**：FreeRTOS queue-set 后端（`NANOSIG_PLATFORM=freertos`）与 Zephyr `k_poll` 后端（经 `zephyr/module.yml` 接入，非顶层 `NANOSIG_PLATFORM` 构建），两者与桌面后端非 lockstep；host POSIX harness / `native_sim` ztest 只覆盖语义契约，硬件相关项归下游冒烟。
 - **不包含**：ISR 安全（`*_from_isr` API）、多线程 broker（v1 为 1 线程 + 1 waitset）。
 - **质量基线**：macOS Release 零警告，ctest 16 个运行时测试 + 6 个 compile check，3 个 bench 已归档，ASAN/TSAN/UBSAN 配置就绪但需 Linux 环境验证。

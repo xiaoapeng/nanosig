@@ -1,0 +1,6 @@
+name: nanosig
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig
+tests:
+  - test/zephyr

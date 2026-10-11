@@ -1,0 +1,48 @@
+# nanosig Zephyr 后端配置。
+#
+# 本后端以 Zephyr module 形式接入（仓库根 zephyr/module.yml）。启用后
+# platform/zephyr/port.c 会编入库中；它用 #error 强制要求：
+#   - CONFIG_POLL=y（k_poll / k_poll_signal）——由本 Kconfig select 提供
+#   - CONFIG_MULTITHREADING=y——Zephyr 默认即可
+#   - CONFIG_HEAP_MEM_POOL_SIZE > 0——k_malloc / k_aligned_alloc，由应用设置
+
+config NANOSIG_ZEPHYR
+    bool "nanosig Zephyr platform backend"
+    default n
+    select POLL
+    help
+      Build the nanosig signal/slot library for the Zephyr RTOS with the
+      k_poll platform backend. Opt-in: enable CONFIG_NANOSIG_ZEPHYR=y and
+      set CONFIG_HEAP_MEM_POOL_SIZE > 0. Requires CONFIG_MULTITHREADING=y.
+
+config NANOSIG_ZEPHYR_WAITSET_CAP
+    int "nanosig Zephyr waitset capacity (max active waitables)"
+    depends on NANOSIG_ZEPHYR
+    default 32
+    range 1 64
+    help
+      Maximum number of waitables registered in one waitset. Adding beyond
+      this capacity returns NS_E_TOO_MANY_HANDLES. A bare
+      -DNANOSIG_ZEPHYR_WAITSET_CAP=<n> compile definition is honored when
+      this Kconfig symbol is not set; CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP wins
+      when both are present.
+
+config NANOSIG_ZEPHYR_THREAD_STACK_SIZE
+    int "nanosig Zephyr platform thread stack size (bytes)"
+    depends on NANOSIG_ZEPHYR
+    default 4096
+    range 1024 65536
+    help
+      Kernel stack embedded in each ns_platform_thread_t (via
+      K_KERNEL_STACK_MEMBER). A bare -DNANOSIG_ZEPHYR_THREAD_STACK_SIZE
+      compile definition is honored when this symbol is not set.
+
+config NANOSIG_ZEPHYR_THREAD_PRIORITY
+    int "nanosig Zephyr platform thread preempt priority"
+    depends on NANOSIG_ZEPHYR
+    default 1
+    help
+      Preempt priority for platform threads created by nanosig. Must be in
+      [0, CONFIG_NUM_PREEMPT_PRIORITIES - 1]. A bare
+      -DNANOSIG_ZEPHYR_THREAD_PRIORITY compile definition is honored when
+      this symbol is not set.
