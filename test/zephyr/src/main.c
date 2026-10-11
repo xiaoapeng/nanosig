@@ -5,15 +5,18 @@
  *
  * 覆盖 platform/zephyr/port.c 的平台契约：
  *
- * - event 生命周期（init → add → deinit busy → remove → deinit）与句柄有效性。
- * - waitset add/remove 错误语义、IN-only 限制、容量溢出。
- * - wait：电平触发（未 drain 重复触发）、drain 后不再触发、超时。
- * - remove 只摘除 slot、不 reset 底层 `k_poll_signal`。
+ * - event 生命周期（init → add → deinit busy → remove → deinit）与句柄有效性
+ *   （含拒绝 `ns_waitable_init` 的 `(void *)~0` 无效哨兵）。
+ * - waitset add/remove 错误语义、IN-only 限制、无效句柄、容量溢出。
+ * - wait：电平触发（未 drain 重复触发）、drain 后不再触发、超时（断言等待
+ *   ≥ timeout，验证微秒→tick 向上取整不忙等）、max_completions 截断。
+ * - remove 只摘除 slot、不 reset 底层 `k_poll_signal`；移除后不再出现在 completions。
  * - `edge_triggered` 忽略（仍按电平触发）。
+ * - 跨线程 signal→wait（`k_sem` 显式握手，不依赖调度时序），drain 只在 poller 线程。
  * - wakeup / mutex / thread / clock / broker 端到端。
  *
- * 全部断言在 ztest 线程执行；`k_poll_signal_reset` 只在 broker（poller）线程的
- * handler 内调用，符合 Zephyr 的“reset 只在 poller 线程”约束。
+ * 全部断言在 ztest 线程执行；`k_poll_signal_reset` 只在 poller 线程：broker 用例在
+ * handler 内、跨线程用例在独立 poller 线程内，符合 Zephyr 的“reset 只在 poller 线程”约束。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -106,8 +109,32 @@ ZTEST(nanosig_zephyr, test_add_remove_errors)
     w.events = 0u;
     zassert_equal(ns_platform_waitset_add(&ws, &w), NS_E_INVAL, "no events must be rejected");
 
+    /* 无效句柄：`ns_waitable_init` 的 `(void *)~0` 哨兵必须被拒，不得进入 waitset
+       （否则 wait 会把哨兵交给 k_poll 解引用）。 */
+    ns_waitable_init(&w);
+    w.events = NS_WAITABLE_EVENT_IN;
+    zassert_equal(ns_platform_waitset_add(&ws, &w), NS_E_INVAL,
+                  "invalid sentinel handle must be rejected by waitset_add");
+    zassert_true(w.registered_waitset == NULL, "rejected waitable must stay unregistered");
+
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
     zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
+}
+
+ZTEST(nanosig_zephyr, test_event_invalid_handle_rejected)
+{
+    ns_platform_event_t ev;
+
+    /* 仅 ns_waitable_init、未 event_init：句柄为 (void *)~0 哨兵。 */
+    ns_waitable_init(&ev.waitable);
+    ev.signal_handle = (void *)(uintptr_t)~0;
+
+    zassert_equal(ns_platform_event_signal(&ev), NS_E_INVAL,
+                  "signal on sentinel handle must be NS_E_INVAL");
+    zassert_equal(ns_platform_event_drain(&ev), NS_E_INVAL,
+                  "drain on sentinel handle must be NS_E_INVAL");
+    /* deinit 对无效句柄是安全 no-op，不释放哨兵。 */
+    zassert_ok(ns_platform_event_deinit(&ev), "deinit of invalid event is a no-op");
 }
 
 /* ------------------------------------------------------------------ */
@@ -119,6 +146,9 @@ ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
     ns_platform_waitset_t ws;
     ns_platform_event_t ev;
     ns_platform_waitset_completion_t c[4];
+    ns_platform_time_us_t t0 = 0u;
+    ns_platform_time_us_t t1 = 0u;
+    ns_platform_time_us_t one_tick_us = (ns_platform_time_us_t)(1000000u / CONFIG_SYS_CLOCK_TICKS_PER_SEC);
     size_t count = 0u;
 
     zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
@@ -126,10 +156,23 @@ ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
     zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add");
 
-    /* 未 signal：有限超时返回 0 个完成。 */
+    /* 未 signal：有限超时返回 0 个完成，且等待不短于 timeout（向上取整、无忙等）。 */
+    zassert_ok(ns_platform_clock_monotonic_us(&t0), "clock read");
     count = 99u;
     zassert_ok(ns_platform_waitset_wait(&ws, 10000u, c, 4u, &count), "wait timeout");
+    zassert_ok(ns_platform_clock_monotonic_us(&t1), "clock read");
     zassert_true(count == 0u, "no completion before signal");
+    zassert_true((t1 - t0) >= 10000u,
+                 "timeout wait must last at least timeout (ceil, no busy-wait)");
+
+    /* 亚 tick 超时：1us 向上取整到 1 tick，不得立即返回（floor 会退化成忙等）。 */
+    zassert_ok(ns_platform_clock_monotonic_us(&t0), "clock read");
+    count = 99u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 1u, c, 4u, &count), "wait sub-tick timeout");
+    zassert_ok(ns_platform_clock_monotonic_us(&t1), "clock read");
+    zassert_true(count == 0u, "sub-tick timeout yields no completion");
+    zassert_true((t1 - t0) >= one_tick_us,
+                 "sub-tick timeout must round up to at least one tick");
 
     /* signal 后恰好一个完成，waitable 与 events 正确。 */
     zassert_ok(ns_platform_event_signal(&ev), "signal");
@@ -197,6 +240,56 @@ ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
 }
 
 /* ------------------------------------------------------------------ */
+/*  wait：max_completions 截断                                          */
+/* ------------------------------------------------------------------ */
+
+ZTEST(nanosig_zephyr, test_wait_truncates_completions)
+{
+    ns_platform_waitset_t ws;
+    ns_platform_event_t ev[3];
+    ns_platform_waitset_completion_t c[3];
+    size_t count = 0u;
+    int i;
+
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
+    for(i = 0; i < 3; i++){
+        zassert_ok(ns_platform_event_init(&ev[i], "ev"), "event init %d", i);
+        ev[i].waitable.events = NS_WAITABLE_EVENT_IN;
+        zassert_ok(ns_platform_waitset_add(&ws, &ev[i].waitable), "add %d", i);
+        zassert_ok(ns_platform_event_signal(&ev[i]), "signal %d", i);
+    }
+
+    /* max_completions == 0：立即返回，不等待、不上报。 */
+    count = 99u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 0u, &count), "wait max 0");
+    zassert_true(count == 0u, "max_completions==0 must not report completions");
+
+    /* 3 个就绪、max_completions == 2：截断为 2。 */
+    count = 0u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 2u, &count), "wait truncate");
+    zassert_true(count == 2u, "completions must be truncated to max_completions");
+
+    /* 电平保持：未上报的成员在下一轮被上报。 */
+    count = 0u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 3u, &count), "wait remainder");
+    zassert_true(count == 1u, "remaining signaled event must be reported next round");
+
+    /* 全部 drain 后不再上报。 */
+    for(i = 0; i < 3; i++){
+        zassert_ok(ns_platform_event_drain(&ev[i]), "drain %d", i);
+    }
+    count = 0u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 3u, &count), "wait after drain");
+    zassert_true(count == 0u, "no completion after drain");
+
+    for(i = 0; i < 3; i++){
+        zassert_ok(ns_platform_waitset_remove(&ws, &ev[i].waitable), "remove %d", i);
+        zassert_ok(ns_platform_event_deinit(&ev[i]), "deinit %d", i);
+    }
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
+}
+
+/* ------------------------------------------------------------------ */
 /*  remove 只摘除 slot，不 reset 底层信号                                */
 /* ------------------------------------------------------------------ */
 
@@ -213,8 +306,13 @@ ZTEST(nanosig_zephyr, test_remove_does_not_reset)
     zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add");
     zassert_ok(ns_platform_event_signal(&ev), "signal");
 
-    /* remove 不 reset：信号仍为 signaled。 */
+    /* remove 后不 re-add：pending 的 waitable 不再出现在 completions（AC-5/AC-7）。 */
     zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
+    count = 0u;
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait after remove without re-add");
+    zassert_true(count == 0u, "removed waitable must not appear in completions");
+
+    /* remove 不 reset：信号仍为 signaled，re-add 后立即再触发。 */
     zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "re-add");
 
     count = 0u;
@@ -348,6 +446,121 @@ ZTEST(nanosig_zephyr, test_clock_monotonic)
     k_msleep(5);
     zassert_ok(ns_platform_clock_monotonic_us(&t1), "clock read");
     zassert_true(t1 >= t0, "monotonic clock must not go backwards");
+}
+
+/* ------------------------------------------------------------------ */
+/*  跨线程 signal→wait，drain 只在 poller 线程（计划 Step 4 / R2）        */
+/* ------------------------------------------------------------------ */
+
+K_SEM_DEFINE(s_xthread_ready, 0, 1);
+K_SEM_DEFINE(s_xthread_done, 0, 1);
+
+static ns_platform_waitset_t     *s_xthread_ws;
+static ns_platform_event_t       *s_xthread_ev;
+static ns_platform_wakeup_t      *s_xthread_wk;
+static ns_platform_wait_result_t  s_xthread_result;
+static volatile int               s_xthread_observed;
+
+/* poller 线程：唯一允许执行 k_poll_signal_reset（event_drain）的线程。 */
+static void xthread_event_poller(void *arg)
+{
+    ns_platform_waitset_completion_t c[2];
+    int i;
+
+    (void)arg;
+
+    k_sem_give(&s_xthread_ready);
+
+    /* 电平触发：signal 先到或后到都能被观测；循环容忍握手窗口。 */
+    for(i = 0; (i < 100) && (s_xthread_observed == 0); i++){
+        size_t count = 0u;
+
+        if(ns_platform_waitset_wait(s_xthread_ws, 10000u, c, 2u, &count) != NS_OK) break;
+
+        if((count == 1u) && (c[0].waitable == &s_xthread_ev->waitable)){
+            s_xthread_observed = 1;
+            (void)ns_platform_event_drain(s_xthread_ev); /* reset 只在 poller 线程 */
+        }
+    }
+
+    k_sem_give(&s_xthread_done);
+}
+
+static void xthread_wakeup_poller(void *arg)
+{
+    (void)arg;
+
+    k_sem_give(&s_xthread_ready);
+    (void)ns_platform_wakeup_wait(s_xthread_wk, 1000000u, &s_xthread_result);
+    k_sem_give(&s_xthread_done);
+}
+
+ZTEST(nanosig_zephyr, test_event_cross_thread_signal_drain_in_poller)
+{
+    /* k_thread + 内嵌内核栈：放静态存储，避免占用 ZTEST 线程栈。 */
+    static ns_platform_thread_t t;
+    ns_platform_event_t ev;
+    ns_platform_waitset_t ws;
+    ns_platform_waitset_completion_t c[2];
+    size_t count = 0u;
+
+    k_sem_reset(&s_xthread_ready);
+    k_sem_reset(&s_xthread_done);
+    s_xthread_observed = 0;
+
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
+    zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
+    ev.waitable.events = NS_WAITABLE_EVENT_IN;
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add");
+
+    s_xthread_ws = &ws;
+    s_xthread_ev = &ev;
+
+    zassert_ok(ns_platform_thread_init(&t, xthread_event_poller, NULL, "poller"),
+               "thread create");
+
+    /* 显式握手：poller 已就绪后再从本线程跨线程 signal，不依赖调度时序。 */
+    zassert_ok(k_sem_take(&s_xthread_ready, K_FOREVER), "poller ready handshake");
+    zassert_ok(ns_platform_event_signal(&ev), "cross-thread signal");
+    zassert_ok(k_sem_take(&s_xthread_done, K_FOREVER), "poller done handshake");
+
+    zassert_true(s_xthread_observed == 1,
+                 "cross-thread signal must be observed by poller");
+    zassert_ok(ns_platform_thread_join(&t), "thread join");
+
+    /* drain 已在 poller 线程执行：主线程再 wait 不应触发。 */
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 2u, &count), "wait after poller drain");
+    zassert_true(count == 0u, "poller drained the signal");
+
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
+    zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
+}
+
+ZTEST(nanosig_zephyr, test_wakeup_cross_thread_signal_wait)
+{
+    /* k_thread + 内嵌内核栈：放静态存储，避免占用 ZTEST 线程栈。 */
+    static ns_platform_thread_t t;
+    ns_platform_wakeup_t wk;
+
+    k_sem_reset(&s_xthread_ready);
+    k_sem_reset(&s_xthread_done);
+
+    zassert_ok(ns_platform_wakeup_init(&wk, "wk"), "wakeup create");
+    s_xthread_wk = &wk;
+    s_xthread_result = NS_PLATFORM_WAIT_TIMEOUT;
+
+    zassert_ok(ns_platform_thread_init(&t, xthread_wakeup_poller, NULL, "wk-poller"),
+               "thread create");
+
+    zassert_ok(k_sem_take(&s_xthread_ready, K_FOREVER), "poller ready handshake");
+    zassert_ok(ns_platform_wakeup_signal(&wk), "cross-thread wakeup signal");
+    zassert_ok(k_sem_take(&s_xthread_done, K_FOREVER), "poller done handshake");
+
+    zassert_ok(ns_platform_thread_join(&t), "thread join");
+    zassert_equal(s_xthread_result, NS_PLATFORM_WAIT_SIGNALED,
+                  "cross-thread wakeup must be observed");
+    zassert_ok(ns_platform_wakeup_deinit(&wk), "wakeup destroy");
 }
 
 /* ------------------------------------------------------------------ */

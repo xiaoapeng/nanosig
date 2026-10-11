@@ -15,7 +15,10 @@
  * - 时间：`xTaskGetTickCount`；内存：`pvPortMalloc` / `vPortFree`。
  *
  * 本后端只支持 `NS_WAITABLE_EVENT_IN`；含 OUT/ERR 的 waitable 在
- * `ns_platform_waitset_add` 返回 `NS_E_INVAL`。后端忽略 `waitable.edge_triggered`
+ * `ns_platform_waitset_add` 返回 `NS_E_INVAL`。无效句柄（`NULL` 或
+ * `ns_waitable_init` 的 `(void *)~0` 哨兵）同样在 add / event_signal /
+ * event_drain 返回 `NS_E_INVAL`，不把哨兵交给 queue set 原语解引用。
+ * 后端忽略 `waitable.edge_triggered`
  * （同 Windows/Zephyr）；就绪语义是 queue set 的 token 语义：每次 send/give 记一次
  * 就绪，取走 token 不消费成员数据，也不对仍非空的成员重复上报。
  *
@@ -418,7 +421,7 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
 
 int ns_platform_event_signal(ns_platform_event_t *event)
 {
-    if((event == NULL) || (event->signal_handle == NULL)) return NS_E_INVAL;
+    if((event == NULL) || !ns_waitable_handle_is_valid(event->signal_handle)) return NS_E_INVAL;
 
     /* 布尔语义：已 signaled 时 give 失败也视为成功。 */
     (void)xSemaphoreGive((SemaphoreHandle_t)event->signal_handle);
@@ -427,7 +430,7 @@ int ns_platform_event_signal(ns_platform_event_t *event)
 
 int ns_platform_event_drain(ns_platform_event_t *event)
 {
-    if((event == NULL) || (event->waitable.primitive == NULL)) return NS_E_INVAL;
+    if((event == NULL) || !ns_waitable_handle_is_valid(event->waitable.primitive)) return NS_E_INVAL;
 
     (void)xSemaphoreTake((SemaphoreHandle_t)event->waitable.primitive, 0);
     return NS_OK;
@@ -438,7 +441,7 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
 
-    if(event->waitable.primitive != NULL){
+    if(ns_waitable_handle_is_valid(event->waitable.primitive)){
         vSemaphoreDelete((SemaphoreHandle_t)event->waitable.primitive);
     }
 
@@ -493,8 +496,11 @@ int ns_platform_waitset_add(
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= (size_t)NANOSIG_FREERTOS_WAITSET_CAP) return NS_E_TOO_MANY_HANDLES;
 
+    /* 无效句柄（`ns_waitable_init` 的 `(void *)~0` 哨兵或 NULL）返回 NS_E_INVAL，
+       与 Linux/macOS 一致；否则哨兵会被交给 queue set 原语解引用。 */
+    if(!ns_waitable_handle_is_valid(waitable->primitive)) return NS_E_INVAL;
+
     member = (QueueSetMemberHandle_t)waitable->primitive;
-    if(member == NULL) return NS_E_INVAL;
 
     /* FreeRTOS queue set 要求成员在加入时为空。 */
     if(uxQueueMessagesWaiting(member) != 0u) return NS_E_INVAL;
