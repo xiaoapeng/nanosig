@@ -33,13 +33,17 @@ extern "C" {
  *
  * FreeRTOS 目标由构建系统显式定义 `NANOSIG_PLATFORM_FREERTOS`（例如顶层 CMake 的
  * `NANOSIG_PLATFORM=freertos` 会给目标 PUBLIC 注入 `-DNANOSIG_PLATFORM_FREERTOS=1`）。
- * 本分支必须排在宿主检测之前：FreeRTOS 的 POSIX/host 模拟环境同时满足 `__APPLE__`
+ * Zephyr 目标由构建系统显式定义 `NANOSIG_PLATFORM_ZEPHYR`（由 Zephyr module 的
+ * `zephyr_library()` 目标 PUBLIC 注入）。两个显式分支都必须排在宿主检测之前：
+ * FreeRTOS 的 POSIX/host 模拟环境与 Zephyr 的 native_sim 环境同时满足 `__APPLE__`
  * 或 `__linux__`，显式宏优先。
  *
  * 未识别目标不提供 `#else` 兜底；平台选择保持显式，未知目标由构建系统报错。
  */
 #if defined(NANOSIG_PLATFORM_FREERTOS)
 #define NANOSIG_PLATFORM_FREERTOS 1
+#elif defined(NANOSIG_PLATFORM_ZEPHYR)
+#define NANOSIG_PLATFORM_ZEPHYR 1
 #elif defined(_WIN32)
 #define NANOSIG_PLATFORM_WINDOWS 1
 #elif defined(__APPLE__)
@@ -56,8 +60,9 @@ extern "C" {
  * @brief 平台 ABI 一致性链接探针。
  *
  * 库按所选平台导出一个不同名字的符号：宿主三后端导出 `ns_platform_abi_host`，
- * FreeRTOS 后端导出 `ns_platform_abi_freertos`。本头文件按当前 TU 的平台分支声明
- * 对应符号，测试 / harness TU 引用该符号。
+ * FreeRTOS 后端导出 `ns_platform_abi_freertos`，Zephyr 后端导出
+ * `ns_platform_abi_zephyr`。本头文件按当前 TU 的平台分支声明对应符号，测试 /
+ * harness TU 引用该符号。
  *
  * 若消费 TU 与库在平台选择上不一致（例如 PUBLIC 编译定义未传播），被引用的符号名
  * 与库实际导出的符号名不同，链接期会直接失败，从而在编译/链接阶段而不是运行期
@@ -67,6 +72,10 @@ extern "C" {
 extern const int ns_platform_abi_freertos;
 /** 指向当前平台 ABI 探针符号的可移植别名；消费者 TU 引用它以触发跨 TU 链接检查。 */
 #define NS_PLATFORM_ABI_PROBE ns_platform_abi_freertos
+#elif defined(NANOSIG_PLATFORM_ZEPHYR)
+extern const int ns_platform_abi_zephyr;
+/** 指向当前平台 ABI 探针符号的可移植别名；消费者 TU 引用它以触发跨 TU 链接检查。 */
+#define NS_PLATFORM_ABI_PROBE ns_platform_abi_zephyr
 #else
 extern const int ns_platform_abi_host;
 #define NS_PLATFORM_ABI_PROBE ns_platform_abi_host
@@ -83,10 +92,11 @@ extern const int ns_platform_abi_host;
  */
 typedef union ns_waitable_handle {
     int     fd;         /**< Linux/macOS: 文件描述符 */
-    void   *handle;     /**< Windows HANDLE / FreeRTOS queue-set member handle */
+    void   *handle;     /**< Windows HANDLE / FreeRTOS queue-set member / Zephyr k_poll object pointer */
 } ns_waitable_handle_t;
 
-#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS) || \
+    defined(NANOSIG_PLATFORM_ZEPHYR)
 NS_STATIC_ASSERT(sizeof(((ns_waitable_handle_t *)0)->handle) == sizeof(void *),
                 "handle-based platform requires pointer-sized ns_waitable_handle_t.handle");
 #endif
@@ -115,6 +125,8 @@ NS_STATIC_ASSERT(sizeof(((ns_waitable_handle_t *)0)->handle) == sizeof(void *),
  * - Windows：`primitive.handle`，HANDLE。
  * - FreeRTOS：`primitive.handle`，queue-set-capable 的 FreeRTOS 对象句柄
  *   （二值/计数信号量或队列）。
+ * - Zephyr：`primitive.handle`，`k_poll` 可等待对象指针。v1 只接受
+ *   `ns_platform_event_t` 内嵌的 `k_poll_signal`（IN-only、signal 类）。
  */
 typedef struct ns_platform_waitable {
     ns_waitable_handle_t primitive;        /**< 平台原语（fd / HANDLE） */
@@ -153,13 +165,14 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
  * @brief 检查 `ns_waitable_handle_t` 在当前平台是否有效。
  *
  * - FreeRTOS：`.handle != NULL` 且不是 `(void *)~0` 无效哨兵。
+ * - Zephyr：`.handle != NULL` 且不是 `(void *)~0` 无效哨兵。
  * - Windows：`.handle != NULL`。
  * - Linux/macOS：`.fd >= 0`。
  *
  * @param h `ns_waitable_handle_t` 值。
  * @return 非零表示有效，零表示无效。
  */
-#if defined(NANOSIG_PLATFORM_FREERTOS)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_ZEPHYR)
 #define ns_waitable_handle_is_valid(h) \
     (((h).handle != NULL) && ((h).handle != (void *)(uintptr_t)~0))
 #elif defined(NANOSIG_PLATFORM_WINDOWS)
@@ -174,7 +187,8 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
  * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
  * @param handle_val   `ns_waitable_handle_t` 值。
  */
-#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS) || \
+    defined(NANOSIG_PLATFORM_ZEPHYR)
 #define NS_WAITABLE_SET(waitable_ptr, handle_val) \
     ((waitable_ptr)->primitive.handle = (handle_val).handle)
 #else
@@ -190,7 +204,8 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
  * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
  * @return 对应平台的 `ns_waitable_handle_t` 值。
  */
-#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS)
+#if defined(NANOSIG_PLATFORM_FREERTOS) || defined(NANOSIG_PLATFORM_WINDOWS) || \
+    defined(NANOSIG_PLATFORM_ZEPHYR)
 #define NS_WAITABLE_GET(waitable_ptr) \
     ((ns_waitable_handle_t){.handle = (waitable_ptr)->primitive.handle})
 #else
@@ -269,6 +284,7 @@ typedef struct ns_platform_waitset_completion {
  * - macOS：kqueue，`udata` 直接指向 caller 的 waitable（零拷贝）。
  * - Windows：WaitForMultipleObjects + 内部数组映射。
  * - FreeRTOS：queue set（`xQueueCreateSet` + `xQueueSelectFromSet`）。
+ * - Zephyr：`k_poll`（每次 `wait` 由活跃 slot 构造 `struct k_poll_event[]`）。
  */
 typedef struct ns_platform_waitset ns_platform_waitset_t;
 
@@ -371,8 +387,8 @@ int ns_platform_wakeup_wait(
  * `ns_platform_event_signal` 写此句柄。
  *
  * 两侧在 Linux/Windows 上指向同一底层对象（eventfd / Event HANDLE），在
- * FreeRTOS 上指向同一二值信号量，在 macOS 上是 pipe 的读端与写端两个不同 fd。
- * 这是实现细节而非契约：调用方
+ * FreeRTOS 上指向同一二值信号量，在 Zephyr 上指向同一 `k_poll_signal`，在 macOS
+ * 上是 pipe 的读端与写端两个不同 fd。这是实现细节而非契约：调用方
  * 只应通过 `ns_platform_event_*` API 操作，禁止依赖两侧是否同值或互换使用。
  *
  * 本原语不提供阻塞单等待；唯一阻塞单等待原语是 `ns_platform_wakeup_t`。
@@ -535,8 +551,9 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset);
  * @return `NS_OK` 成功，`NS_E_EXISTS` 表示同一 waitable 已注册，
  *         `NS_E_TOO_MANY_HANDLES` 容量满。
  *
- * @note FreeRTOS 后端只接受 `NS_WAITABLE_EVENT_IN`：含 OUT/ERR 位的 waitable
- *       返回 `NS_E_INVAL`；加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
+ * @note FreeRTOS 与 Zephyr 后端只接受 `NS_WAITABLE_EVENT_IN`：含 OUT/ERR 位的
+ *       waitable 返回 `NS_E_INVAL`；Zephyr 还只接受 `k_poll_signal`（event 类）
+ *       waitable。FreeRTOS 在加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
  */
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,

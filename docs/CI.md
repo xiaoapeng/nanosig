@@ -13,7 +13,7 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 
 ## 快速 CI（`ci.yml`）
 
-四个并行 job：
+五个并行 job：
 
 ### `linux`
 
@@ -41,6 +41,16 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 - 预置：`freertos-release`，通过 FetchContent 拉取固定版本 FreeRTOS-Kernel（V11.1.0）
 - 步骤：Configure → Build → Test（`-LE nightly`）。只注册 FreeRTOS 契约测试，不跑 `sanitize-all`。
 - macOS 会在 `cmake/FreeRTOSPosix.cmake` 中应用带保护的 pthread 栈补丁；Linux 使用未改动的上游 POSIX port。
+
+### `zephyr`
+
+- runner：`ubuntu-latest`（`timeout-minutes: 30`）。Zephyr `native_sim` 是宿主架构 POSIX 板，仅在 Linux 上运行。
+- 钉版：Zephyr 3.7 LTS（tag `v3.7.0`），`west init` 后 `west update --narrow -o=--depth=1`。`native_sim` 使用宿主工具链，**不下载 Zephyr SDK**。
+- 仓库经 `EXTRA_ZEPHYR_MODULES` 作为额外 module 注入（`zephyr/module.yml`）。
+- 步骤：安装 `ninja-build` / `device-tree-compiler` / `west` / Zephyr Python requirements → `west build -b native_sim/native/64 -d build-nanosig test/zephyr` → 运行 `build-nanosig/zephyr/zephyr.exe`（ztest）。
+- 该 job 为 PR 阻塞必需检查；分支保护由 9 项更新为 **10 项**必需检查。
+- 不承诺：真实 tick 精度、栈溢出停机、SMP 竞态、非 signal 类 `k_poll` 对象。
+- 可选：nightly Zephyr 运行**非规格要求**。
 
 ## 夜间 CI（`nightly.yml`）
 
