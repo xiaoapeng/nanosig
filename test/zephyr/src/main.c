@@ -269,7 +269,18 @@ ZTEST(nanosig_zephyr, test_wait_truncates_completions)
     zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 2u, &count), "wait truncate");
     zassert_true(count == 2u, "completions must be truncated to max_completions");
 
-    /* 电平保持：未上报的成员在下一轮被上报。 */
+    /* 电平保持：截断只限制单次输出、不消费就绪状态。先 drain 掉本轮已上报的两个，
+       下一轮只应上报剩余的一个（k_poll_signal 是电平触发，复位点是 drain）。 */
+    for(i = 0; i < 2; i++){
+        int j;
+        for(j = 0; j < 3; j++){
+            if(c[i].waitable == &ev[j].waitable){
+                zassert_ok(ns_platform_event_drain(&ev[j]), "drain reported %d", j);
+                break;
+            }
+        }
+    }
+
     count = 0u;
     zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 3u, &count), "wait remainder");
     zassert_true(count == 1u, "remaining signaled event must be reported next round");
