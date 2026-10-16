@@ -57,6 +57,20 @@
 - **修复 commit**: `220dd1d`（代码与测试）
 - **修复日期**: 2026-10-11
 
+### 2026-10-16 — ZEPHYR-004 用例修正（CI 首次真实运行暴露）
+
+ZEPHYR-004 新增的 `test_wait_truncates_completions` 在 native_sim CI（PR #9）首次
+真实运行即失败：用例在**未 drain** 的前提下断言"下一轮只上报剩余 1 个"，与
+`k_poll_signal` 电平触发语义矛盾——截断只限制单次输出、不消费就绪状态，未 drain
+时下一轮会重复上报全部仍就绪成员。修正为：先按 `completion.waitable` 反查并 drain
+本轮实际上报的两个成员（不依赖 slot 顺序），再断言剩余一个被上报。公开契约
+（`nanosig_port.h` 的 `max_completions`：只限制"实际写入数不超过同时就绪成员数"）
+未变，属测试期望错误，非实现缺陷。
+
+- **分支**: fix/zephyr-review-002-007
+- **修复 commit**: `d4d5551`
+- **修复日期**: 2026-10-16
+
 ---
 
 ## 现在打开的问题
