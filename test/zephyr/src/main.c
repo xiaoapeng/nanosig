@@ -13,7 +13,7 @@
  * - wakeup / mutex / thread / clock / broker 端到端。
  *
  * 全部断言在 ztest 线程执行；`k_poll_signal_reset` 只在 broker（poller）线程的
- * consume_fn 内调用，符合 Zephyr 的“reset 只在 poller 线程”约束。
+ * handler 内调用，符合 Zephyr 的“reset 只在 poller 线程”约束。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -355,15 +355,15 @@ ZTEST(nanosig_zephyr, test_clock_monotonic)
 
 static volatile int g_consumed;
 
-/* consume_fn 在 broker（poller）线程运行：这是唯一允许 reset k_poll_signal 的线程。 */
-static int broker_consume(ns_watcher_t *watcher)
+/* handler 在 broker（poller）线程运行：这是唯一允许 reset k_poll_signal 的线程。 */
+static void broker_handler(ns_watcher_t *watcher, uint32_t triggered_events)
 {
     ns_waitable_handle_t h = ns_watcher_handle(watcher);
     struct k_poll_signal *sig = (struct k_poll_signal *)h.handle;
 
+    (void)triggered_events;
     k_poll_signal_reset(sig);
     g_consumed = 1;
-    return 1;
 }
 
 ZTEST(nanosig_zephyr, test_broker_roundtrip)
@@ -377,7 +377,7 @@ ZTEST(nanosig_zephyr, test_broker_roundtrip)
     g_consumed = 0;
 
     zassert_ok(ns_watcher_init(&watcher, NS_WAITABLE_GET(&ev.waitable),
-                               NS_WAITABLE_EVENT_IN, 0, broker_consume),
+                               NS_WAITABLE_EVENT_IN, 0, broker_handler),
                "watcher init");
     zassert_ok(ns_broker_add(&watcher), "broker add");
 

@@ -36,7 +36,7 @@
 /*  macOS has no eventfd. The closest cross-platform equivalent of the */
 /*  Linux raw waitable is a non-blocking pipe: the read end is the     */
 /*  waitable fd (registered with EVFILT_READ and drained with read()), */
-/*  matching the read()-based drain used by consume_fn/slot tests.     */
+/*  matching the read()-based drain used by handler/slot tests.       */
 /*  The write end is kept in a small per-translation-unit registry so  */
 /*  test_signal_raw_waitable can trigger it from the waitable alone.   */
 /* ------------------------------------------------------------------ */

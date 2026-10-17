@@ -27,7 +27,6 @@
 
 static ns_loop_t *g_chaos_loop;
 static ns_watcher_t g_chaos_watchers[CHAOS_NUM_WATCHERS];
-static ns_connection_t g_chaos_wconns[CHAOS_NUM_WATCHERS];
 static ns_platform_waitable_t g_chaos_raw[CHAOS_NUM_WATCHERS];
 static ns_timer_t g_chaos_timers[CHAOS_NUM_TIMERS];
 static ns_connection_t g_chaos_tconns[CHAOS_NUM_TIMERS];
@@ -39,6 +38,12 @@ static void chaos_dummy_slot(void *user_data, const void *payload)
 {
     (void)user_data;
     (void)payload;
+}
+
+static void chaos_watcher_handler(ns_watcher_t *watcher, uint32_t triggered_events)
+{
+    (void)watcher;
+    (void)triggered_events;
 }
 
 static test_thread_t g_chaos_thread;
@@ -111,10 +116,8 @@ static int scenario_lifecycle_chaos(void)
     for(i = 0u; i < CHAOS_NUM_WATCHERS; i++){
         g_chaos_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_chaos_raw[i]));
-        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_chaos_raw[i]); rc = ns_watcher_init(&g_chaos_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL); }
+        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_chaos_raw[i]); rc = ns_watcher_init(&g_chaos_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, chaos_watcher_handler); }
         EXPECT_OK(rc == NS_OK);
-        EXPECT_OK(ns_signal_connect(&g_chaos_watchers[i].signal, chaos_dummy_slot,
-                                    g_chaos_loop, NULL, &g_chaos_wconns[i]) == NS_OK);
         EXPECT_OK(ns_broker_add(&g_chaos_watchers[i]) == NS_OK);
     }
 
@@ -157,7 +160,6 @@ static int scenario_lifecycle_chaos(void)
     }
     for(i = 0u; i < CHAOS_NUM_WATCHERS; i++){
         (void)ns_broker_remove(&g_chaos_watchers[i]);
-        EXPECT_OK(ns_signal_disconnect(&g_chaos_wconns[i]) == NS_OK);
         EXPECT_OK(ns_watcher_deinit(&g_chaos_watchers[i]) == NS_OK);
         test_destroy_raw_waitable(g_chaos_raw[i]);
     }

@@ -199,7 +199,7 @@ static inline void ns_waitable_init(ns_platform_waitable_t *w)
 /**
  * @brief 从 `ns_platform_waitable_t::primitive` 提取 `ns_waitable_handle_t`。
  *
- * 供 `consume_fn` 内部使用，从 watcher waitable 中取出平台句柄。
+ * 供 `ns_watcher_handler_fn` 内部使用，从 watcher waitable 中取出平台句柄。
  *
  * @param waitable_ptr 指向 `ns_platform_waitable_t` 的指针。
  * @return 对应平台的 `ns_waitable_handle_t` 值。

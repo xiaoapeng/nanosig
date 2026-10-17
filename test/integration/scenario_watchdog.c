@@ -16,18 +16,24 @@
 #define WATCHDOG_INTERVAL_US 100000u
 
 static ns_loop_t *g_wd_loop;
-static ns_watcher_t g_wd_watchers[WATCHDOG_NUM_WATCHERS];
-static ns_connection_t g_wd_watcher_conns[WATCHDOG_NUM_WATCHERS];
+typedef struct wd_watcher_ctx {
+    ns_watcher_t watcher;
+    size_t index;
+} wd_watcher_ctx_t;
+static wd_watcher_ctx_t g_wd_watchers[WATCHDOG_NUM_WATCHERS];
 static ns_platform_waitable_t g_wd_raw[WATCHDOG_NUM_WATCHERS];
 static ns_timer_t g_wd_timer;
 static ns_connection_t g_wd_timer_conn;
 static atomic_int g_wd_counts[WATCHDOG_NUM_WATCHERS];
 
-static void wd_watcher_slot(void *user_data, const void *payload)
+/* 回调化后计数直接在 broker 线程完成，loop 线程仅由 watchdog timer 驱动读取计数；
+   watcher → loop 的跨线程投递路径由 test_broker_delivery.c 覆盖。 */
+static void wd_watcher_handler(ns_watcher_t *w, uint32_t triggered_events)
 {
-    size_t idx = (size_t)(intptr_t)user_data;
-    (void)payload;
-    ns_atomic_fetch_add_explicit(&g_wd_counts[idx], 1, ns_memory_order_relaxed);
+    wd_watcher_ctx_t *ctx = NS_CONTAINER_OF(w, wd_watcher_ctx_t, watcher);
+
+    (void)triggered_events;
+    ns_atomic_fetch_add_explicit(&g_wd_counts[ctx->index], 1, ns_memory_order_relaxed);
 }
 
 static void wd_timer_slot(void *user_data, const void *payload)
@@ -66,11 +72,9 @@ static int scenario_watchdog(void)
         g_wd_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_wd_raw[i]));
         { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_wd_raw[i]);
-          EXPECT_OK(ns_watcher_init(&g_wd_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
-        EXPECT_OK(ns_signal_connect(&g_wd_watchers[i].signal, wd_watcher_slot,
-                                    g_wd_loop, (void *)(intptr_t)i,
-                                    &g_wd_watcher_conns[i]) == NS_OK);
-        EXPECT_OK(ns_broker_add(&g_wd_watchers[i]) == NS_OK);
+          g_wd_watchers[i].index = i;
+          EXPECT_OK(ns_watcher_init(&g_wd_watchers[i].watcher, h, NS_WAITABLE_EVENT_IN, 1, wd_watcher_handler) == NS_OK); }
+        EXPECT_OK(ns_broker_add(&g_wd_watchers[i].watcher) == NS_OK);
     }
 
     /* Create watchdog timer */
@@ -103,9 +107,8 @@ static int scenario_watchdog(void)
     EXPECT_OK(ns_timer_deinit(&g_wd_timer) == NS_OK);
 
     for(i = 0u; i < WATCHDOG_NUM_WATCHERS; i++){
-        EXPECT_OK(ns_broker_remove(&g_wd_watchers[i]) == NS_OK);
-        EXPECT_OK(ns_signal_disconnect(&g_wd_watcher_conns[i]) == NS_OK);
-        EXPECT_OK(ns_watcher_deinit(&g_wd_watchers[i]) == NS_OK);
+        EXPECT_OK(ns_broker_remove(&g_wd_watchers[i].watcher) == NS_OK);
+        EXPECT_OK(ns_watcher_deinit(&g_wd_watchers[i].watcher) == NS_OK);
         test_destroy_raw_waitable(g_wd_raw[i]);
     }
 

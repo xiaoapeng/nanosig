@@ -268,6 +268,12 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 - **关闭原因**: 文件头注释同步为"consume_fn 由 broker loop 线程在 dispatch 阶段无锁调用"。
 - **关闭日期**: 2026-07-05
 
+#### 加注（2026-10-17，watcher 回调化）
+`consume_fn` 已随 watcher 回调化更名为 `ns_watcher_handler_fn`，语义从"可选消费钩子"
+变为"必填就绪回调"。本条历史结论仍成立：回调由 broker loop 线程在 dispatch 阶段、
+无锁调用——文件头 `@section 生命周期` 与 `nanosig_broker.h` 的 `@warning` 已同步改写。
+不重开。
+
 ### BROKER-028: `ns_broker_drain_op_queue_shutdown` 死前向声明 `cleanup`
 
 - **状态**: 关闭-已修复
@@ -396,6 +402,11 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 #### 关闭日期
 2026-07-04
 
+#### 加注（2026-10-17，watcher 回调化）
+`consume_fn` 已更名为必填 `ns_watcher_handler_fn`；"必须非阻塞"约束原样保留并强化为
+`nanosig_broker.h` 的 `@warning`（阻塞会卡住所有 watcher 与 timer 投递）。结论不变，
+仍是用户责任，库不防御。不重开。
+
 ---
 
 ### BROKER-001: `ns_broker_add/remove` 中 `g_broker` 无同步读取，使用-后-释放
@@ -425,9 +436,22 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
   - **Level-triggered 忙循环**: 重构后 `ns_broker_dispatch_pending_events` 处理前先检查 `watcher->has_pending_event`，dispatch 后立即清零。如果 consume_fn 返回 0 跳过了 emit，下次 waitset_wait 重新触发该 watcher 时 `ns_broker_queue_event` 会重新设置 `has_pending_event=1`，不会丢失事件（pending_event.triggered_events 用 `|=` 累积）。
 - **关闭日期**: 2026-07-04
 
+#### 加注（2026-10-17，watcher 回调化）
+合同已修订：`consume_fn` 更名并改为必填 `ns_watcher_handler_fn`，dispatch 退化为
+`watcher->handler(watcher, triggered_events)`，"同步约束"由**黑名单式**线程边界取代——
+回调内只禁止会等待 broker 线程的 API（`ns_broker_add`/`remove`/`ns_shutdown` 及 teardown），
+`ns_signal_emit*` 明确允许。level-triggered 忙循环的缓解方式由"NULL 则 emit 的 pending_event
+门控"改为文档化契约：**handler 必须读净电平事件源**。不重开。
+
 ### BROKER-012: `consume_fn` → `ns_broker_add/remove` 死锁 — 无运行时防护
 
 - **状态**: 关闭-已拒绝
 - **严重度**: 🟠 高
 - **关闭原因**: 文档仲裁：consume_fn 不得调用 ns_broker_add/remove 的约束已在 `nanosig_broker.h:53-55` 明确文档化——"不得调用任何 nanosig API"——属已知设计约束。proxy 模型重构后此约束通过 user-线程不入 broker 状态维护路径自然保证（详见 BROKER-004 关闭原因）。运行时检测为作者未来可选工作，非当前阻塞项。
 - **关闭日期**: 2026-07-04
+
+#### 加注（2026-10-17，watcher 回调化）
+合同措辞已由"不得调用任何 nanosig API"修订为**黑名单式**："不得调用任何会等待 broker
+线程的 nanosig API（`ns_broker_add`/`ns_broker_remove`/`ns_shutdown` 及 teardown）"，
+`ns_signal_emit*` 明确允许（非阻塞）。条目结论不变：无运行时防护、依赖文档化合同；
+故不重开，也不新增重开的运行时守卫条目。
