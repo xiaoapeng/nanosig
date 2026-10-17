@@ -20,7 +20,6 @@
 static ns_loop_t *g_mr_loops[MR_NUM_LOOPS];
 static ns_signal_t g_mr_signal_chain[MR_NUM_LOOPS];
 static ns_watcher_t g_mr_watcher;
-static ns_connection_t g_mr_watcher_conn;
 static ns_platform_waitable_t g_mr_raw;
 static ns_connection_t g_mr_chain_conns[MR_NUM_LOOPS * MR_NUM_LOOPS];
 static ns_connection_t g_mr_interchain_conns[MR_NUM_LOOPS - 1u];
@@ -36,11 +35,12 @@ static void mr_chain_slot(void *user_data, const void *payload)
     }
 }
 
-/* Watcher trigger slot */
-static void mr_trigger_slot(void *user_data, const void *payload)
+/* Watcher handler: starts the chain by emitting S0 (cross-thread emit is
+ * non-blocking and allowed from the broker thread). */
+static void mr_watcher_handler(ns_watcher_t *w, uint32_t triggered_events)
 {
-    (void)user_data;
-    (void)payload;
+    (void)w;
+    (void)triggered_events;
     (void)ns_signal_emit_raw(&g_mr_signal_chain[0], NULL, 0u);
 }
 
@@ -119,10 +119,7 @@ static int scenario_multi_route(void)
     /* Create watcher */
     g_mr_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_mr_raw));
-    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_mr_raw); EXPECT_OK(ns_watcher_init(&g_mr_watcher, h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
-    /* Watcher signal → trigger slot on loop-0 */
-    EXPECT_OK(ns_signal_connect(&g_mr_watcher.signal, mr_trigger_slot,
-                                g_mr_loops[0], NULL, &g_mr_watcher_conn) == NS_OK);
+    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_mr_raw); EXPECT_OK(ns_watcher_init(&g_mr_watcher, h, NS_WAITABLE_EVENT_IN, 1, mr_watcher_handler) == NS_OK); }
     EXPECT_OK(ns_broker_add(&g_mr_watcher) == NS_OK);
 
     /* Start all loops in background threads */
@@ -152,7 +149,6 @@ static int scenario_multi_route(void)
 
     /* Cleanup */
     (void)ns_broker_remove(&g_mr_watcher);
-    EXPECT_OK(ns_signal_disconnect(&g_mr_watcher_conn) == NS_OK);
     EXPECT_OK(ns_watcher_deinit(&g_mr_watcher) == NS_OK);
     test_destroy_raw_waitable(g_mr_raw);
 

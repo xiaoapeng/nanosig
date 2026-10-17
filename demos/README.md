@@ -8,6 +8,8 @@ still pending.
 - `demo_same_thread.c`
 - `demo_cross_thread.c`
 - `demo_timer_cross_thread.c`
+- `demo_watcher_ready.c`
+- `demo_watcher_loop.c`
 
 Use them to review whether the public API feels reasonable. The examples keep
 function-wrapper connect/emit/init macros lowercase, keep declaration,
@@ -19,3 +21,9 @@ matrix: explicit loop connect, payload signals, and no-payload signals through
 more than one nanosig resource use kernel-style `goto` cleanup labels so every
 successful init has a matching teardown path. Timer examples use caller-owned
 `ns_timer_t` storage and connect to the embedded no-payload `timer.signal`.
+
+`demo_watcher_ready.c` and `demo_watcher_loop.c` show the two `ns_watcher`
+callback patterns: the handler either finishes the work in place ("就绪即处理") or
+drains the event source and emits a user-owned signal back to a loop. Both get the
+waitable from the public `ns_platform_event_t` primitive, so they carry no
+OS-specific preprocessor branches.

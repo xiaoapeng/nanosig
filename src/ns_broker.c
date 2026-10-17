@@ -16,11 +16,13 @@
  * 库内不另加 atomic barrier。
  *
  * @section 生命周期
- * - consume_fn 由 broker loop 线程在 dispatch 阶段无锁调用，**只应做消费动作，
- *   禁止调用任何 nanosig API**（见 `nanosig_broker.h` 文档）。
+ * - handler 由 broker loop 线程在 dispatch 阶段无锁调用。它必须非阻塞，
+ *   且不得调用任何会等待 broker 线程的 nanosig API（ns_broker_add /
+ *   ns_broker_remove / ns_shutdown 及 teardown）；ns_signal_emit* 为非阻塞，
+ *   允许调用。完整契约见 `nanosig_broker.h`。
  * - ns_broker_add / remove 与 ns_shutdown 不能并发调用
  * - watcher 内存在 pending op 时被 deinit 会 UAF（文档强约束）
- * - consume_fn 调用期间 consume_handle 必须保持有效
+ * - handler 调用期间 handler 使用的上下文必须保持有效
  *
  * @date 2026-07-04
  *
@@ -109,80 +111,60 @@ static int ns_broker_node_is_linked(const ns_list_node_t *node)
 
 static void ns_watcher_reset_empty(ns_watcher_t *watcher)
 {
-    watcher->signal.mutex = NULL;
-    watcher->signal.payload_size = 0u;
-    watcher->signal.slot_capacity = 0u;
-    watcher->signal.debug_name = NULL;
-    ns_list_init(&watcher->signal.slot_list);
     ns_waitable_init(&watcher->waitable);
     ns_list_init(&watcher->broker_node);
-    watcher->consume_fn = NULL;
-    watcher->pending_consume_handle = NULL;
+    watcher->handler = NULL;
 }
 
 static int ns_watcher_is_initialized(const ns_watcher_t *watcher)
 {
     if(watcher == NULL) return 0;
-    if(watcher->signal.mutex == NULL) return 0;
-    if(watcher->signal.payload_size != sizeof(ns_watcher_event_t)) return 0;
-    if(!ns_broker_node_is_initialized(&watcher->broker_node)) return 0;
-    return ns_watcher_events_are_valid(watcher->waitable.events);
+    if(watcher->handler == NULL) return 0;
+    if(!ns_watcher_events_are_valid(watcher->waitable.events)) return 0;
+    return ns_broker_node_is_initialized(&watcher->broker_node);
 }
 
-static int ns_watcher_init_common(ns_watcher_t *watcher, uint32_t events, int edge_triggered)
+static void ns_watcher_init_common(ns_watcher_t *watcher, uint32_t events,
+                                   int edge_triggered, ns_watcher_handler_fn handler)
+{
+    ns_watcher_reset_empty(watcher);
+    watcher->waitable.events = events;
+    watcher->waitable.edge_triggered = edge_triggered ? 1 : 0;
+    watcher->handler = handler;
+}
+
+int ns_watcher_init(ns_watcher_t *watcher, ns_waitable_handle_t handle,
+                    uint32_t events, int edge_triggered,
+                    ns_watcher_handler_fn handler)
 {
     int rc;
 
     if(watcher == NULL) return NS_E_INVAL;
+    if(handler == NULL) return NS_E_INVAL;
+
+    /* 不检测重复初始化：重复 init（未先 deinit）属调用方错误，见
+       ns_watcher_init 的 @warning；与 ns_signal_init_raw 保持统一策略。 */
+    if(!ns_waitable_handle_is_valid(handle)) return NS_E_INVAL;
     if(!ns_watcher_events_are_valid(events)) return NS_E_INVAL;
 
     rc = ns_broker_runtime_ready();
     if(rc != NS_OK) return rc;
 
-    /* 阻止二次 init：signal 资源应一次 init → 一次 deinit */
-    if(watcher->signal.mutex != NULL) return NS_E_EXISTS;
-
-    rc = ns_signal_init_raw(&watcher->signal, sizeof(ns_watcher_event_t), 0u, "ns-watcher");
-    if(rc != NS_OK) return rc;
-
-    watcher->waitable.events = events;
-    watcher->waitable.edge_triggered = edge_triggered ? 1 : 0;
-    ns_list_init(&watcher->broker_node);
-    return NS_OK;
-}
-
-int ns_watcher_init(ns_watcher_t *watcher, ns_waitable_handle_t handle,
-                    uint32_t events, int edge_triggered,
-                    ns_watcher_consume_fn consume_fn)
-{
-    int rc;
-
-    if(watcher == NULL) return NS_E_INVAL;
-    ns_watcher_reset_empty(watcher);
-
-    if(!ns_waitable_handle_is_valid(handle)) return NS_E_INVAL;
-
-    rc = ns_watcher_init_common(watcher, events, edge_triggered);
-    if(rc != NS_OK) return rc;
-
+    ns_watcher_init_common(watcher, events, edge_triggered, handler);
     NS_WAITABLE_SET(&watcher->waitable, handle);
-    watcher->consume_fn = consume_fn;
     return NS_OK;
 }
 
 int ns_watcher_deinit(ns_watcher_t *watcher)
 {
-    int rc;
-
     if(watcher == NULL) return NS_E_INVAL;
     if(!ns_watcher_is_initialized(watcher)) return NS_E_INVAL;
     if(ns_broker_node_is_linked(&watcher->broker_node)) return NS_E_EXISTS;
 
-    rc = ns_signal_deinit_raw(&watcher->signal);
-    ns_waitable_init(&watcher->waitable);
-    ns_list_init(&watcher->broker_node);
-    watcher->pending_consume_handle = NULL;
-    return rc;
+    /* 完整重置 waitable / broker_node / handler：使 ns_watcher_handle
+       在已 deinit 的 watcher 上返回无效哨兵而非陈旧句柄（D14）。 */
+    ns_watcher_reset_empty(watcher);
+    return NS_OK;
 }
 
 ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher)
@@ -194,11 +176,6 @@ ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher)
     }
 
     return NS_WAITABLE_GET(&watcher->waitable);
-}
-
-void ns_watcher_set_consume_handle(ns_watcher_t *watcher, void *handle)
-{
-    if(watcher != NULL) watcher->pending_consume_handle = handle;
 }
 
 ns_event_broker_t *ns_broker(void)
@@ -379,26 +356,16 @@ static int ns_broker_do_remove(ns_event_broker_t *broker, ns_watcher_t *watcher,
 /* ------------------------------------------------------------------ */
 
 /**
- * @brief 处理一个 watcher 的事件：调 consume_fn（可选）+ emit signal。
+ * @brief 处理一个 watcher 的事件：调用其 handler。
  *
- * consume_fn 内的 IO 会重新触发 OS eventfd，由下一轮 waitset_wait 重读；
- * 不需要 pending 状态位。do_remove 已把对应 completion.waitable 置 NULL，
- * 故 watcher 不会在被 remove 后被 dispatch 到。
+ * handler 是 watcher 唯一的就绪出口（没有内嵌 signal、没有 consume_fn 门控）。
+ * handler 内的 IO 会重新触发 OS eventfd，由下一轮 waitset_wait 重读；不需要
+ * pending 状态位。do_remove 已把对应 completion.waitable 置 NULL，故 watcher
+ * 不会在被 remove 后被 dispatch 到。
  */
 static void ns_broker_dispatch_watcher(ns_watcher_t *watcher, uint32_t triggered_events)
 {
-    ns_watcher_event_t event;
-
-    event.triggered_events = triggered_events;
-    event.consume_handle = NULL;
-
-    if(watcher->consume_fn != NULL){
-        int rc = watcher->consume_fn(watcher);
-        if(rc <= 0) return;
-        event.consume_handle = watcher->pending_consume_handle;
-    }
-
-    (void)ns_signal_emit_raw(&watcher->signal, &event, sizeof(event));
+    watcher->handler(watcher, triggered_events);
 }
 
 /**
@@ -554,7 +521,7 @@ static void ns_broker_run(void *arg)
            刚 remove 的 watcher 对应 completion 已被跳过。 */
         ns_broker_drain_op_queue(broker, completions, count);
         ns_broker_dispatch_pending_events(broker, completions, count);
-        /* Fire expired timers and immediately recheck — consume_fn
+        /* Fire expired timers and immediately recheck — handler
            may have registered new short-expiry timers that need
            prompt delivery without waiting for the next waitset_wait */
         (void)ns_timer_mgr_fire_expired();

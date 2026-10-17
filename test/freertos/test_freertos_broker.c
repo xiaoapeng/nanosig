@@ -5,7 +5,7 @@
  *
  * 验证事件 broker 在 FreeRTOS 后端上的端到端路径：ns_init 启动 broker 线程，
  * watcher 的 waitable 被注册进 queue set，signal 触发后 broker 选中该 token、
- * 调用 consume_fn 消费、再移除并优雅关闭。断言在 FreeRTOS 任务中执行。
+ * 调用 handler 处理、再移除并优雅关闭。断言在 FreeRTOS 任务中执行。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -34,13 +34,13 @@ static int g_failures;
 static volatile int g_consumed;
 static SemaphoreHandle_t g_broker_sem;
 
-/* consume_fn 等价于桌面后端的 read(fd)：非阻塞取走队列集成员的就绪状态。 */
-static int broker_consume(ns_watcher_t *watcher)
+/* handler 等价于桌面后端的 read(fd)：非阻塞取走队列集成员的就绪状态。 */
+static void broker_handler(ns_watcher_t *watcher, uint32_t triggered_events)
 {
     (void)watcher;
+    (void)triggered_events;
     (void)xSemaphoreTake(g_broker_sem, 0);
     g_consumed = 1;
-    return 1;
 }
 
 static void test_broker_roundtrip(void)
@@ -62,7 +62,7 @@ static void test_broker_roundtrip(void)
     g_consumed = 0;
 
     h = NS_WAITABLE_GET(&ev.waitable);
-    CHECK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, broker_consume) == NS_OK);
+    CHECK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, broker_handler) == NS_OK);
     CHECK(ns_broker_add(&watcher) == NS_OK);
 
     CHECK(ns_platform_event_signal(&ev) == NS_OK);

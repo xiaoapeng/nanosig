@@ -25,6 +25,7 @@ This directory holds the public design documentation for the PD closeout and imp
 |-----------|---------|
 | `plans/` | 中文测试方案与实施计划文档（原 `.omc/plans/`）。 |
 | `specs/` | 中文需求规格与需求访谈文档（原 `.omc/specs/` + 需求访谈）。 |
+| `proposals/` | 未批准的想法与提案草稿（见 `proposals/README.md`）；非实现依据。 |
 | `agents/` | Centralized AGENTS copies for source-tree instructions. |
 
 ## For AI Agents

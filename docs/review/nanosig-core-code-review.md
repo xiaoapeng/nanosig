@@ -139,6 +139,11 @@ src/nanosig.c:176
 test/unit/test_broker_consume_fn.c:213
 test/unit/test_broker_consume_fn.c:67
 
+#### 加注（2026-10-17，watcher 回调化）
+本条引用的 `test/unit/test_broker_consume_fn.c` 已随 watcher 回调化删除，其职责迁移到
+`test/unit/test_broker_handler.c`（`ns_watcher_consume_fn` → `ns_watcher_handler_fn`）。
+引用行号与文件名属历史快照，不再对应现行树；原结论（测试时序问题、非库缺陷）不变。不重开。
+
 ## 现在关闭的问题
 
 ### CORE-001: `ns_loop_deinit` 与同步 `ns_loop_run` 并发可造成 UAF

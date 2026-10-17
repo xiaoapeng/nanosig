@@ -21,9 +21,15 @@
 
 #define STRESS_ITERATIONS 1000u
 
+static void broker_remove_handler(ns_watcher_t *watcher, uint32_t triggered_events)
+{
+    (void)watcher;
+    (void)triggered_events;
+}
+
 static int test_broker_add_remove_stress(void)
 {
-    ns_watcher_t watcher;
+    ns_watcher_t watcher = {0};
     ns_waitable_handle_t h;
     unsigned i;
 
@@ -35,7 +41,7 @@ static int test_broker_add_remove_stress(void)
         return 1;
     }
     h = NS_WAITABLE_GET(&watcher.waitable);
-    EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_OK);
+    EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, broker_remove_handler) == NS_OK);
 
     /* Repeatedly add and remove. ns_broker_add returns NS_E_EXISTS after
      * first successful add; we expect either NS_OK or NS_E_EXISTS, not

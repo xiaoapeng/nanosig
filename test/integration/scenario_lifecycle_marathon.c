@@ -22,6 +22,12 @@
 #define LM_PHASE_DURATION_US (3u * 1000000u * integration_test_scale()) /* 3s per phase x scale */
 #define LM_NUM_ROUNDS 3u
 
+static void marathon_watcher_handler(ns_watcher_t *watcher, uint32_t triggered_events)
+{
+    (void)watcher;
+    (void)triggered_events;
+}
+
 static int scenario_lifecycle_marathon(void)
 {
     unsigned int round, i;
@@ -30,8 +36,7 @@ static int scenario_lifecycle_marathon(void)
         ns_loop_t *loop = NULL;
         ns_timer_t timers[LM_NUM_TIMERS];
         ns_connection_t timer_conns[LM_NUM_TIMERS];
-        ns_watcher_t watchers[LM_NUM_WATCHERS];
-        ns_connection_t watcher_conns[LM_NUM_WATCHERS];
+        ns_watcher_t watchers[LM_NUM_WATCHERS] = {0};
         ns_platform_waitable_t raw[LM_NUM_WATCHERS];
         ns_signal_t signal;
         ns_connection_t sig_conn;
@@ -64,8 +69,7 @@ static int scenario_lifecycle_marathon(void)
         for(i = 0u; i < LM_NUM_WATCHERS; i++){
             raw[i] = test_create_raw_waitable();
             EXPECT_OK(test_raw_waitable_is_valid(raw[i]));
-            { ns_waitable_handle_t h = NS_WAITABLE_GET(&raw[i]); EXPECT_OK(ns_watcher_init(&watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
-            EXPECT_OK(ns_signal_connect(&watchers[i].signal, dummy_slot, loop, NULL, &watcher_conns[i]) == NS_OK);
+            { ns_waitable_handle_t h = NS_WAITABLE_GET(&raw[i]); EXPECT_OK(ns_watcher_init(&watchers[i], h, NS_WAITABLE_EVENT_IN, 1, marathon_watcher_handler) == NS_OK); }
             EXPECT_OK(ns_broker_add(&watchers[i]) == NS_OK);
         }
 #if defined(_WIN32)
@@ -99,7 +103,6 @@ static int scenario_lifecycle_marathon(void)
 
         for(i = 0u; i < LM_NUM_WATCHERS; i++){
             (void)ns_broker_remove(&watchers[i]);
-            EXPECT_OK(ns_signal_disconnect(&watcher_conns[i]) == NS_OK);
             EXPECT_OK(ns_watcher_deinit(&watchers[i]) == NS_OK);
             test_destroy_raw_waitable(raw[i]);
         }

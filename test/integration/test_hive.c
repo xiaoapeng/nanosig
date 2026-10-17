@@ -37,7 +37,6 @@
 
 static ns_loop_t *g_loop = NULL;
 static ns_watcher_t g_watchers[NUM_WATCHERS];
-static ns_connection_t g_watcher_conns[NUM_WATCHERS];
 static ns_platform_waitable_t g_raw_waitables[NUM_WATCHERS];
 static ns_timer_t g_timers[NUM_TIMERS];
 static ns_connection_t g_timer_conns[NUM_TIMERS];
@@ -58,10 +57,10 @@ static int teardown_all(void);
 /*  Slot callbacks                                                      */
 /* ------------------------------------------------------------------ */
 
-static void hive_watcher_slot(void *user_data, const void *payload)
+static void hive_watcher_handler(ns_watcher_t *watcher, uint32_t triggered_events)
 {
-    (void)user_data;
-    (void)payload;
+    (void)watcher;
+    (void)triggered_events;
     ns_atomic_fetch_add_explicit(&g_watcher_count, 1, ns_memory_order_relaxed);
 }
 
@@ -88,15 +87,9 @@ static int setup_watchers(void)
             return -1;
         }
         { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_raw_waitables[i]);
-          rc = ns_watcher_init(&g_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL); }
+          rc = ns_watcher_init(&g_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, hive_watcher_handler); }
         if(rc != NS_OK){
             INTEGRATION_PHASE("hive: ns_watcher_init failed for %zu (rc=%d)", i, rc);
-            return -1;
-        }
-        rc = ns_signal_connect(&g_watchers[i].signal, hive_watcher_slot,
-                               g_loop, NULL, &g_watcher_conns[i]);
-        if(rc != NS_OK){
-            INTEGRATION_PHASE("hive: ns_signal_connect watcher %zu failed (rc=%d)", i, rc);
             return -1;
         }
         rc = ns_broker_add(&g_watchers[i]);
@@ -148,10 +141,9 @@ static int teardown_all(void)
     size_t i;
     int ok = 1;
 
-    /* Disconnect watchers, remove from broker, deinit */
+    /* Remove watchers from broker, deinit */
     for(i = 0u; i < NUM_WATCHERS; i++){
         (void)ns_broker_remove(&g_watchers[i]);
-        (void)ns_signal_disconnect(&g_watcher_conns[i]);
         (void)ns_watcher_deinit(&g_watchers[i]);
         test_destroy_raw_waitable(g_raw_waitables[i]);
     }

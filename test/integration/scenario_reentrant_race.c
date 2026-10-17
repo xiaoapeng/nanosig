@@ -21,7 +21,6 @@ static ns_signal_t g_rr_signal;
 static ns_loop_t *g_rr_loop;
 static ns_connection_t g_rr_conn;
 static ns_watcher_t g_rr_watchers[RR_NUM_WATCHERS];
-static ns_connection_t g_rr_wconns[RR_NUM_WATCHERS];
 static ns_platform_waitable_t g_rr_raw[RR_NUM_WATCHERS];
 static ns_timer_t g_rr_timer;
 static ns_connection_t g_rr_timer_conn;
@@ -51,6 +50,12 @@ static void rr_slot(void *user_data, const void *payload)
         (void)ns_timer_restart(&g_rr_timer);
         break;
     }
+}
+
+static void rr_watcher_handler(ns_watcher_t *watcher, uint32_t triggered_events)
+{
+    (void)watcher;
+    (void)triggered_events;
 }
 
 static test_thread_t g_rr_threads[RR_NUM_THREADS];
@@ -95,8 +100,7 @@ static int scenario_reentrant_race(void)
     for(i = 0u; i < RR_NUM_WATCHERS; i++){
         g_rr_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_rr_raw[i]));
-        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rr_raw[i]); EXPECT_OK(ns_watcher_init(&g_rr_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
-        EXPECT_OK(ns_signal_connect(&g_rr_watchers[i].signal, rr_slot, g_rr_loop, NULL, &g_rr_wconns[i]) == NS_OK);
+        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rr_raw[i]); EXPECT_OK(ns_watcher_init(&g_rr_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, rr_watcher_handler) == NS_OK); }
         EXPECT_OK(ns_broker_add(&g_rr_watchers[i]) == NS_OK);
     }
 
@@ -132,7 +136,6 @@ static int scenario_reentrant_race(void)
 
     for(i = 0u; i < RR_NUM_WATCHERS; i++){
         (void)ns_broker_remove(&g_rr_watchers[i]);
-        EXPECT_OK(ns_signal_disconnect(&g_rr_wconns[i]) == NS_OK);
         EXPECT_OK(ns_watcher_deinit(&g_rr_watchers[i]) == NS_OK);
         test_destroy_raw_waitable(g_rr_raw[i]);
     }

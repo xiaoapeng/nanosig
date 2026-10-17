@@ -12,7 +12,6 @@
 #include <stdint.h>
 
 #include <nanosig/nanosig_list.h>
-#include <nanosig/nanosig_signal.h>
 #include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
@@ -30,66 +29,59 @@ extern "C" {
 typedef struct ns_event_broker ns_event_broker_t;
 
 /**
- * @brief watcher 事件 payload。
+ * @brief watcher 就绪处理回调类型。
  *
- * watcher signal 的 slot 收到此 payload 后，可读取 `triggered_events` 判断
- * 本次触发的事件位。若 watcher 设置了 `consume_fn`，`consume_handle` 为
- * `consume_fn` 内通过 `ns_watcher_set_consume_handle` 填充的用户数据。
- */
-typedef struct ns_watcher_event {
-    uint32_t triggered_events; /**< `NS_WAITABLE_EVENT_*` 组合 */
-    void    *consume_handle;   /**< consume_fn 填充的结果/句柄，无 consume_fn 时为 NULL */
-} ns_watcher_event_t;
-
-/**
- * @brief watcher 消费函数类型。
+ * broker 线程在 watcher 的 waitable 就绪时调用此回调；每次就绪调用一次，
+ * `triggered_events` 为本轮 waitset completion 报告的 `NS_WAITABLE_EVENT_*`
+ * 位组合。
  *
- * broker 线程在 emit 前调用此函数消费 fd 数据。返回值语义：
- * - `> 0`：成功消费，broker 继续 emit signal。
- * - `0`：无数据可消费，broker 跳过 emit。
- * - `< 0`：错误，broker 跳过 emit。
+ * 本回调是 watcher 唯一的就绪出口：库不再为 watcher 内嵌 signal，也不再 emit
+ * 任何 signal。若需要把事件投递回用户 loop，请在回调内自行 emit 用户拥有的
+ * `ns_signal_t`（`ns_signal_emit*` 非阻塞，允许在此调用）。
  *
- * @warning 此函数在 broker 线程执行，必须非阻塞。阻塞会卡住所有 watcher。
- * @warning 此函数只应做消费动作（如 `read(fd, buf, ...)`），**不得调用
- *          任何 nanosig API**（如 `ns_signal_emit_raw`、`ns_broker_add/remove`
- *          、`ns_loop_quit` 等），否则会破坏 broker 内部循环一致性。
+ * @warning 本回调在 broker 线程执行，**必须非阻塞**。阻塞会卡住所有 watcher
+ *          与 timer 投递。
+ * @warning 本回调**不得调用任何会等待 broker 线程的 nanosig API**，例如
+ *          `ns_broker_add`、`ns_broker_remove`、`ns_shutdown` 以及会触发 broker
+ *          teardown 的调用——这些会自死锁。`ns_signal_emit*` 属于非阻塞操作，
+ *          **允许**调用。
+ * @warning 电平触发的 watcher 必须在回调内把事件源读净，否则每轮 waitset_wait
+ *          都会重复触发。
  *
- * @param watcher 触发的 watcher，可从中取 fd 和设置 consume_handle。
- * @return `> 0` 继续 emit，`0` 或负数跳过 emit。
+ * @param watcher 触发的 watcher。
+ * @param triggered_events 本轮报告的 `NS_WAITABLE_EVENT_*` 组合。
  */
 typedef struct ns_watcher ns_watcher_t;
-typedef int (*ns_watcher_consume_fn)(ns_watcher_t *watcher);
+typedef void (*ns_watcher_handler_fn)(ns_watcher_t *watcher, uint32_t triggered_events);
 
 /**
  * @brief watcher 对象。
  *
- * 调用方拥有本结构体的存储。`signal` 必须保持为第一个字段，事件触发时 broker
- * 会 emit 这个内嵌 signal，payload 类型为 `ns_watcher_event_t`。
+ * 调用方拥有本结构体的存储。waitable 就绪时 broker 线程调用 `handler`。
+ *
+ * @pre 本结构体必须由调用方零初始化（如 `ns_watcher_t w = {0};`）或仅经
+ *      `ns_watcher_init` 产出；把非零初始化的 garbage watcher 传入
+ *      `ns_watcher_deinit` 属未定义输入。
  */
 struct ns_watcher {
-    /** 事件触发时 emit 的内嵌 signal；必须保持为第一个字段。 */
-    ns_signal_t signal;
     /** 可注册到 broker waitset 的平台 waitable。 */
     ns_platform_waitable_t waitable;
     /** broker 内部链表节点，调用方不得直接修改。 */
     ns_list_node_t broker_node;
-    /** 可选消费函数；为 NULL 时 broker 跳过 fd 消费，直接 emit signal。 */
-    ns_watcher_consume_fn consume_fn;
-    /** consume_fn 内通过 ns_watcher_set_consume_handle 设置的句柄，emit 时读取。 */
-    void *pending_consume_handle;
+    /** 就绪回调，必填；同时作为 watcher 的生命周期 marker。 */
+    ns_watcher_handler_fn handler;
 };
-
-NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, signal) == 0u, "ns_watcher_t.signal must be the first member");
 
 /**
  * @brief 初始化 watcher。
  *
- * 本函数初始化调用方提供的 `ns_watcher_t`。参数有效时，它会初始化内嵌 signal、
- * 填充 `waitable` 的平台句柄 / `events` / `edge_triggered`，并初始化 broker
- * 链表节点。`consume_fn` 可选；为 NULL 时 broker 跳过 fd 消费，直接 emit signal。
+ * 本函数初始化调用方提供的 `ns_watcher_t`：填充 `waitable` 的平台句柄 /
+ * `events` / `edge_triggered`，初始化 broker 链表节点，并保存 `handler`。
  *
- * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
- *          init 一次 → deinit 一次。
+ * @pre `watcher` 必须已零初始化，或来自一次成功 `ns_watcher_deinit` 的 watcher。
+ * @warning 本函数不幂等，且**不检测重复初始化**：对已初始化的 watcher 再次调用
+ *          属调用方错误（未定义行为，会覆盖已有状态），与 `ns_signal_init_raw`
+ *          统一策略。调用方必须保证 init 一次 → deinit 一次。
  * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
@@ -97,20 +89,18 @@ NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, signal) == 0u, "ns_watcher_t.signal m
  * @param events `NS_WAITABLE_EVENT_*` 位组合。
  * @param edge_triggered 非零表示边沿触发，零表示电平触发；Linux 映射 `EPOLLET`、
  *        macOS 映射 `EV_CLEAR`，Windows/Zephyr/FreeRTOS 后端忽略该参数。
- * @param consume_fn 可选消费函数；为 NULL 时 broker 跳过 fd 消费，直接 emit signal。
- *        非 NULL 时 broker 线程在 emit 前调用，
- *        返回 `> 0` 时 emit，`0` 或负数跳过 emit。
+ * @param handler 就绪回调，必填；为 NULL 时返回 `NS_E_INVAL`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 extern int ns_watcher_init(ns_watcher_t *watcher, ns_waitable_handle_t handle,
                            uint32_t events, int edge_triggered,
-                           ns_watcher_consume_fn consume_fn);
+                           ns_watcher_handler_fn handler);
 
 /**
  * @brief 释放 watcher 内部资源。
  *
- * 调用前应先通过 `ns_broker_remove()` 从 broker 注销 watcher。本函数释放内嵌
- * signal 的内部资源，并把 waitable 和 broker 链表节点重置为未注册状态。
+ * 调用前应先通过 `ns_broker_remove()` 从 broker 注销 watcher。成功时本函数把
+ * `waitable`、broker 链表节点与 `handler` 完整重置为未注册状态。
  *
  * @warning 本函数必须串行化调用，非 MPM-safe。
  *
@@ -122,8 +112,7 @@ extern int ns_watcher_deinit(ns_watcher_t *watcher);
 /**
  * @brief 将 watcher 注册到 broker。
  *
- * 注册后，broker 线程等待 watcher 的 waitable；事件到达时 emit
- * `watcher->signal`，payload 为 `ns_watcher_event_t`。
+ * 注册后，broker 线程等待 watcher 的 waitable；就绪时调用 `watcher->handler`。
  *
  * 必须在 `ns_init()` 之后、`ns_shutdown()` 之前调用。
  *
@@ -137,8 +126,8 @@ extern int ns_broker_add(ns_watcher_t *watcher);
 /**
  * @brief 从 broker 注销 watcher。
  *
- * 注销不会撤销已经入队的 slot 调用；调用方仍需保证相关 `user_data`
- * 生命周期覆盖任何 in-flight emit。
+ * 注销不会撤销已经开始的 dispatch；调用方仍需保证相关 `user_data`
+ * 生命周期覆盖任何 in-flight 调用。
  *
  * @warning 不得与 `ns_shutdown()` 并发调用。
  *
@@ -150,31 +139,13 @@ extern int ns_broker_remove(ns_watcher_t *watcher);
 /**
  * @brief 获取 watcher 的平台句柄。
  *
- * 供 `consume_fn` 内部使用，从 watcher 中取出平台句柄进行 I/O 操作。
+ * 供 `handler` 内部使用，从 watcher 中取出平台句柄进行 I/O 操作。
  * 返回值为 `ns_waitable_handle_t` 联合体，调用方根据当前平台访问对应成员。
  *
  * @param watcher 已初始化的 watcher。
  * @return 平台句柄联合体；watcher 为 NULL 时返回全 1 无效哨兵。
  */
 extern ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher);
-
-/**
- * @brief 设置 consume_handle。
- *
- * `pending_consume_handle` 是 watcher 的持久句柄，可在一早（如初始化后）设置，
- * 跨多次 dispatch 有效，生命周期由调用方保证。`consume_fn` 内也可更新。
- *
- * 每次 emit 时，`pending_consume_handle` 的当前值会填入
- * `ns_watcher_event_t.consume_handle` 传递给 slot。若不设值则为 NULL。
- *
- * @note 不设值（保持 NULL）或设值为 NULL 的语义相同：slot 收到 NULL consume_handle。
- *
- * @warning 本函数非线程安全。通常仅在 `consume_fn` 内或初始化阶段串行调用。
- *
- * @param watcher 触发的 watcher。
- * @param handle 用户数据句柄，可为 NULL。
- */
-extern void ns_watcher_set_consume_handle(ns_watcher_t *watcher, void *handle);
 
 #ifdef __cplusplus
 }

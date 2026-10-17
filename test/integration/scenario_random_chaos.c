@@ -23,7 +23,6 @@ static ns_connection_t g_rc_timer_conn;
 static atomic_int g_rc_quit;
 static atomic_int g_rc_op_count;
 static ns_watcher_t g_rc_watcher;
-static ns_connection_t g_rc_wconn;
 static ns_platform_waitable_t g_rc_raw;
 
 #include "test_thread.h"
@@ -32,6 +31,12 @@ static void rc_dummy_slot(void *user_data, const void *payload)
 {
     (void)user_data;
     (void)payload;
+}
+
+static void rc_watcher_handler(ns_watcher_t *watcher, uint32_t triggered_events)
+{
+    (void)watcher;
+    (void)triggered_events;
 }
 
 static test_thread_t g_rc_thread;
@@ -98,8 +103,7 @@ static int scenario_random_chaos(void)
 
     g_rc_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_rc_raw));
-    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rc_raw); EXPECT_OK(ns_watcher_init(&g_rc_watcher, h, NS_WAITABLE_EVENT_IN, 1, NULL) == NS_OK); }
-    EXPECT_OK(ns_signal_connect(&g_rc_watcher.signal, rc_dummy_slot, g_rc_loop, NULL, &g_rc_wconn) == NS_OK);
+    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rc_raw); EXPECT_OK(ns_watcher_init(&g_rc_watcher, h, NS_WAITABLE_EVENT_IN, 1, rc_watcher_handler) == NS_OK); }
     EXPECT_OK(ns_broker_add(&g_rc_watcher) == NS_OK);
 
     INTEGRATION_PHASE("random_chaos: running 3s chaos");
@@ -126,7 +130,6 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_timer_deinit(&g_rc_timer) == NS_OK);
 
     (void)ns_broker_remove(&g_rc_watcher);
-    EXPECT_OK(ns_signal_disconnect(&g_rc_wconn) == NS_OK);
     EXPECT_OK(ns_watcher_deinit(&g_rc_watcher) == NS_OK);
     test_destroy_raw_waitable(g_rc_raw);
 

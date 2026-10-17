@@ -6,8 +6,10 @@
 ## 概述
 
 event broker 是 nanosig 的事件等待与分发模块。它拥有一个线程和一个
-waitset，负责等待事件源（watcher）就绪，就绪时 emit 绑定的 signal。
-timer 是内置事件源，通过 timer_mgr 的 notify 回调唤醒 broker。
+waitset，负责等待事件源（watcher）就绪，就绪时调用 watcher 绑定的 handler。
+handler 是 watcher 唯一的就绪出口；broker 不再为 watcher emit 任何 signal。
+timer 是内置事件源，通过 timer_mgr 的 notify 回调唤醒 broker，并由 timer_mgr
+为 timer 自己的 signal emit（这是有意保留的不对称，见"与 timer 的集成"）。
 
 broker 是全局单例，随 `ns_init()` 初始化，随 `ns_shutdown()` 销毁。
 
@@ -15,8 +17,7 @@ broker 是全局单例，随 `ns_init()` 初始化，随 `ns_shutdown()` 销毁�
 
 ```
 用户层：
-  ns_watcher_init / deinit
-  ns_signal_connect(&watcher->signal, slot, ...)
+  ns_watcher_init / deinit（handler 必填）
   ns_broker_add(broker, watcher)
   ns_broker_remove(broker, watcher)
 
@@ -44,13 +45,16 @@ timer_mgr 层（独立模块）：
 用户 → ns_timer_*（公开 API）
 broker → timer_mgr（生命周期 + 运行时）
 broker → waitset（等待事件）
-broker → signal_emit（触发 watcher/timer 的 signal）
+broker → watcher->handler（watcher 就绪时直接回调）
+timer_mgr → timer signal emit（timer_mgr 为 timer 触发内嵌 signal）
 timer_mgr → notify 回调（通知 broker，不依赖 broker）
 loop ← signal_emit（通过 MPSC ring 接收 slot 调用）
 ```
 
 三层各司其职，单向依赖，没有环。broker 不直接操作 loop 的 wakeup 或
-MPSC ring；所有投递通过 signal emit 完成。
+MPSC ring；watcher 就绪时 broker 只调用 handler，若用户需要把事件投递回
+loop，由 handler 内自行 emit 用户拥有的 signal（`ns_signal_emit*` 非阻塞，
+允许在 broker 线程调用），其余投递通过 signal emit 完成。
 
 ## 公开类型
 
@@ -64,31 +68,27 @@ MPSC ring；所有投递通过 signal emit 完成。
 #define NS_WAITABLE_EVENT_ERR  (1u << 2)  /* 错误 */
 ```
 
-### watcher 事件 payload
-
-```c
-typedef struct ns_watcher_event {
-    uint32_t triggered_events;  /* NS_WAITABLE_EVENT_* 组合 */
-} ns_watcher_event_t;
-```
-
-watcher signal 的 payload 类型。slot 收到此结构体指针，可判断触发了
-哪些事件。
-
 ### watcher 对象
 
 ```c
+typedef void (*ns_watcher_handler_fn)(ns_watcher_t *watcher, uint32_t triggered_events);
+
 typedef struct ns_watcher {
-    ns_signal_t              signal;       /* 第一个字段，事件触发时 emit */
-    ns_platform_waitable_t   waitable;     /* 内嵌 waitable */
+    ns_platform_waitable_t   waitable;     /* 内嵌 waitable，第一个字段 */
     ns_list_node_t           broker_node;  /* broker 内部链表节点 */
+    ns_watcher_handler_fn    handler;      /* 就绪回调，必填；同时是生命周期 marker */
 } ns_watcher_t;
 ```
 
 - 调用方自持存储（栈变量、堆分配、嵌入结构体均可）。
-- `signal` 必须是第一个字段，与 `ns_timer_t` 保持一致。
-- `waitable` 由 `ns_watcher_init_*` 填充。
+- `waitable` 必须是第一个字段。
 - `broker_node` 由 broker 内部使用，调用方不得访问。
+- `handler` 必填，`ns_watcher_init` 对 NULL handler 返回 `NS_E_INVAL`。handler 是
+  watcher 唯一的就绪出口：broker 线程在 waitable 就绪时调用
+  `handler(watcher, triggered_events)`，不再为 watcher 内嵌或 emit signal。
+- 调用方必须零初始化 `ns_watcher_t`（如 `ns_watcher_t w = {0};`）或仅经
+  `ns_watcher_init` 产出；非零初始化的 garbage watcher 传入 `ns_watcher_deinit`
+  属未定义输入。
 
 当前实现选择直接内嵌 `ns_platform_waitable_t`，不再额外包一层 opaque
 私有结构，也不把 waitable 从 `ns_watcher_t` 中隐藏。公开 watcher API
@@ -105,25 +105,35 @@ int ns_watcher_init(
     ns_waitable_handle_t handle,
     uint32_t events,
     int edge_triggered,
-    ns_watcher_consume_fn consume_fn);
+    ns_watcher_handler_fn handler);
 
 int ns_watcher_deinit(ns_watcher_t *watcher);
 ```
 
 - `init`：统一初始化入口，接受 `ns_waitable_handle_t`（Linux/macOS 填 `.fd`，
-  Windows 填 `.handle`）和可选 `consume_fn`。内部调 `ns_signal_init_raw`
-  （payload_size = `sizeof(ns_watcher_event_t)`），通过 `NS_WAITABLE_SET` 填充
-  `watcher->waitable.primitive`（events、edge_triggered），初始化 `broker_node`。
+  Windows/FreeRTOS/Zephyr 填 `.handle`）和必填 `handler`。内部通过
+  `NS_WAITABLE_SET` 填充 `watcher->waitable.primitive`（events、edge_triggered），
+  初始化 `broker_node`，并保存 `handler`。
+- `init` 校验顺序固定：`watcher == NULL` → `NS_E_INVAL`；`handler == NULL` →
+  `NS_E_INVAL`；句柄/事件非法 → `NS_E_INVAL`；runtime 未就绪 → `NS_E_SHUTDOWN`。
+- `init` **不做重复初始化判定**（统一策略，同 `ns_signal_init_raw`）：重复 init
+  未先 deinit 属调用方错误（未定义行为），仅在公开头 `@warning` 说明，不返回
+  `NS_E_EXISTS`。
 - `init` 是正常公开初始化入口，不引入 `NS_E_UNSUPPORTED` 或按平台隐藏符号。
-  参数有效时应完成 signal、waitable 和 broker_node 初始化；调用方负责在当前
+  参数有效时应完成 waitable 和 broker_node 初始化；调用方负责在当前
   平台传入能被对应 waitset 后端等待的 fd 或 HANDLE。
-- `deinit`：释放 signal 内部资源，重置 waitable。调用前必须已
-  `ns_broker_remove`。
-- `deinit` 只对成功初始化的 watcher 返回成功。`ns_watcher_init`
-  失败时会把 watcher 重置为空未初始化状态；随后调用 `deinit` 返回
-  `NS_E_INVAL`，不静默伪装成成功清理。
+- `deinit`：完整重置 `waitable`、`broker_node` 并清零 `handler`。调用前必须已
+  `ns_broker_remove`。未初始化的 watcher 返回 `NS_E_INVAL`。
 - `events` 是 `NS_WAITABLE_EVENT_IN/OUT/ERR` 的位组合。
 - `edge_triggered`：1 = 边沿触发（Linux `EPOLLET` / macOS `EV_CLEAR`），0 = 电平触发。
+
+### handler 契约
+
+handler 在 broker 线程执行，必须非阻塞。它**不得调用任何会等待 broker 线程的
+nanosig API**（如 `ns_broker_add`、`ns_broker_remove`、`ns_shutdown` 及 broker
+teardown），否则会自死锁；`ns_signal_emit*` 属于非阻塞操作，**允许**调用。
+电平触发的 watcher 必须在 handler 内把事件源读净，否则每轮 `waitset_wait`
+都会重复触发。
 
 ### broker 接口
 
@@ -189,11 +199,8 @@ static void broker_run(void *arg)
         for(i = 0; i < count; i++){
             ns_watcher_t *w =
                 (ns_watcher_t *)completions[i].waitable->user_data;
-            if(w != NULL){
-                ns_watcher_event_t event;
-                event.triggered_events = completions[i].triggered_events;
-                (void)ns_signal_emit_raw(
-                    &w->signal, &event, sizeof(event));
+            if((w != NULL) && (w->handler != NULL)){
+                w->handler(w, completions[i].triggered_events);
             }
         }
 
@@ -312,20 +319,22 @@ ns_shutdown()
 - `ns_timer_deinit` 必须在 `ns_shutdown` 之前调用。
 - `ns_loop_deinit` 必须在 `ns_shutdown` 之前调用（现有逻辑）。
 
-### 竞态：remove 时已入队的 emit
+### 竞态：remove 时已入队的 dispatch
 
 `ns_broker_remove` 从 waitset 注销 watcher 后，不再有新的 completion
-指向该 watcher。但已通过 `ns_signal_emit_raw` 入队的 slot 调用不会被
-撤回。这与 `ns_signal_disconnect` 语义一致。
+指向该 watcher。但已经开始的 handler dispatch 不会被撤回。这与
+`ns_signal_disconnect` 语义一致。
 
-用户通过 `ns_signal_connect` 绑定 slot 时的 `user_data` 生命周期必须
-长于任何 in-flight emit。
+handler 在其内部 emit 用户 signal 时，该 emit 已经指向用户自己的 slot；
+用户通过 `ns_signal_connect` 绑定 slot 时的 `user_data` 生命周期必须长于
+任何 in-flight emit。
 
 ## 错误处理
 
 - broker 线程内 `waitset_wait` 或 `fire_expired` 返回错误时 continue，
   不终止 broker 线程。单次错误不中断服务。
-- `ns_signal_emit_raw` 返回错误（如 MPSC 满）时 continue，不影响后续
+- watcher handler 内部的 emit 失败（如 MPSC 满）由 handler 自身决定如何处理；
+  broker 不介入。timer 的 `ns_signal_emit_raw` 返回错误时继续，不影响后续
   watcher 或 timer。
 
 ## 平台层新增接口
@@ -402,13 +411,14 @@ broker 和 loop **完全解耦**：
 
 - broker 不持有 loop 引用。
 - broker 不直接操作 loop 的 wakeup 或 MPSC ring。
-- broker 通过 `ns_signal_emit_raw` 投递事件，emit 内部处理 loop 投递。
+- watcher 就绪时 broker 只调用 handler；若用户要把事件投递回 loop，在 handler 内
+  emit 用户拥有的 signal，emit 内部处理 loop 投递。
 - loop 不知道 broker 的存在。
 
-broker 线程 emit watcher/timer signal → emit 遍历 slot_list → 每个
+用户 handler 内 emit signal → emit 遍历 slot_list → 每个
 connection 的 target_loop 的 MPSC ring 写入 → wakeup target_loop →
 用户线程 `ns_loop_run` 从 wakeup_wait 返回 → dispatch_pending →
-slot 回调执行。
+slot 回调执行。timer 同理：timer 由 timer_mgr emit 内嵌 signal 走同一投递链。
 
 ## 架构总览
 
@@ -422,7 +432,7 @@ slot 回调执行。
 │                                                      │
 │  ┌──────────────────────────────────────┐            │
 │  │  watcher_list (双向链表)              │            │
-│  │  每个 watcher 内嵌 waitable + signal │            │
+│  │  每个 watcher 内嵌 waitable + handler│            │
 │  └──────────────────────────────────────┘            │
 │                                                      │
 │  ┌──────────────────────────────────────┐            │
@@ -435,7 +445,7 @@ slot 回调执行。
 │  broker_run 主循环：                                  │
 │    1. timeout = timer_mgr_next_timeout()             │
 │    2. waitset_wait(timeout)                          │
-│    3. 遍历 completions → emit watcher signal         │
+│    3. 遍历 completions → 调用 watcher handler         │
 │    4. timer_mgr_fire_expired()                       │
 │    5. loop                                           │
 │                                                      │
@@ -458,9 +468,9 @@ slot 回调执行。
 └──────────────────────────────────────┘
 
 用户使用模式：
-  watcher_init → signal_connect → broker_add
-  事件到达 → broker emit → loop dispatch → slot 执行
-  broker_remove → signal_disconnect → watcher_deinit
+  watcher_init(handler) → broker_add
+  事件到达 → broker 调用 handler →（可选）handler emit 自建 signal → loop dispatch
+  broker_remove → watcher_deinit
 ```
 
 ## 扩展路径

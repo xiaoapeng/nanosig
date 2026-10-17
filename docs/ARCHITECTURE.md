@@ -108,14 +108,20 @@ struct ns_connection {
 
 ### 2.5 `ns_watcher_t` — 事件监视器
 
-watcher 将平台事件（fd/handle readiness）转换为 signal emit。
+watcher 是**回调唯一**的就绪原语：平台事件（fd/handle readiness）就绪时，
+broker 线程直接调用 watcher 绑定的 handler，不再内嵌或 emit signal。
 
 ```
 ns_watcher_t
-├─ signal（内嵌 ns_signal_t，payload 为 ns_watcher_event_t）
 ├─ waitable（ns_platform_waitable_t，可注册到 waitset）
-└─ broker_node（broker 内部链表节点）
+├─ broker_node（broker 内部链表节点）
+└─ handler（ns_watcher_handler_fn，必填，同时是生命周期 marker）
 ```
+
+handler 签名 `void (*)(ns_watcher_t *, uint32_t triggered_events)`。若用户需要把
+事件投递回 loop，在 handler 内自行 emit 用户拥有的 `ns_signal_t`（非阻塞，允许）。
+handler 在 broker 线程执行，必须非阻塞，且不得调用会等待 broker 线程的 API
+（`ns_broker_add`/`ns_broker_remove`/`ns_shutdown` 及 teardown）。
 
 ### 2.6 `ns_event_broker_t` — 全局事件调度器
 
@@ -133,12 +139,12 @@ broker 是全局单例，随 `ns_init()` 创建，随 `ns_shutdown()` 销毁。
 ```
 1.  timeout = timer_mgr_next_deadline()
 2.  waitset_wait(timeout)
-3.  process completions → ns_signal_emit_raw(watcher->signal, ...)
+3.  process completions → watcher->handler(watcher, triggered_events)
 4.  timer_mgr_fire_expired()
 5.  goto 1
 ```
 
-broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MPSC ring。所有事件通过 signal emit 投递。
+broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MPSC ring。watcher 就绪时 broker 只调用 handler；timer 到期由 timer_mgr emit 内嵌 signal，两者最终都通过 signal emit（用户 handler 内或 timer_mgr）投递。
 
 ```
      event arrival
@@ -147,7 +153,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
    ┌──────────────┐
    │ broker 线程   │
    │              │
-   │ watcher→emit │ ──┐
+   │ watcher→handler │ ─┐
    │ timer→fire   │ ──┤  signal → MPSC ring → loop dispatch → slot
    └──────────────┘   └─────────────────────────────────────────┘
 ```
@@ -206,7 +212,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `ns_loop_init/destroy` | 需序列化 | 调用方保证 |
 | `ns_signal_init_raw/deinit_raw` | 需序列化 | 调用方保证 |
 | `ns_timer_init/destroy` | 需序列化 | 调用方保证 |
-| `ns_watcher_init_*/deinit` | 需序列化 | 调用方保证 |
+| `ns_watcher_init/deinit` | 需序列化 | 调用方保证 |
 | `ns_init/ns_shutdown` | 需序列化 | 调用方保证 |
 | DS 函数（list/rbtree/hashtable/ringbuf）| 单线程 | 外部同步 |
 | `ns_mpsc_record_ring_try_pushv` | MPM-safe | fetch_add relaxed（slot 分配） |
@@ -224,7 +230,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `ns_signal_t` | 调用方 | 静态/栈/堆；`ns_signal_init` 只分配 mutex | `ns_signal_deinit` |
 | `ns_connection_t` | 调用方 | 调用方完全拥有存储 | 调用方自由处置 |
 | `ns_timer_t` | 调用方 | 静态/栈/堆；`ns_timer_init` 只 init + mutex | `ns_timer_deinit` |
-| `ns_watcher_t` | 调用方 | 静态/栈/堆；`ns_watcher_init` 只 init + mutex | `ns_watcher_deinit` |
+| `ns_watcher_t` | 调用方 | 静态/栈/堆；`ns_watcher_init` 只填充 waitable/broker_node/handler | `ns_watcher_deinit` |
 | `ns_event_broker_t` | 库 | `ns_init` 时 `ns_platform_alloc` | `ns_shutdown` 时释放 |
 | MPSC record ring | `ns_loop_t` 内联 | 内嵌在 `ns_loop_init` 的分配块中 | `ns_loop_deinit` 隐式 |
 
