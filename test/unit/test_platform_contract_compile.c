@@ -12,6 +12,11 @@
 
 #include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig_atomic.h>
+
+#ifndef NANOSIG_PLATFORM_HEADER
+#error "NANOSIG_PLATFORM_HEADER must be injected by the build system (platform selection)"
+#endif
+
 #if NS_PLATFORM_WAIT_INFINITE_US != UINT64_MAX
 #error "NS_PLATFORM_WAIT_INFINITE_US must be UINT64_MAX"
 #endif
@@ -32,31 +37,42 @@
 _Static_assert(sizeof(ns_platform_time_us_t) == sizeof(uint64_t), "platform time must be uint64_t microseconds");
 #endif
 
-static void platform_contract_accept_opaque_handles(void)
+/* 平台对象一律由调用方拥有存储：本 TU 只做语法检查（-fsyntax-only），
+   因此声明真实存储并调用 init/deinit 就能验证公共契约的类型完整性。 */
+static void platform_contract_accept_caller_storage(void)
 {
-    ns_platform_wakeup_t *wakeup = NULL;
-    ns_platform_mutex_t *mutex = NULL;
-    ns_platform_thread_t *thread = NULL;
+    ns_platform_wakeup_t wakeup;
+    ns_platform_mutex_t mutex;
+    ns_platform_thread_t thread;
+    ns_platform_waitset_t waitset;
+    ns_platform_event_t event;
     ns_platform_thread_fn thread_fn = NULL;
     ns_platform_time_us_t timeout_us = NS_PLATFORM_WAIT_INFINITE_US;
     ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_TIMEOUT;
-    ns_platform_event_t event;
-    int rc_init = ns_platform_event_init(&event, "contract");
-    int rc_signal = ns_platform_event_signal(&event);
-    int rc_drain = ns_platform_event_drain(&event);
-    int rc_deinit = ns_platform_event_deinit(&event);
+    int rc;
 
-    (void)wakeup;
-    (void)mutex;
-    (void)thread;
-    (void)thread_fn;
-    (void)timeout_us;
-    (void)wait_result;
-    (void)event;
-    (void)rc_init;
-    (void)rc_signal;
-    (void)rc_drain;
-    (void)rc_deinit;
+    rc = ns_platform_wakeup_init(&wakeup, "contract");
+    rc |= ns_platform_wakeup_signal(&wakeup);
+    rc |= ns_platform_wakeup_wait(&wakeup, timeout_us, &wait_result);
+    rc |= ns_platform_wakeup_deinit(&wakeup);
+
+    rc |= ns_platform_mutex_init(&mutex, "contract");
+    rc |= ns_platform_mutex_lock(&mutex);
+    rc |= ns_platform_mutex_unlock(&mutex);
+    rc |= ns_platform_mutex_deinit(&mutex);
+
+    rc |= ns_platform_thread_init(&thread, thread_fn, NULL, "contract");
+    rc |= ns_platform_thread_join(&thread);
+
+    rc |= ns_platform_waitset_init(&waitset);
+    rc |= ns_platform_waitset_deinit(&waitset);
+
+    rc |= ns_platform_event_init(&event, "contract");
+    rc |= ns_platform_event_signal(&event);
+    rc |= ns_platform_event_drain(&event);
+    rc |= ns_platform_event_deinit(&event);
+
+    (void)rc;
 }
 
 static void platform_contract_check_atomic_macros(void)
@@ -108,11 +124,9 @@ static void platform_contract_check_waitset_types(void)
 {
     ns_platform_waitable_t w;
     ns_platform_waitset_completion_t c;
-    ns_platform_waitset_t *ws = NULL;
 
     ns_waitable_init(&w);
-    w.primitive.fd = 0;
-    w.primitive.handle = NULL;
+    w.primitive = (ns_waitable_handle_t)0;
     w.user_data = NULL;
     w.registered_waitset = NULL;
     w.events = NS_WAITABLE_EVENT_IN;
@@ -122,7 +136,7 @@ static void platform_contract_check_waitset_types(void)
     c.triggered_events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR;
 
     (void)c;
-    (void)ws;
+    (void)ns_waitable_handle_is_valid(w.primitive);
     (void)NS_WAITABLE_EVENT_IN;
     (void)NS_WAITABLE_EVENT_OUT;
     (void)NS_WAITABLE_EVENT_ERR;
@@ -130,8 +144,9 @@ static void platform_contract_check_waitset_types(void)
 
 int main(void)
 {
-    platform_contract_accept_opaque_handles();
+    platform_contract_accept_caller_storage();
     platform_contract_check_atomic_macros();
     platform_contract_check_waitset_types();
+    (void)NS_PLATFORM_ABI_PROBE;
     return 0;
 }

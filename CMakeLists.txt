@@ -108,6 +108,22 @@ else()
         "(got '${NANOSIG_PLATFORM}')")
 endif()
 
+# ── 平台类型头选择 ──────────────────────────────────────────────
+# 平台类型（ns_waitable_handle_t + wakeup/mutex/thread/waitset）由构建系统经
+# NANOSIG_PLATFORM_HEADER 注入的平台后端头提供；nanosig_port.h 自身不含任何
+# 平台判定宏。这是平台选择的唯一注入点，库与消费者共用同一份类型定义。
+if(NANOSIG_PLATFORM STREQUAL "freertos")
+    set(NANOSIG_PLATFORM_DIR platform/freertos)
+elseif(WIN32)
+    set(NANOSIG_PLATFORM_DIR platform/windows)
+elseif(APPLE)
+    set(NANOSIG_PLATFORM_DIR platform/macos)
+else()
+    set(NANOSIG_PLATFORM_DIR platform/linux)
+endif()
+
+set(NANOSIG_PLATFORM_HEADER_DEFINE "NANOSIG_PLATFORM_HEADER=\"nanosig_platform_port.h\"")
+
 add_library(nanosig STATIC
     src/nanosig.c
     src/ns_broker.c
@@ -141,13 +157,17 @@ target_include_directories(nanosig PRIVATE
     ${PROJECT_SOURCE_DIR}
 )
 
+# PUBLIC: consumers (contract tests / app) must see the same platform types as
+# the library — the platform header is the single source of that layout.
+target_include_directories(nanosig PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}>
+)
+target_compile_definitions(nanosig PUBLIC ${NANOSIG_PLATFORM_HEADER_DEFINE})
+
 if(NANOSIG_PLATFORM STREQUAL "freertos")
-    # PUBLIC: consumers (contract tests / app) must select the same platform
-    # branch and see the same waitable layout as the library. The backend
-    # constants are PUBLIC too so the contract tests can assert against the
-    # same configured capacity/stack/priority values.
+    # PUBLIC: the backend constants are PUBLIC so the contract tests can assert
+    # against the same configured capacity/stack/priority values.
     target_compile_definitions(nanosig PUBLIC
-        NANOSIG_PLATFORM_FREERTOS=1
         NANOSIG_FREERTOS_WAITSET_CAP=${NANOSIG_FREERTOS_WAITSET_CAP}
         NANOSIG_FREERTOS_THREAD_STACK_WORDS=${NANOSIG_FREERTOS_THREAD_STACK_WORDS}
         NANOSIG_FREERTOS_TASK_PRIORITY=${NANOSIG_FREERTOS_TASK_PRIORITY}
@@ -300,22 +320,12 @@ if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
         test/unit/test_macro_expansion.c
     )
 
-    # 平台契约头按平台宏矩阵各语法检查一遍：bare（host）+ Windows + Zephyr +
-    # FreeRTOS。同一 TU 在不同 NANOSIG_PLATFORM_* 下都必须能编过，从而在 host 上
-    # 覆盖 FreeRTOS/Zephyr/Windows 的宏分支（编译期契约），不依赖目标工具链。
-    set(_nanosig_platform_contract_src test/unit/test_platform_contract_compile.c)
-
+    # 平台契约头语法检查。跨平台的类型正确性由各平台 CI 的真实编译覆盖
+    # （Windows / FreeRTOS / Zephyr 各自的工具链），host 上不再伪造
+    # NANOSIG_PLATFORM_* 分支——平台类型现在来自平台后端头，host 上无法提供
+    # 其它平台的 SDK 类型。
     nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        ${_nanosig_platform_contract_src}
-    )
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_windows
-        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_WINDOWS=1
-    )
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_zephyr
-        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_ZEPHYR=1
-    )
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract_freertos
-        ${_nanosig_platform_contract_src} DEFINES -DNANOSIG_PLATFORM_FREERTOS=1
+        test/unit/test_platform_contract_compile.c
     )
 
     nanosig_add_api_compile_check(nanosig_api_check_broker_contract
@@ -338,9 +348,6 @@ if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
         DEPENDS
             nanosig_api_check_macro_matrix
             nanosig_api_check_platform_contract
-            nanosig_api_check_platform_contract_windows
-            nanosig_api_check_platform_contract_zephyr
-            nanosig_api_check_platform_contract_freertos
             nanosig_api_check_broker_contract
             nanosig_api_check_data_structures
             nanosig_api_check_types
@@ -352,8 +359,10 @@ endif()
 # NANOSIG_PLATFORM=freertos 下存在（AC：api-compile-checks 覆盖 FreeRTOS 分支）。
 # POSIX harness 与真实目标都只对公共头做 -fsyntax-only，不链接。
 if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "freertos")
+    # 平台后端头 include FreeRTOS SDK，故语法检查必须带上 SDK include 目录。
     nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        test/unit/test_platform_contract_compile.c DEFINES -DNANOSIG_PLATFORM_FREERTOS=1
+        test/unit/test_platform_contract_compile.c
+        INCLUDE_DIRS ${NANOSIG_FREERTOS_INCLUDE_DIRS}
     )
 
     add_custom_target(api-compile-checks

@@ -28,8 +28,8 @@ static void test_yield(void)
 #endif
 }
 
-/* RAW_TO_HANDLE delegates to NS_WAITABLE_GET in nanosig_port.h; no platform branching needed. */
-#define RAW_TO_HANDLE(raw) NS_WAITABLE_GET(&(raw))
+/* RAW_TO_HANDLE 直接读取 waitable 的平台句柄；句柄是平台头里的标量别名，无需分支。 */
+#define RAW_TO_HANDLE(raw) ((raw).primitive)
 
 /* ------------------------------------------------------------------ */
 /*  Basic handler: drains the source and records triggered_events       */
@@ -51,7 +51,7 @@ static void counting_handler(ns_watcher_t *w, uint32_t triggered_events)
     {
         uint64_t dummy;
         ssize_t n;
-        do { n = read(h.fd, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR);
+        do { n = read(h, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR);
         (void)n;
     }
 #else
@@ -88,7 +88,7 @@ static int test_handler_basic(void)
     {
         ns_waitable_handle_t h = ns_watcher_handle(&watcher);
 #if !defined(_WIN32)
-        EXPECT_OK(h.fd == raw.primitive.fd);
+        EXPECT_OK(h == raw.primitive);
 #endif
         (void)h;
     }
@@ -143,7 +143,7 @@ static void drain_handler(ns_watcher_t *w, uint32_t triggered_events)
     {
         uint64_t dummy;
         ssize_t n;
-        do { n = read(h.fd, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR);
+        do { n = read(h, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR);
         (void)n;
     }
 #else
@@ -293,7 +293,7 @@ static void pipe_handler(ns_watcher_t *w, uint32_t triggered_events)
 
     (void)triggered_events;
     do {
-        n = read(h.fd, g_pipe_ctx->buf, sizeof(g_pipe_ctx->buf));
+        n = read(h, g_pipe_ctx->buf, sizeof(g_pipe_ctx->buf));
     } while(n < 0 && errno == EINTR);
 
     if(n > 0) g_pipe_ctx->bytes_read = (size_t)n;
@@ -322,10 +322,10 @@ static int test_handler_pipe_level_triggered(void)
 
     EXPECT_OK(ns_init() == NS_OK);
 
-    raw.primitive.fd = pipefd[0];
+    raw.primitive = pipefd[0];
     raw.events = NS_WAITABLE_EVENT_IN;
 
-    { ns_waitable_handle_t h = {.fd = pipefd[0]};
+    { ns_waitable_handle_t h = pipefd[0];
       rc = ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, pipe_handler); }
     if(rc != NS_OK) goto fail;
     watcher_ok = 1;
@@ -386,9 +386,9 @@ static int test_watcher_handle_null(void)
 
     h = ns_watcher_handle(NULL);
 #if defined(_WIN32)
-    EXPECT_OK(h.handle == INVALID_HANDLE_VALUE);
+    EXPECT_OK(h == INVALID_HANDLE_VALUE);
 #else
-    EXPECT_OK(h.fd == -1);
+    EXPECT_OK(h == -1);
 #endif
 
     EXPECT_OK(ns_init() == NS_OK);
@@ -401,9 +401,9 @@ static int test_watcher_handle_null(void)
 
         h = ns_watcher_handle(&watcher);
 #if defined(_WIN32)
-        EXPECT_OK(h.handle == raw.primitive.handle);
+        EXPECT_OK(h == raw.primitive);
 #else
-        EXPECT_OK(h.fd == raw.primitive.fd);
+        EXPECT_OK(h == raw.primitive);
 #endif
 
         EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);

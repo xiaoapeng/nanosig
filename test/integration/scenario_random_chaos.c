@@ -103,7 +103,7 @@ static int scenario_random_chaos(void)
 
     g_rc_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_rc_raw));
-    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rc_raw); EXPECT_OK(ns_watcher_init(&g_rc_watcher, h, NS_WAITABLE_EVENT_IN, 1, rc_watcher_handler) == NS_OK); }
+    { ns_waitable_handle_t h = (g_rc_raw.primitive); EXPECT_OK(ns_watcher_init(&g_rc_watcher, h, NS_WAITABLE_EVENT_IN, 1, rc_watcher_handler) == NS_OK); }
     EXPECT_OK(ns_broker_add(&g_rc_watcher) == NS_OK);
 
     INTEGRATION_PHASE("random_chaos: running 3s chaos");

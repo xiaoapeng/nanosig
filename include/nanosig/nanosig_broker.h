@@ -140,10 +140,12 @@ extern int ns_broker_remove(ns_watcher_t *watcher);
  * @brief 获取 watcher 的平台句柄。
  *
  * 供 `handler` 内部使用，从 watcher 中取出平台句柄进行 I/O 操作。
- * 返回值为 `ns_waitable_handle_t` 联合体，调用方根据当前平台访问对应成员。
+ * 返回的就是平台原语句柄本身（`ns_waitable_handle_t` 是当前平台原语的透明别名，
+ * 由构建系统注入的平台头提供，不再是联合体）。
  *
  * @param watcher 已初始化的 watcher。
- * @return 平台句柄联合体；watcher 为 NULL 时返回全 1 无效哨兵。
+ * @return 平台原语句柄；watcher 为 NULL 时返回全 1 哨兵，经
+ *         `ns_waitable_handle_is_valid` 判定为无效。
  */
 extern ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher);
 

@@ -58,10 +58,10 @@ static void test_broker_roundtrip(void)
     CHECK(ns_init() == NS_OK);
 
     CHECK(ns_platform_event_init(&ev, "broker-ev") == NS_OK);
-    g_broker_sem = (SemaphoreHandle_t)ev.waitable.primitive.handle;
+    g_broker_sem = (SemaphoreHandle_t)ev.waitable.primitive;
     g_consumed = 0;
 
-    h = NS_WAITABLE_GET(&ev.waitable);
+    h = (ev.waitable.primitive);
     CHECK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, broker_handler) == NS_OK);
     CHECK(ns_broker_add(&watcher) == NS_OK);
 

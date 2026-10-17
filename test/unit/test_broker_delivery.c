@@ -75,7 +75,7 @@ static int test_handler_emit_reaches_loop(void)
     EXPECT_OK(ns_signal_connect_typed(g_ctx.wakeup, delivery_slot, ns_no_payload_t,
                                       g_ctx.loop, &g_ctx, &slot_conn) == NS_OK);
 
-    EXPECT_OK(ns_watcher_init(&g_ctx.watcher, NS_WAITABLE_GET(&g_ctx.ev.waitable),
+    EXPECT_OK(ns_watcher_init(&g_ctx.watcher, (g_ctx.ev.waitable.primitive),
                               NS_WAITABLE_EVENT_IN, 1, delivery_handler) == NS_OK);
     EXPECT_OK(ns_broker_add(&g_ctx.watcher) == NS_OK);
 

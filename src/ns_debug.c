@@ -23,19 +23,25 @@ static int dbg_level = NS_DBG_DEBUG;
 static int dbg_level = NS_CONFIG_DEFAULT_DEBUG_LEVEL;
 #endif
 
-static ns_platform_mutex_t *ns_dbg_mutex = NULL;
+static ns_platform_mutex_t ns_dbg_mutex;
+static int ns_dbg_mutex_ready = 0;
 
 int ns_debug_init(void)
 {
-    if (ns_dbg_mutex != NULL) return NS_E_EXISTS;
-    return ns_platform_mutex_create(&ns_dbg_mutex, "nanosig-debug");
+    int rc;
+
+    if (ns_dbg_mutex_ready) return NS_E_EXISTS;
+
+    rc = ns_platform_mutex_init(&ns_dbg_mutex, "nanosig-debug");
+    if (rc == NS_OK) ns_dbg_mutex_ready = 1;
+    return rc;
 }
 
 void ns_debug_shutdown(void)
 {
-    if (ns_dbg_mutex != NULL) {
-        (void)ns_platform_mutex_destroy(ns_dbg_mutex);
-        ns_dbg_mutex = NULL;
+    if (ns_dbg_mutex_ready) {
+        (void)ns_platform_mutex_deinit(&ns_dbg_mutex);
+        ns_dbg_mutex_ready = 0;
     }
 }
 
@@ -89,13 +95,13 @@ int ns_dbg_raw(int level,
 
     if (level > dbg_level)
         return 0;
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_lock(ns_dbg_mutex);
+    if (ns_dbg_mutex_ready)
+        (void)ns_platform_mutex_lock(&ns_dbg_mutex);
     va_start(args, fmt);
     n = ns_dbg_vprintf(level, flags, fmt, args);
     va_end(args);
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
+    if (ns_dbg_mutex_ready)
+        (void)ns_platform_mutex_unlock(&ns_dbg_mutex);
     return n;
 }
 
@@ -106,11 +112,11 @@ int ns_vdbg_raw(int level,
 
     if (level > dbg_level)
         return 0;
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_lock(ns_dbg_mutex);
+    if (ns_dbg_mutex_ready)
+        (void)ns_platform_mutex_lock(&ns_dbg_mutex);
     n = ns_dbg_vprintf(level, flags, fmt, args);
-    if (ns_dbg_mutex)
-        (void)ns_platform_mutex_unlock(ns_dbg_mutex);
+    if (ns_dbg_mutex_ready)
+        (void)ns_platform_mutex_unlock(&ns_dbg_mutex);
     return n;
 }
 

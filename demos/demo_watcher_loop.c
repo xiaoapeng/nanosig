@@ -26,20 +26,20 @@ typedef struct loop_ctx {
     ns_watcher_t watcher;
     ns_signal_t wakeup;
     ns_loop_t *loop;
-    ns_platform_wakeup_t *sleep_wakeup;
+    ns_platform_wakeup_t sleep_wakeup;
     atomic_int delivered;
     atomic_int stop;
 } loop_ctx_t;
 
 static loop_ctx_t g_loop_ctx;
-static ns_platform_thread_t *g_producer;
+static ns_platform_thread_t g_producer;
 
 /* 借用 wakeup 的超时能力实现可移植睡眠，避免在 demos/ 内写 OS 分支。 */
 static void producer_sleep(ns_platform_time_us_t us)
 {
     ns_platform_wait_result_t result;
 
-    (void)ns_platform_wakeup_wait(g_loop_ctx.sleep_wakeup, us, &result);
+    (void)ns_platform_wakeup_wait(&g_loop_ctx.sleep_wakeup, us, &result);
 }
 
 static void wakeup_handler(ns_watcher_t *watcher, uint32_t triggered_events)
@@ -87,7 +87,7 @@ int main(void)
     ns_atomic_init(&g_loop_ctx.delivered, 0);
     ns_atomic_init(&g_loop_ctx.stop, 0);
 
-    rc = ns_platform_wakeup_create(&g_loop_ctx.sleep_wakeup, "loop-sleep");
+    rc = ns_platform_wakeup_init(&g_loop_ctx.sleep_wakeup, "loop-sleep");
     if(rc != NS_OK) goto out_shutdown;
 
     rc = ns_signal_init(&g_loop_ctx.wakeup, ns_no_payload_t);
@@ -105,14 +105,14 @@ int main(void)
     rc = ns_platform_event_init(&g_loop_ctx.ev, "loop-ev");
     if(rc != NS_OK) goto out_wakeup_conn;
 
-    rc = ns_watcher_init(&g_loop_ctx.watcher, NS_WAITABLE_GET(&g_loop_ctx.ev.waitable),
+    rc = ns_watcher_init(&g_loop_ctx.watcher, g_loop_ctx.ev.waitable.primitive,
                          NS_WAITABLE_EVENT_IN, 1, wakeup_handler);
     if(rc != NS_OK) goto out_event;
 
     rc = ns_broker_add(&g_loop_ctx.watcher);
     if(rc != NS_OK) goto out_watcher;
 
-    rc = ns_platform_thread_create(&g_producer, producer_entry, &g_loop_ctx, "producer");
+    rc = ns_platform_thread_init(&g_producer, producer_entry, &g_loop_ctx, "producer");
     if(rc != NS_OK) goto out_broker;
 
     /* loop 线程分发 handler emit 的自建 signal，直到 slot 达阈值 quit。 */
@@ -123,7 +123,7 @@ int main(void)
         rc = NS_E_TIMEOUT;
     }
 
-    (void)ns_platform_thread_join(g_producer);
+    (void)ns_platform_thread_join(&g_producer);
 out_broker:
     (void)ns_broker_remove(&g_loop_ctx.watcher);
 out_watcher:
@@ -137,7 +137,7 @@ out_loop:
 out_wakeup_signal:
     (void)ns_signal_deinit(&g_loop_ctx.wakeup);
 out_sleep_wakeup:
-    (void)ns_platform_wakeup_destroy(g_loop_ctx.sleep_wakeup);
+    (void)ns_platform_wakeup_deinit(&g_loop_ctx.sleep_wakeup);
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

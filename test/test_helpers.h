@@ -152,11 +152,11 @@ static NS_TEST_MAYBE_UNUSED ns_platform_waitable_t test_create_raw_waitable(void
 
     ns_waitable_init(&w);
 #ifdef _WIN32
-    w.primitive.handle = CreateEventA(NULL, FALSE, FALSE, NULL);
+    w.primitive = CreateEventA(NULL, FALSE, FALSE, NULL);
 #elif defined(__APPLE__)
-    w.primitive.fd = test_create_macos_raw_pipe();
+    w.primitive = test_create_macos_raw_pipe();
 #else
-    w.primitive.fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
+    w.primitive = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
 #endif
     w.events = NS_WAITABLE_EVENT_IN;
     return w;
@@ -165,26 +165,26 @@ static NS_TEST_MAYBE_UNUSED ns_platform_waitable_t test_create_raw_waitable(void
 static NS_TEST_MAYBE_UNUSED void test_destroy_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32
-    if(w.primitive.handle != NULL) CloseHandle((HANDLE)w.primitive.handle);
+    if(w.primitive != NULL) CloseHandle((HANDLE)w.primitive);
 #elif defined(__APPLE__)
-    if(w.primitive.fd >= 0){
-        int write_fd = test_macos_raw_registry_take_write_fd(w.primitive.fd);
+    if(w.primitive >= 0){
+        int write_fd = test_macos_raw_registry_take_write_fd(w.primitive);
 
-        (void)close(w.primitive.fd);
+        (void)close(w.primitive);
         if(write_fd >= 0) (void)close(write_fd);
     }
 #else
-    if(w.primitive.fd >= 0) close(w.primitive.fd);
+    if(w.primitive >= 0) close(w.primitive);
 #endif
 }
 
 static NS_TEST_MAYBE_UNUSED void test_signal_raw_waitable(ns_platform_waitable_t w)
 {
 #ifdef _WIN32
-    (void)SetEvent((HANDLE)w.primitive.handle);
+    (void)SetEvent((HANDLE)w.primitive);
 #elif defined(__APPLE__)
     {
-        int write_fd = test_macos_raw_registry_write_fd(w.primitive.fd);
+        int write_fd = test_macos_raw_registry_write_fd(w.primitive);
         uint64_t val = 1u;
         ssize_t n;
 
@@ -200,7 +200,7 @@ static NS_TEST_MAYBE_UNUSED void test_signal_raw_waitable(ns_platform_waitable_t
         ssize_t n;
 
         do {
-            n = write(w.primitive.fd, &val, sizeof(val));
+            n = write(w.primitive, &val, sizeof(val));
         } while(n < 0 && errno == EINTR);
         (void)n;
     }
@@ -213,11 +213,7 @@ static NS_TEST_MAYBE_UNUSED void test_signal_raw_waitable(ns_platform_waitable_t
  */
 static inline int test_raw_waitable_is_valid(ns_platform_waitable_t w)
 {
-#if defined(_WIN32)
-    return w.primitive.handle != NULL;
-#else
-    return w.primitive.fd >= 0;
-#endif
+    return ns_waitable_handle_is_valid(w.primitive);
 }
 
 #endif /* NANOSIG_TEST_HELPERS_H */

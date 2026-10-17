@@ -24,19 +24,9 @@
 #define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
 #include <nanosig/ns_debug.h>
 
-struct ns_platform_wakeup {
-    int kq;
-};
-
-struct ns_platform_mutex {
-    pthread_mutex_t mutex;
-};
-
-struct ns_platform_thread {
-    pthread_t thread;
-    ns_platform_thread_fn entry;
-    void *arg;
-};
+/* 平台类型（ns_platform_wakeup_t / mutex / thread / waitset）由构建内头
+   platform/macos/nanosig_platform_port.h 提供，均为 macOS 原语的透明别名，
+   存储归调用方所有。 */
 
 /* 宿主后端 ABI 探针符号；FreeRTOS 后端导出对称的 ns_platform_abi_freertos。 */
 const int ns_platform_abi_host = 0;
@@ -138,45 +128,33 @@ NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, si
     (void)fwrite(buf, 1, size, stdout);
 }
 
-int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
+int ns_platform_wakeup_init(ns_platform_wakeup_t *wakeup, const char *debug_name)
 {
-    ns_platform_wakeup_t *wakeup;
-
     (void)debug_name;
-
-    if(out_wakeup == NULL) return NS_E_INVAL;
-
-    *out_wakeup = NULL;
-    wakeup = (ns_platform_wakeup_t *)ns_platform_alloc(sizeof(*wakeup));
-    if(wakeup == NULL) return NS_E_NOMEM;
-
-    wakeup->kq = ns_macos_user_event_create();
-    if(wakeup->kq < 0){
-        ns_merrln(PLATFORM, "user_event_create (kqueue) failed");
-        ns_platform_free(wakeup);
-        return NS_E_NOMEM;
-    }
-
-    *out_wakeup = wakeup;
-    return NS_OK;
-}
-
-int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
-{
-    int rc;
 
     if(wakeup == NULL) return NS_E_INVAL;
 
-    rc = ns_macos_close_fd(wakeup->kq);
-    ns_platform_free(wakeup);
-    return rc;
+    (*wakeup) = ns_macos_user_event_create();
+    if((*wakeup) < 0){
+        ns_merrln(PLATFORM, "user_event_create (kqueue) failed");
+        return NS_E_NOMEM;
+    }
+
+    return NS_OK;
+}
+
+int ns_platform_wakeup_deinit(ns_platform_wakeup_t *wakeup)
+{
+    if(wakeup == NULL) return NS_E_INVAL;
+
+    return ns_macos_close_fd((*wakeup));
 }
 
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
 {
     if(wakeup == NULL) return NS_E_INVAL;
 
-    return ns_macos_user_event_signal(wakeup->kq);
+    return ns_macos_user_event_signal((*wakeup));
 }
 
 int ns_platform_wakeup_wait(
@@ -198,7 +176,7 @@ int ns_platform_wakeup_wait(
     }
 
     for(;;){
-        rc = kevent(wakeup->kq, NULL, 0, &event, 1, timeout_ptr);
+        rc = kevent((*wakeup), NULL, 0, &event, 1, timeout_ptr);
         if(rc > 0){
             /* Acquire fence：保证 signal 侧 release 之前的所有写（如 req->rc）
              * 在本线程读取前可见。与 Linux poll / Windows WaitForSingleObject 对齐。 */
@@ -231,7 +209,7 @@ static int ns_macos_event_drain(ns_platform_event_t *event)
     char buf[256];
 
     for(;;){
-        ssize_t rc = read(event->waitable.primitive.fd, buf, sizeof(buf));
+        ssize_t rc = read(event->waitable.primitive, buf, sizeof(buf));
         if(rc > 0) continue;
         if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
@@ -249,7 +227,7 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
     if(event == NULL) return NS_E_INVAL;
 
     ns_waitable_init(&event->waitable);
-    event->signal_handle.fd = -1;
+    event->signal_handle = -1;
 
     if(pipe(fds) < 0){
         ns_merrln(PLATFORM, "pipe failed: %s", strerror(errno));
@@ -263,8 +241,8 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
         return NS_E_NOMEM;
     }
 
-    event->waitable.primitive.fd = fds[0];
-    event->signal_handle.fd = fds[1];
+    event->waitable.primitive = fds[0];
+    event->signal_handle = fds[1];
     return NS_OK;
 }
 
@@ -275,7 +253,7 @@ int ns_platform_event_signal(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
 
     for(;;){
-        ssize_t rc = write(event->signal_handle.fd, &byte, sizeof(byte));
+        ssize_t rc = write(event->signal_handle, &byte, sizeof(byte));
         if(rc == (ssize_t)sizeof(byte)) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
         if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK; /* pipe 满 = 已 signaled */
@@ -298,54 +276,40 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
 
-    rc_r = (event->waitable.primitive.fd >= 0)
-        ? ns_macos_close_fd(event->waitable.primitive.fd) : NS_OK;
-    rc_w = (event->signal_handle.fd >= 0)
-        ? ns_macos_close_fd(event->signal_handle.fd) : NS_OK;
+    rc_r = (event->waitable.primitive >= 0)
+        ? ns_macos_close_fd(event->waitable.primitive) : NS_OK;
+    rc_w = (event->signal_handle >= 0)
+        ? ns_macos_close_fd(event->signal_handle) : NS_OK;
 
-    event->waitable.primitive.fd = -1;
-    event->signal_handle.fd = -1;
+    event->waitable.primitive = -1;
+    event->signal_handle = -1;
     return ((rc_r == NS_OK) && (rc_w == NS_OK)) ? NS_OK : NS_E_INVAL;
 }
 
-int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
+int ns_platform_mutex_init(ns_platform_mutex_t *mutex, const char *debug_name)
 {
-    ns_platform_mutex_t *mutex;
-
     (void)debug_name;
 
-    if(out_mutex == NULL) return NS_E_INVAL;
+    if(mutex == NULL) return NS_E_INVAL;
 
-    *out_mutex = NULL;
-    mutex = (ns_platform_mutex_t *)ns_platform_alloc(sizeof(*mutex));
-    if(mutex == NULL) return NS_E_NOMEM;
-
-    if(pthread_mutex_init(&mutex->mutex, NULL) != 0){
-        ns_platform_free(mutex);
+    if(pthread_mutex_init(mutex, NULL) != 0){
         return NS_E_NOMEM;
     }
 
-    *out_mutex = mutex;
     return NS_OK;
 }
 
-int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
+int ns_platform_mutex_deinit(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    if(pthread_mutex_destroy(&mutex->mutex) != 0){
-        ns_platform_free(mutex);
-        return NS_E_INVAL;
-    }
-
-    ns_platform_free(mutex);
-    return NS_OK;
+    return (pthread_mutex_destroy(mutex) == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    int rc = pthread_mutex_lock(&mutex->mutex);
+    int rc = pthread_mutex_lock(mutex);
     if(rc != 0){
         ns_merrln(PLATFORM, "pthread_mutex_lock failed: %d", rc);
     }
@@ -355,7 +319,7 @@ int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    int rc = pthread_mutex_unlock(&mutex->mutex);
+    int rc = pthread_mutex_unlock(mutex);
     if(rc != 0){
         ns_merrln(PLATFORM, "pthread_mutex_unlock failed: %d", rc);
     }
@@ -381,32 +345,25 @@ static void *ns_macos_thread_main(void *arg)
     return NULL;
 }
 
-int ns_platform_thread_create(
-    ns_platform_thread_t **out_thread,
+int ns_platform_thread_init(
+    ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
     const char *debug_name)
 {
-    ns_platform_thread_t *thread;
     int rc;
 
     (void)debug_name;
 
-    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
-
-    *out_thread = NULL;
-    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
-    if(thread == NULL) return NS_E_NOMEM;
+    if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
     thread->entry = entry;
     thread->arg = arg;
     rc = pthread_create(&thread->thread, NULL, ns_macos_thread_main, thread);
     if(rc != 0){
-        ns_platform_free(thread);
         return (rc == EAGAIN) ? NS_E_NOMEM : NS_E_INVAL;
     }
 
-    *out_thread = thread;
     return NS_OK;
 }
 
@@ -417,7 +374,6 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
     if(thread == NULL) return NS_E_INVAL;
 
     rc = pthread_join(thread->thread, NULL);
-    ns_platform_free(thread);
     return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
@@ -427,53 +383,37 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 
 #define NS_MACOS_WAITSET_MAX_ENTRIES 64u
 
-struct ns_platform_waitset {
-    int kq;
-    size_t count;
-};
+/* 结构体定义见 platform/macos/nanosig_platform_port.h。 */
 
-int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
+int ns_platform_waitset_init(ns_platform_waitset_t *waitset)
 {
-    ns_platform_waitset_t *ws;
+    if(waitset == NULL) return NS_E_INVAL;
 
-    if(out_waitset == NULL) return NS_E_INVAL;
-
-    *out_waitset = NULL;
-    ws = (ns_platform_waitset_t *)ns_platform_alloc(sizeof(*ws));
-    if(ws == NULL) return NS_E_NOMEM;
-
-    ws->kq = kqueue();
-    if(ws->kq < 0){
-        ns_platform_free(ws);
+    waitset->kq = kqueue();
+    if(waitset->kq < 0){
         return NS_E_NOMEM;
     }
 
-    if(ns_macos_set_cloexec(ws->kq) != NS_OK){
-        (void)ns_macos_close_fd(ws->kq);
-        ns_platform_free(ws);
+    if(ns_macos_set_cloexec(waitset->kq) != NS_OK){
+        (void)ns_macos_close_fd(waitset->kq);
         return NS_E_NOMEM;
     }
 
-    ws->count = 0u;
-    *out_waitset = ws;
+    waitset->count = 0u;
     return NS_OK;
 }
 
-int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
+int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset)
 {
-    int rc;
-
     if(waitset == NULL) return NS_E_INVAL;
     if(waitset->count != 0u) return NS_E_EXISTS;
 
-    rc = ns_macos_close_fd(waitset->kq);
-    ns_platform_free(waitset);
-    return rc;
+    return ns_macos_close_fd(waitset->kq);
 }
 
 static int ns_macos_waitable_fd_is_invalid(const ns_platform_waitable_t *waitable)
 {
-    return (waitable == NULL) || (waitable->primitive.fd < 0);
+    return (waitable == NULL) || (waitable->primitive < 0);
 }
 
 static size_t ns_macos_waitset_make_changes(
@@ -541,7 +481,7 @@ int ns_platform_waitset_add(
 
     change_count = ns_macos_waitset_make_changes(
         changes,
-        waitable->primitive.fd,
+        waitable->primitive,
         waitable->events,
         waitable->edge_triggered,
         EV_ADD | EV_ENABLE);
@@ -567,7 +507,7 @@ int ns_platform_waitset_remove(
 
     change_count = ns_macos_waitset_make_changes(
         changes,
-        waitable->primitive.fd,
+        waitable->primitive,
         waitable->events,
         0,
         EV_DELETE);

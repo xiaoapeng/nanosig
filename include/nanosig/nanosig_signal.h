@@ -13,6 +13,7 @@
 
 #include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_loop.h>
+#include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig_safety.h>
 #include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
@@ -22,18 +23,12 @@ extern "C" {
 #endif
 
 /**
- * @brief 平台互斥锁句柄（前向声明）。
- *
- * 由 `ns_signal_init_raw` 创建并嵌入 `ns_signal_t`，用于保护 `slot_list`。
- */
-typedef struct ns_platform_mutex ns_platform_mutex_t;
-
-/**
  * @brief 可静态存储的 signal 对象。
  *
  * `payload_size` 固定每次 emit 复制的字节数；0 表示该 signal 无 payload。
  * `slot_list` 是 signal 拥有的连接链表头，调用方不得直接修改。
- * `mutex` 保护 `slot_list` 的并发访问；由 `ns_signal_init_raw` 创建。
+ * `mutex` 保护 `slot_list` 的并发访问，按值内嵌；`mutex_initialized` 由
+ * `ns_signal_init_raw` / `ns_signal_deinit_raw` 维护，表示锁当前可用。
  * 对象可使用静态存储期或嵌入其他结构体，但使用前必须调用
  * `ns_signal_init_raw` 或 `ns_signal_init` 初始化。
  */
@@ -46,8 +41,10 @@ typedef struct ns_signal {
     const char *debug_name;
     /** slot 连接链表头，调用方不得直接修改。 */
     ns_list_node_t slot_list;
-    /** slot_list 保护锁；`NULL` 表示未初始化或已释放，不是可用状态。 */
-    ns_platform_mutex_t *mutex;
+    /** slot_list 保护锁，按值内嵌；由 `ns_signal_init_raw` 初始化。 */
+    ns_platform_mutex_t mutex;
+    /** `mutex` 是否已初始化（0 = 未初始化/已释放）。 */
+    int mutex_initialized;
 } ns_signal_t;
 
 /**

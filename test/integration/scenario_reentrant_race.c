@@ -100,7 +100,7 @@ static int scenario_reentrant_race(void)
     for(i = 0u; i < RR_NUM_WATCHERS; i++){
         g_rr_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_rr_raw[i]));
-        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_rr_raw[i]); EXPECT_OK(ns_watcher_init(&g_rr_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, rr_watcher_handler) == NS_OK); }
+        { ns_waitable_handle_t h = (g_rr_raw[i].primitive); EXPECT_OK(ns_watcher_init(&g_rr_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, rr_watcher_handler) == NS_OK); }
         EXPECT_OK(ns_broker_add(&g_rr_watchers[i]) == NS_OK);
     }
 

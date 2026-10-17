@@ -71,7 +71,7 @@ static int scenario_watchdog(void)
     for(i = 0u; i < WATCHDOG_NUM_WATCHERS; i++){
         g_wd_raw[i] = test_create_raw_waitable();
         EXPECT_OK(test_raw_waitable_is_valid(g_wd_raw[i]));
-        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_wd_raw[i]);
+        { ns_waitable_handle_t h = (g_wd_raw[i].primitive);
           g_wd_watchers[i].index = i;
           EXPECT_OK(ns_watcher_init(&g_wd_watchers[i].watcher, h, NS_WAITABLE_EVENT_IN, 1, wd_watcher_handler) == NS_OK); }
         EXPECT_OK(ns_broker_add(&g_wd_watchers[i].watcher) == NS_OK);
