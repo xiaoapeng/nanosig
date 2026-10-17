@@ -77,7 +77,7 @@
   - 经决策**不设机械化负向探针**：符号消失由 **code review + 一次性 V2 grep 验证**保证。理由：重新引入已删除的公共符号是需要主动为之、且必然经过公共头 review 的动作，不属于手滑型失误；`include/nanosig/` 的单一权威头文件正是 review 的天然检查点。
   - 由此**不新增** ctest-only compile probe helper、**不新增**负向/正向对照 TU、**不触碰** `api-compile-checks` 聚合目标。
   - 明确**放弃**对 `ns_watcher_t.signal` 的机械钉死：文本匹配无法把它与合法的 `ns_timer_t.signal` 区分开，该字段删除同样交由 review 保证。
-- **D10 timer 保持原样 + 措辞收紧**：不改 `ns_timer_t` 与 `src/ns_timer.c`；正文必须写「broker 线程仍会为 **timer** emit signal，只是不再为 watcher emit」，**不写**"broker signal-free"。**docs/proposals/* 为历史草案，保持原文不改**；其 §3.3 措辞由本计划 D10 取代（不做回改）。
+- **D10 timer 保持原样 + 措辞收紧**：不改 `ns_timer_t` 与 `src/ns_timer.c`；正文必须写「broker 线程仍会为 **timer** emit signal，只是不再为 watcher emit」，**不写**"broker signal-free"。**docs/proposals/* 为历史草案，正文保持原文不改**；其 §3.3 措辞由本计划 D10 取代（不做回改）；仅头部「状态」行按 `docs/proposals/README.md` 的记录规则补记裁决结果与日期（v6 修订）。
 - **D11 治理文档同步（修正行号 + 范围）**：需修订
   - docs/BROKER_DESIGN.md:9,47,67-85,190-193,229-232,408,425,438,461-463（结构体/主循环/API/依赖/示例）
   - docs/ARCHITECTURE.md:111,136,141,150-152,209（:**243 是头文件索引行，无需改**）
@@ -99,7 +99,7 @@
 - [x] **AC-8** `ns_watcher_t` 无 `signal` 字段（结构断言）
 - [x] **AC-9（已修订：取消机械探针）** 符号消失由 code review + V2 一次性 grep 保证（D9 修订）：`ns_watcher_event_t`/`ns_watcher_set_consume_handle`/`ns_watcher_consume_fn`/`pending_consume_handle` 在 `src`/`include`/`test`/`demos` 中 0 命中（`docs/` 设计文档除外）。
 - [x] **AC-10** 全部现有 broker 单测/集成测（含 D8 逐文件清单）在改名后全绿
-- [ ] **AC-11** 门禁：ci.yml 全部必需检查（矩阵展开：linux asan/ubsan/release、macos asan/ubsan/release、windows、zephyr、freertos ubuntu/macos）全绿 + 手动 nightly（TSAN）通过，`gh pr merge --rebase`
+- [x] **AC-11** 门禁达成：ci.yml 全部必需检查（矩阵展开：linux asan/ubsan/release、macos asan/ubsan/release、windows、zephyr、freertos ubuntu/macos）全绿（run 39012514595）+ 手动 nightly（TSAN）通过（run 39012532377），以 `gh pr merge --rebase` 合并为 f165902（PR #10）。
 - [x] **AC-12** 治理文档同步（D11）：BROKER_DESIGN / ARCHITECTURE / 共识计划 watcher+broker 段与实现一致，且改后正文无"broker signal-free"表述
 
 ## Implementation Steps
@@ -212,6 +212,12 @@
 - 影响：删除 `test/unit/test_broker_removed_symbols_negative.c` 与 `test/unit/test_broker_contract_positive.c`；回退 cmake/ApiCompileChecks.cmake 新增的 `_nanosig_add_compile_probe` helper；移除 CMakeLists.txt 的两处探针注册；D9 重写、AC-9 修订、H9 作废、V2 去掉 ctest 断言、ADR consequences 同步。ctest 用例数 57 → 55。
 - 明确放弃：`ns_watcher_t.signal` 的机械钉死（文本匹配会误伤合法的 `ns_timer_t.signal`），同样交由 review。
 - 保留不动：平台 ABI 链接探针（`NS_PLATFORM_ABI_PROBE`）与本次无关，仍由 harness TU 引用，用于检出后端宏跨 TU 错配。
+
+## Changelog (v5 → v6：门禁闭环与提案头部裁决记录)
+
+- AC-11 达成并勾选：ci.yml 必需检查全绿（run 39012514595）+ 手动 nightly TSAN 通过（run 39012532377），经 `gh pr merge --rebase` 合并为 f165902（PR #10，单提交，分支已删）。
+- 期间修复一处**测试自身**的发布顺序缺陷：`test/unit/test_broker_handler.c` 的 handler 先 `call_count++` 再写 `last_events`，而测试以计数为就绪条件，TSAN 时序下可读到尚未落地的 payload。改为先发布 payload 再发布计数（与 `test_broker_event.c` 既有正确写法一致）；host 上该用例复跑 300 次无失败。
+- 提案头部裁决记录：`docs/proposals/ns_watcher回调化提案.md` 状态行由「提案（未批准实施，代码未改动）」改为「已批准并落地」，正文保持原文；D10 的「保持原文不改」据此收窄为「正文不改 + 仅头部状态行记录裁决」。`docs/proposals/README.md` 的记录规则同步覆盖「批准落地」情形。
 
 ## Changelog (v1 → v2)
 

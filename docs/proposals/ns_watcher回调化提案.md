@@ -1,6 +1,6 @@
 # 提案：ns_watcher 回调化
 
-- 状态: **提案**（待作者评审；未批准实施，代码未改动）
+- 状态: **已批准并落地**（2026-10-17 合并为 f165902，PR #10；实施记录见 docs/plans/子计划-ns_watcher回调化.md；本文件正文保持提案原文）
 - 提出日期: 2026-10-16
 - 来源: 与作者的设计脑暴
 - 影响面: 公共 API（`include/nanosig/nanosig_broker.h`）、`src/ns_broker.c`、broker 相关测试、设计文档、review 契约条目
