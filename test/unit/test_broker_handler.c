@@ -289,14 +289,20 @@ static pipe_handler_ctx_t *g_pipe_ctx;
 static void pipe_handler(ns_watcher_t *w, uint32_t triggered_events)
 {
     ns_waitable_handle_t h = ns_watcher_handle(w);
-    ssize_t n;
 
     (void)triggered_events;
-    do {
-        n = read(h, g_pipe_ctx->buf, sizeof(g_pipe_ctx->buf));
-    } while(n < 0 && errno == EINTR);
+#if !defined(_WIN32)
+    {
+        ssize_t n;
+        do {
+            n = read(h, g_pipe_ctx->buf, sizeof(g_pipe_ctx->buf));
+        } while(n < 0 && errno == EINTR);
 
-    if(n > 0) g_pipe_ctx->bytes_read = (size_t)n;
+        if(n > 0) g_pipe_ctx->bytes_read = (size_t)n;
+    }
+#else
+    (void)h;
+#endif
     ns_atomic_store_explicit(&g_pipe_ctx->handler_called, 1, ns_memory_order_release);
 }
 
