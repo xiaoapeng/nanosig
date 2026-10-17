@@ -19,12 +19,13 @@
 #endif
 
 struct ns_loop {
-    ns_platform_wakeup_t *wakeup;
+    ns_platform_wakeup_t wakeup;
     ns_loop_config_t config;
     ns_mpsc_record_ring_t queue;
     atomic_int quit_requested;
     atomic_int running;
-    ns_platform_thread_t *async_thread;
+    ns_platform_thread_t async_thread;
+    int                    async_started;
     int                    async_rc;
 };
 
@@ -44,14 +45,14 @@ typedef struct ns_slot_call {
 
 static int ns_signal_lock(ns_signal_t *signal)
 {
-    if((signal == NULL) || (signal->mutex == NULL)) return NS_E_INVAL;
-    return ns_platform_mutex_lock(signal->mutex);
+    if((signal == NULL) || !signal->mutex_initialized) return NS_E_INVAL;
+    return ns_platform_mutex_lock(&signal->mutex);
 }
 
 static int ns_signal_unlock(ns_signal_t *signal)
 {
-    if((signal == NULL) || (signal->mutex == NULL)) return NS_E_INVAL;
-    return ns_platform_mutex_unlock(signal->mutex);
+    if((signal == NULL) || !signal->mutex_initialized) return NS_E_INVAL;
+    return ns_platform_mutex_unlock(&signal->mutex);
 }
 
 static atomic_int g_ns_initialized = 0;
@@ -139,12 +140,11 @@ int ns_loop_init(ns_loop_t **out_loop, const ns_loop_config_t *config)
     loop = (ns_loop_t *)ns_platform_alloc(total_size);
     if(loop == NULL) return NS_E_NOMEM;
 
-    loop->wakeup = NULL;
     loop->config = local_config;
     ns_atomic_init(&loop->quit_requested, 0);
     ns_atomic_init(&loop->running, 0);
 
-    loop->async_thread = NULL;
+    loop->async_started = 0;
     loop->async_rc = NS_OK;
 
     rc = ns_mpsc_record_ring_init(
@@ -153,7 +153,7 @@ int ns_loop_init(ns_loop_t **out_loop, const ns_loop_config_t *config)
         local_config.queue_byte_capacity);
     if(rc != NS_OK) goto out_free;
 
-    rc = ns_platform_wakeup_create(&loop->wakeup, local_config.debug_name);
+    rc = ns_platform_wakeup_init(&loop->wakeup, local_config.debug_name);
     if(rc != NS_OK) goto out_free;
 
     if(out_loop != NULL) *out_loop = loop;
@@ -169,12 +169,12 @@ int ns_loop_deinit(ns_loop_t *loop)
     int rc;
 
     if(loop == NULL) return NS_E_INVAL;
-    if(loop->async_thread != NULL) return NS_E_BUSY;
+    if(loop->async_started) return NS_E_BUSY;
     if(ns_atomic_load_explicit(&loop->running, ns_memory_order_acquire) != 0) return NS_E_INVAL;
 
-    rc = ns_platform_wakeup_destroy(loop->wakeup);
+    rc = ns_platform_wakeup_deinit(&loop->wakeup);
     if(rc != NS_OK) {
-        ns_merrln(CORE, "wakeup_destroy failed: %d, freeing loop anyway", rc);
+        ns_merrln(CORE, "wakeup_deinit failed: %d, freeing loop anyway", rc);
     }
 
     ns_platform_free(loop);
@@ -219,7 +219,7 @@ static int ns_loop_run_impl(ns_loop_t *loop)
 
         if(ns_atomic_load_explicit(&loop->quit_requested, ns_memory_order_acquire) != 0) break;
 
-        rc = ns_platform_wakeup_wait(loop->wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result);
+        rc = ns_platform_wakeup_wait(&loop->wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result);
         if(rc != NS_OK) goto out;
 
         (void)wait_result;
@@ -247,7 +247,7 @@ int ns_loop_run(ns_loop_t *loop)
 {
     if(loop == NULL) return NS_E_INVAL;
     if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-    if(loop->async_thread != NULL) return NS_E_BUSY;
+    if(loop->async_started) return NS_E_BUSY;
 
     return ns_loop_run_impl(loop);
 }
@@ -258,7 +258,7 @@ int ns_loop_quit(ns_loop_t *loop)
     if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
 
     ns_atomic_store_explicit(&loop->quit_requested, 1, ns_memory_order_release);
-    return ns_platform_wakeup_signal(loop->wakeup);
+    return ns_platform_wakeup_signal(&loop->wakeup);
 }
 
 /* ------------------------------------------------------------------ */
@@ -274,17 +274,23 @@ static void ns_loop_async_entry(void *arg)
 
 int ns_loop_start(ns_loop_t *loop)
 {
+    int rc;
+
     if(loop == NULL) return NS_E_INVAL;
     if(!ns_runtime_is_initialized()) return NS_E_SHUTDOWN;
-    if(loop->async_thread != NULL) return NS_E_BUSY;
+    if(loop->async_started) return NS_E_BUSY;
 
     loop->async_rc = NS_OK;
 
-    return ns_platform_thread_create(
+    rc = ns_platform_thread_init(
         &loop->async_thread,
         ns_loop_async_entry,
         loop,
         loop->config.debug_name ? loop->config.debug_name : "ns-loop");
+    if(rc != NS_OK) return rc;
+
+    loop->async_started = 1;
+    return NS_OK;
 }
 
 int ns_loop_stop(ns_loop_t *loop)
@@ -292,11 +298,11 @@ int ns_loop_stop(ns_loop_t *loop)
     int rc;
 
     if(loop == NULL) return NS_E_INVAL;
-    if(loop->async_thread == NULL) return NS_E_INVAL;
+    if(!loop->async_started) return NS_E_INVAL;
 
     (void)ns_loop_quit(loop);
-    rc = ns_platform_thread_join(loop->async_thread);
-    loop->async_thread = NULL;
+    rc = ns_platform_thread_join(&loop->async_thread);
+    loop->async_started = 0;
 
     return rc != NS_OK ? rc : loop->async_rc;
 }
@@ -315,11 +321,12 @@ int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t slot_cap
     signal->slot_capacity = slot_capacity;
     signal->debug_name = debug_name;
     ns_list_init(&signal->slot_list);
-    signal->mutex = NULL;
+    signal->mutex_initialized = 0;
 
-    rc = ns_platform_mutex_create(&signal->mutex, debug_name ? debug_name : "ns-signal");
+    rc = ns_platform_mutex_init(&signal->mutex, debug_name ? debug_name : "ns-signal");
     if(rc != NS_OK) return rc;
 
+    signal->mutex_initialized = 1;
     return NS_OK;
 }
 
@@ -328,10 +335,10 @@ int ns_signal_deinit_raw(ns_signal_t *signal)
     int rc;
 
     if(signal == NULL) return NS_E_INVAL;
-    if(signal->mutex == NULL) return NS_OK;
+    if(!signal->mutex_initialized) return NS_OK;
 
-    rc = ns_platform_mutex_destroy(signal->mutex);
-    signal->mutex = NULL;
+    rc = ns_platform_mutex_deinit(&signal->mutex);
+    signal->mutex_initialized = 0;
     return rc;
 }
 
@@ -438,7 +445,7 @@ int ns_signal_emit_raw(ns_signal_t *signal, const void *payload, size_t payload_
             return rc;
         }
 
-        (void)ns_platform_wakeup_signal(conn->target_loop->wakeup);
+        (void)ns_platform_wakeup_signal(&conn->target_loop->wakeup);
     }
 
     rc = ns_signal_unlock(signal);

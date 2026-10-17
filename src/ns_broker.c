@@ -71,14 +71,14 @@ typedef struct ns_broker_op_request {
 } ns_broker_op_request_t;
 
 struct ns_event_broker {
-    ns_platform_thread_t *thread;
-    ns_platform_waitset_t *waitset;
+    ns_platform_thread_t thread;
+    ns_platform_waitset_t waitset;
     ns_platform_event_t event;           /* broker loop 自唤醒事件源 */
     ns_list_node_t watcher_head;
-    ns_platform_mutex_t *watcher_mutex;
+    ns_platform_mutex_t watcher_mutex;
     atomic_int quit_requested;
     /* proxy 模型新增字段 */
-    ns_platform_mutex_t *op_lock;       /* 串行化 add/remove 入队 */
+    ns_platform_mutex_t op_lock;        /* 串行化 add/remove 入队 */
     ns_list_node_t op_queue_head;        /* 待处理 op 队列 */
     int shutdown_started;                /* ns_broker_global_shutdown 中置位 */
 };
@@ -151,7 +151,7 @@ int ns_watcher_init(ns_watcher_t *watcher, ns_waitable_handle_t handle,
     if(rc != NS_OK) return rc;
 
     ns_watcher_init_common(watcher, events, edge_triggered, handler);
-    NS_WAITABLE_SET(&watcher->waitable, handle);
+    watcher->waitable.primitive = handle;
     return NS_OK;
 }
 
@@ -175,7 +175,7 @@ ns_waitable_handle_t ns_watcher_handle(const ns_watcher_t *watcher)
         return invalid;
     }
 
-    return NS_WAITABLE_GET(&watcher->waitable);
+    return watcher->waitable.primitive;
 }
 
 ns_event_broker_t *ns_broker(void)
@@ -187,7 +187,7 @@ static void ns_broker_notify(void *ctx)
 {
     ns_event_broker_t *broker = (ns_event_broker_t *)ctx;
 
-    if((broker != NULL) && ns_waitable_handle_is_valid(broker->event.signal_handle)){
+    if(broker != NULL){
         (void)ns_platform_event_signal(&broker->event);
     }
 }
@@ -206,7 +206,7 @@ static int ns_broker_queue_op(ns_event_broker_t *broker, ns_broker_op_request_t 
 {
     int rc;
 
-    rc = ns_platform_mutex_lock(broker->op_lock);
+    rc = ns_platform_mutex_lock(&broker->op_lock);
     if(rc != NS_OK) return rc;
     ns_list_push_back(&broker->op_queue_head, &req->link);
 
@@ -217,7 +217,7 @@ static int ns_broker_queue_op(ns_event_broker_t *broker, ns_broker_op_request_t 
         ns_list_remove_init(&req->link);
     }
 
-    (void)ns_platform_mutex_unlock(broker->op_lock);
+    (void)ns_platform_mutex_unlock(&broker->op_lock);
     return rc;
 }
 
@@ -261,18 +261,18 @@ static int ns_broker_try_dequeue_op(ns_event_broker_t *broker, ns_broker_op_requ
 {
     int rc;
 
-    rc = ns_platform_mutex_lock(broker->op_lock);
+    rc = ns_platform_mutex_lock(&broker->op_lock);
     if(rc != NS_OK) return rc;
 
     if(ns_list_empty(&req->link)){
         /* link 自环：broker 已出队，user 线程必须等 broker 完成 */
-        (void)ns_platform_mutex_unlock(broker->op_lock);
+        (void)ns_platform_mutex_unlock(&broker->op_lock);
         return NS_E_EMPTY;
     }
 
     /* req 仍在 op_queue 中，摘除后 user 线程可安全返回 */
     ns_list_remove_init(&req->link);
-    (void)ns_platform_mutex_unlock(broker->op_lock);
+    (void)ns_platform_mutex_unlock(&broker->op_lock);
     return NS_OK;
 }
 
@@ -286,16 +286,16 @@ static int ns_broker_do_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
 
     if(!ns_watcher_is_initialized(watcher)) return NS_E_INVAL;
 
-    rc = ns_platform_mutex_lock(broker->watcher_mutex);
+    rc = ns_platform_mutex_lock(&broker->watcher_mutex);
     if(rc != NS_OK) return rc;
 
     if(ns_broker_node_is_linked(&watcher->broker_node)){
-        unlock_rc = ns_platform_mutex_unlock(broker->watcher_mutex);
+        unlock_rc = ns_platform_mutex_unlock(&broker->watcher_mutex);
         return (unlock_rc == NS_OK) ? NS_E_EXISTS : unlock_rc;
     }
 
     watcher->waitable.user_data = watcher;
-    rc = ns_platform_waitset_add(broker->waitset, &watcher->waitable);
+    rc = ns_platform_waitset_add(&broker->waitset, &watcher->waitable);
     if(rc != NS_OK){
         ns_merrln(BROKER, "waitset_add failed: %d", rc);
         watcher->waitable.user_data = NULL;
@@ -303,7 +303,7 @@ static int ns_broker_do_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
         ns_list_push_back(&broker->watcher_head, &watcher->broker_node);
     }
 
-    unlock_rc = ns_platform_mutex_unlock(broker->watcher_mutex);
+    unlock_rc = ns_platform_mutex_unlock(&broker->watcher_mutex);
     if((rc == NS_OK) && (unlock_rc != NS_OK)) rc = unlock_rc;
     return rc;
 }
@@ -322,15 +322,15 @@ static int ns_broker_do_remove(ns_event_broker_t *broker, ns_watcher_t *watcher,
 
     if(!ns_watcher_is_initialized(watcher)) return NS_E_INVAL;
 
-    rc = ns_platform_mutex_lock(broker->watcher_mutex);
+    rc = ns_platform_mutex_lock(&broker->watcher_mutex);
     if(rc != NS_OK) return rc;
 
     if(!ns_broker_node_is_linked(&watcher->broker_node)){
-        unlock_rc = ns_platform_mutex_unlock(broker->watcher_mutex);
+        unlock_rc = ns_platform_mutex_unlock(&broker->watcher_mutex);
         return (unlock_rc == NS_OK) ? NS_E_INVAL : unlock_rc;
     }
 
-    rc = ns_platform_waitset_remove(broker->waitset, &watcher->waitable);
+    rc = ns_platform_waitset_remove(&broker->waitset, &watcher->waitable);
     if(rc != NS_OK){
         ns_merrln(BROKER, "waitset_remove failed: %d", rc);
     }
@@ -346,7 +346,7 @@ static int ns_broker_do_remove(ns_event_broker_t *broker, ns_watcher_t *watcher,
         ns_list_remove_init(&watcher->broker_node);
     }
 
-    unlock_rc = ns_platform_mutex_unlock(broker->watcher_mutex);
+    unlock_rc = ns_platform_mutex_unlock(&broker->watcher_mutex);
     if((rc == NS_OK) && (unlock_rc != NS_OK)) rc = unlock_rc;
     return rc;
 }
@@ -407,9 +407,9 @@ static void ns_broker_drain_op_queue(ns_event_broker_t *broker,
         ns_broker_op_request_t *req;
         int op_rc;
 
-        if(ns_platform_mutex_lock(broker->op_lock) != NS_OK) return;
+        if(ns_platform_mutex_lock(&broker->op_lock) != NS_OK) return;
         if(ns_list_empty(&broker->op_queue_head)){
-            (void)ns_platform_mutex_unlock(broker->op_lock);
+            (void)ns_platform_mutex_unlock(&broker->op_lock);
             return;
         }
         /* 取队首 */
@@ -418,7 +418,7 @@ static void ns_broker_drain_op_queue(ns_event_broker_t *broker,
             req = ns_list_entry(node, ns_broker_op_request_t, link);
         }
         ns_list_remove_init(&req->link);
-        (void)ns_platform_mutex_unlock(broker->op_lock);
+        (void)ns_platform_mutex_unlock(&broker->op_lock);
 
         /* 执行 op */
         switch(req->op){
@@ -452,9 +452,9 @@ static void ns_broker_drain_op_queue_shutdown(ns_event_broker_t *broker)
     for(;;){
         ns_broker_op_request_t *req;
 
-        if(ns_platform_mutex_lock(broker->op_lock) != NS_OK) return;
+        if(ns_platform_mutex_lock(&broker->op_lock) != NS_OK) return;
         if(ns_list_empty(&broker->op_queue_head)){
-            (void)ns_platform_mutex_unlock(broker->op_lock);
+            (void)ns_platform_mutex_unlock(&broker->op_lock);
             return;
         }
         {
@@ -462,7 +462,7 @@ static void ns_broker_drain_op_queue_shutdown(ns_event_broker_t *broker)
             req = ns_list_entry(node, ns_broker_op_request_t, link);
         }
         ns_list_remove_init(&req->link);
-        (void)ns_platform_mutex_unlock(broker->op_lock);
+        (void)ns_platform_mutex_unlock(&broker->op_lock);
 
         req->rc = NS_E_SHUTDOWN;
         (void)ns_platform_wakeup_signal(req->wakeup);
@@ -492,7 +492,7 @@ static void ns_broker_run(void *arg)
         }
 
         rc = ns_platform_waitset_wait(
-            broker->waitset,
+            &broker->waitset,
             timeout_us,
             completions,
             NS_BROKER_COMPLETION_CAPACITY,
@@ -549,7 +549,7 @@ int ns_broker_add(ns_watcher_t *watcher)
 {
     ns_event_broker_t *broker;
     ns_broker_op_request_t req;
-    ns_platform_wakeup_t *wakeup = NULL;
+    ns_platform_wakeup_t wakeup;
     int queue_rc;
 
     if(watcher == NULL) return NS_E_INVAL;
@@ -559,15 +559,15 @@ int ns_broker_add(ns_watcher_t *watcher)
     /* 早返回：shutdown 已开始则不入队 */
     if(broker->shutdown_started) return NS_E_SHUTDOWN;
 
-    /* 创建用于 proxy wakeup */
+    /* 初始化用于 proxy 的 wakeup（调用方存储） */
     {
-        int wakeup_rc = ns_platform_wakeup_create(&wakeup, "ns-broker-proxy");
+        int wakeup_rc = ns_platform_wakeup_init(&wakeup, "ns-broker-proxy");
         if(wakeup_rc != NS_OK) return wakeup_rc;
     }
 
     req.op = NS_BROKER_OP_ADD;
     req.watcher = watcher;
-    req.wakeup = wakeup;
+    req.wakeup = &wakeup;
     req.rc = NS_OK;
 
     queue_rc = ns_broker_queue_op(broker, &req);
@@ -587,7 +587,7 @@ int ns_broker_add(ns_watcher_t *watcher)
     }
     queue_rc = req.rc;
 out:
-    (void)ns_platform_wakeup_destroy(wakeup);
+    (void)ns_platform_wakeup_deinit(&wakeup);
     return queue_rc;
 }
 
@@ -595,7 +595,7 @@ int ns_broker_remove(ns_watcher_t *watcher)
 {
     ns_event_broker_t *broker;
     ns_broker_op_request_t req;
-    ns_platform_wakeup_t *wakeup = NULL;
+    ns_platform_wakeup_t wakeup;
     int queue_rc;
 
     if(watcher == NULL) return NS_E_INVAL;
@@ -605,13 +605,13 @@ int ns_broker_remove(ns_watcher_t *watcher)
     if(broker->shutdown_started) return NS_E_SHUTDOWN;
 
     {
-        int wakeup_rc = ns_platform_wakeup_create(&wakeup, "ns-broker-proxy");
+        int wakeup_rc = ns_platform_wakeup_init(&wakeup, "ns-broker-proxy");
         if(wakeup_rc != NS_OK) return wakeup_rc;
     }
 
     req.op = NS_BROKER_OP_REMOVE;
     req.watcher = watcher;
-    req.wakeup = wakeup;
+    req.wakeup = &wakeup;
     req.rc = NS_OK;
 
     queue_rc = ns_broker_queue_op(broker, &req);
@@ -629,7 +629,7 @@ int ns_broker_remove(ns_watcher_t *watcher)
     }
     queue_rc = req.rc;
 out:
-    (void)ns_platform_wakeup_destroy(wakeup);
+    (void)ns_platform_wakeup_deinit(&wakeup);
     return queue_rc;
 }
 
@@ -647,16 +647,12 @@ int ns_broker_global_init(void)
     broker = (ns_event_broker_t *)ns_platform_alloc(sizeof(*broker));
     if(broker == NULL) return NS_E_NOMEM;
 
-    broker->thread = NULL;
-    broker->waitset = NULL;
-    broker->watcher_mutex = NULL;
     ns_list_init(&broker->watcher_head);
     ns_atomic_init(&broker->quit_requested, 0);
-    broker->op_lock = NULL;
     ns_list_init(&broker->op_queue_head);
     broker->shutdown_started = 0;
 
-    rc = ns_platform_waitset_create(&broker->waitset);
+    rc = ns_platform_waitset_init(&broker->waitset);
     if(rc != NS_OK) goto out_free;
 
     rc = ns_platform_event_init(&broker->event, "nanosig-broker");
@@ -664,19 +660,19 @@ int ns_broker_global_init(void)
 
     broker->event.waitable.events = NS_WAITABLE_EVENT_IN;
     broker->event.waitable.user_data = NULL;
-    rc = ns_platform_waitset_add(broker->waitset, &broker->event.waitable);
+    rc = ns_platform_waitset_add(&broker->waitset, &broker->event.waitable);
     if(rc != NS_OK) goto out_event;
 
-    rc = ns_platform_mutex_create(&broker->watcher_mutex, "nanosig-broker-watchers");
+    rc = ns_platform_mutex_init(&broker->watcher_mutex, "nanosig-broker-watchers");
     if(rc != NS_OK) goto out_add;
 
-    rc = ns_platform_mutex_create(&broker->op_lock, "nanosig-broker-op");
+    rc = ns_platform_mutex_init(&broker->op_lock, "nanosig-broker-op");
     if(rc != NS_OK) goto out_watcher_mutex;
 
     rc = ns_timer_mgr_global_init(ns_broker_notify, broker);
     if(rc != NS_OK) goto out_op_lock;
 
-    rc = ns_platform_thread_create(&broker->thread, ns_broker_run, broker, "nanosig-broker");
+    rc = ns_platform_thread_init(&broker->thread, ns_broker_run, broker, "nanosig-broker");
     if(rc != NS_OK) goto out_timer_mgr;
 
     g_broker = broker;
@@ -685,18 +681,15 @@ int ns_broker_global_init(void)
 out_timer_mgr:
     ns_timer_mgr_global_shutdown();
 out_op_lock:
-    (void)ns_platform_mutex_destroy(broker->op_lock);
-    broker->op_lock = NULL;
+    (void)ns_platform_mutex_deinit(&broker->op_lock);
 out_watcher_mutex:
-    (void)ns_platform_mutex_destroy(broker->watcher_mutex);
-    broker->watcher_mutex = NULL;
+    (void)ns_platform_mutex_deinit(&broker->watcher_mutex);
 out_add:
-    (void)ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
+    (void)ns_platform_waitset_remove(&broker->waitset, &broker->event.waitable);
 out_event:
     (void)ns_platform_event_deinit(&broker->event);
 out_waitset:
-    (void)ns_platform_waitset_destroy(broker->waitset);
-    broker->waitset = NULL;
+    (void)ns_platform_waitset_deinit(&broker->waitset);
 out_free:
     ns_platform_free(broker);
     return rc;
@@ -719,10 +712,8 @@ void ns_broker_global_shutdown(void)
     /* ② 唤醒 loop 线程、join */
     ns_atomic_store_explicit(&broker->quit_requested, 1, ns_memory_order_release);
     (void)ns_platform_event_signal(&broker->event);
-    if(broker->thread != NULL){
-        (void)ns_platform_thread_join(broker->thread);
-        broker->thread = NULL;
-    }
+    /* g_broker != NULL 蕴含 init 已完成线程启动，join 无条件执行 */
+    (void)ns_platform_thread_join(&broker->thread);
 
     /* ③ loop 退出后，drain 剩余 op（loop 线程可能在 drain 期间被 quit 唤醒），
        所有挂起的 user 线程拿到 NS_E_SHUTDOWN 后继续 */
@@ -733,14 +724,14 @@ void ns_broker_global_shutdown(void)
 
     ns_broker_remove_all_watchers(broker);
 
-    rc = ns_platform_waitset_remove(broker->waitset, &broker->event.waitable);
+    rc = ns_platform_waitset_remove(&broker->waitset, &broker->event.waitable);
     if(rc != NS_OK) ns_merrln(BROKER, "shutdown: waitset_remove failed: %d", rc);
-    rc = ns_platform_waitset_destroy(broker->waitset);
-    if(rc != NS_OK) ns_merrln(BROKER, "shutdown: waitset_destroy failed: %d", rc);
+    rc = ns_platform_waitset_deinit(&broker->waitset);
+    if(rc != NS_OK) ns_merrln(BROKER, "shutdown: waitset_deinit failed: %d", rc);
     rc = ns_platform_event_deinit(&broker->event);
     if(rc != NS_OK) ns_merrln(BROKER, "shutdown: event_deinit failed: %d", rc);
-    (void)ns_platform_mutex_destroy(broker->watcher_mutex);
-    (void)ns_platform_mutex_destroy(broker->op_lock);
+    (void)ns_platform_mutex_deinit(&broker->watcher_mutex);
+    (void)ns_platform_mutex_deinit(&broker->op_lock);
 
     g_broker = NULL;
     ns_platform_free(broker);
@@ -750,15 +741,15 @@ static void ns_broker_remove_all_watchers(ns_event_broker_t *broker)
 {
     if(broker == NULL) return;
 
-    if(ns_platform_mutex_lock(broker->watcher_mutex) == NS_OK){
+    if(ns_platform_mutex_lock(&broker->watcher_mutex) == NS_OK){
         while(!ns_list_empty(&broker->watcher_head)){
             ns_list_node_t *node = ns_list_front(&broker->watcher_head);
             ns_watcher_t *watcher = ns_list_entry(node, ns_watcher_t, broker_node);
 
-            (void)ns_platform_waitset_remove(broker->waitset, &watcher->waitable);
+            (void)ns_platform_waitset_remove(&broker->waitset, &watcher->waitable);
             watcher->waitable.user_data = NULL;
             ns_list_remove_init(&watcher->broker_node);
         }
-        (void)ns_platform_mutex_unlock(broker->watcher_mutex);
+        (void)ns_platform_mutex_unlock(&broker->watcher_mutex);
     }
 }

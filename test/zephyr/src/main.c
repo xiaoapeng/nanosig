@@ -46,27 +46,27 @@ ZTEST(nanosig_zephyr, test_abi_probe)
 ZTEST(nanosig_zephyr, test_event_lifecycle)
 {
     ns_platform_event_t ev;
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
 
     zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
-    zassert_true(ns_waitable_handle_is_valid(NS_WAITABLE_GET(&ev.waitable)),
+    zassert_true(ns_waitable_handle_is_valid((ev.waitable.primitive)),
                  "event handle must be valid");
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "add event");
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add event");
 
     /* 仍注册时 deinit 必须报 NS_E_BUSY。 */
     zassert_equal(ns_platform_event_deinit(&ev), NS_E_BUSY,
                   "deinit while registered must be NS_E_BUSY");
 
     /* waitset 仍有成员时 destroy 必须报 NS_E_EXISTS。 */
-    zassert_equal(ns_platform_waitset_destroy(ws), NS_E_EXISTS,
+    zassert_equal(ns_platform_waitset_deinit(&ws), NS_E_EXISTS,
                   "destroy with members must be NS_E_EXISTS");
 
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove event");
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove event");
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,39 +75,39 @@ ZTEST(nanosig_zephyr, test_event_lifecycle)
 
 ZTEST(nanosig_zephyr, test_add_remove_errors)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_event_t ev;
     ns_platform_waitable_t w;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
     zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
 
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "first add");
-    zassert_equal(ns_platform_waitset_add(ws, &ev.waitable), NS_E_EXISTS,
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "first add");
+    zassert_equal(ns_platform_waitset_add(&ws, &ev.waitable), NS_E_EXISTS,
                   "duplicate add must be NS_E_EXISTS");
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove");
-    zassert_equal(ns_platform_waitset_remove(ws, &ev.waitable), NS_E_INVAL,
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
+    zassert_equal(ns_platform_waitset_remove(&ws, &ev.waitable), NS_E_INVAL,
                   "remove of unregistered must be NS_E_INVAL");
 
     /* NULL 参数。 */
     zassert_equal(ns_platform_waitset_add(NULL, &w), NS_E_INVAL, "add NULL waitset");
-    zassert_equal(ns_platform_waitset_add(ws, NULL), NS_E_INVAL, "add NULL waitable");
+    zassert_equal(ns_platform_waitset_add(&ws, NULL), NS_E_INVAL, "add NULL waitable");
     zassert_equal(ns_platform_waitset_remove(NULL, &w), NS_E_INVAL, "remove NULL waitset");
-    zassert_equal(ns_platform_waitset_remove(ws, NULL), NS_E_INVAL, "remove NULL waitable");
+    zassert_equal(ns_platform_waitset_remove(&ws, NULL), NS_E_INVAL, "remove NULL waitable");
 
     /* IN-only：OUT / ERR 组合被拒。 */
     ns_waitable_init(&w);
-    w.primitive.handle = ev.waitable.primitive.handle;
+    w.primitive = ev.waitable.primitive;
     w.events = NS_WAITABLE_EVENT_OUT;
-    zassert_equal(ns_platform_waitset_add(ws, &w), NS_E_INVAL, "OUT-only must be rejected");
+    zassert_equal(ns_platform_waitset_add(&ws, &w), NS_E_INVAL, "OUT-only must be rejected");
     w.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_ERR;
-    zassert_equal(ns_platform_waitset_add(ws, &w), NS_E_INVAL, "IN|ERR must be rejected");
+    zassert_equal(ns_platform_waitset_add(&ws, &w), NS_E_INVAL, "IN|ERR must be rejected");
     w.events = 0u;
-    zassert_equal(ns_platform_waitset_add(ws, &w), NS_E_INVAL, "no events must be rejected");
+    zassert_equal(ns_platform_waitset_add(&ws, &w), NS_E_INVAL, "no events must be rejected");
 
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -116,25 +116,25 @@ ZTEST(nanosig_zephyr, test_add_remove_errors)
 
 ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_event_t ev;
     ns_platform_waitset_completion_t c[4];
     size_t count = 0u;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
     zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "add");
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add");
 
     /* 未 signal：有限超时返回 0 个完成。 */
     count = 99u;
-    zassert_ok(ns_platform_waitset_wait(ws, 10000u, c, 4u, &count), "wait timeout");
+    zassert_ok(ns_platform_waitset_wait(&ws, 10000u, c, 4u, &count), "wait timeout");
     zassert_true(count == 0u, "no completion before signal");
 
     /* signal 后恰好一个完成，waitable 与 events 正确。 */
     zassert_ok(ns_platform_event_signal(&ev), "signal");
     count = 0u;
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "wait signaled");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait signaled");
     zassert_true(count == 1u, "exactly one completion after signal");
     zassert_true(c[0].waitable == &ev.waitable, "completion waitable mismatch");
     zassert_true((c[0].triggered_events & NS_WAITABLE_EVENT_IN) != 0u,
@@ -142,19 +142,19 @@ ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
 
     /* `k_poll_signal` 电平触发：未 drain 时再次 wait 仍触发。 */
     count = 0u;
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "wait again");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait again");
     zassert_true(count == 1u, "level-triggered signal stays ready until drained");
 
     /* drain 幂等；drain 后不再触发。 */
     zassert_ok(ns_platform_event_drain(&ev), "drain");
     zassert_ok(ns_platform_event_drain(&ev), "drain is idempotent");
     count = 0u;
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "wait after drain");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait after drain");
     zassert_true(count == 0u, "no completion after drain");
 
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove");
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -163,7 +163,7 @@ ZTEST(nanosig_zephyr, test_wait_level_triggered_and_timeout)
 
 ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_waitset_completion_t c[4];
     ns_platform_time_us_t t0 = 0u;
     ns_platform_time_us_t t1 = 0u;
@@ -171,16 +171,16 @@ ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
     ns_platform_time_us_t lower;
     size_t count = 99u;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
 
     /* 非阻塞：立即返回 0 个完成。 */
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "empty non-blocking wait");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "empty non-blocking wait");
     zassert_true(count == 0u, "empty waitset yields no completion");
 
     /* 空 waitset + 无限超时：必须返回，且等待接近封顶值。 */
     zassert_ok(ns_platform_clock_monotonic_us(&t0), "clock read");
     count = 99u;
-    zassert_ok(ns_platform_waitset_wait(ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &count),
+    zassert_ok(ns_platform_waitset_wait(&ws, NS_PLATFORM_WAIT_INFINITE_US, c, 4u, &count),
                "empty infinite wait must not block forever");
     zassert_ok(ns_platform_clock_monotonic_us(&t1), "clock read");
     zassert_true(count == 0u, "capped empty wait yields no completion");
@@ -193,7 +193,7 @@ ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
     zassert_true(elapsed <= (NS_PLATFORM_WAIT_EMPTY_MAX_US + 1000000u),
                  "empty infinite wait must not exceed cap");
 
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -202,33 +202,33 @@ ZTEST(nanosig_zephyr, test_wait_empty_infinite_is_capped)
 
 ZTEST(nanosig_zephyr, test_remove_does_not_reset)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_event_t ev;
     ns_platform_waitset_completion_t c[4];
     size_t count = 0u;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
     zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "add");
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add");
     zassert_ok(ns_platform_event_signal(&ev), "signal");
 
     /* remove 不 reset：信号仍为 signaled。 */
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove");
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "re-add");
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "re-add");
 
     count = 0u;
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "wait after re-add");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait after re-add");
     zassert_true(count == 1u, "remove must not reset; re-add triggers immediately");
 
     zassert_ok(ns_platform_event_drain(&ev), "drain");
     count = 0u;
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 4u, &count), "wait after drain");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 4u, &count), "wait after drain");
     zassert_true(count == 0u, "drained and no longer ready");
 
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove");
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -237,25 +237,25 @@ ZTEST(nanosig_zephyr, test_remove_does_not_reset)
 
 ZTEST(nanosig_zephyr, test_edge_triggered_ignored)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_event_t ev;
     ns_platform_waitset_completion_t c[2];
     size_t count = 0u;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
     zassert_ok(ns_platform_event_init(&ev, "ev"), "event init");
     ev.waitable.events = NS_WAITABLE_EVENT_IN;
     ev.waitable.edge_triggered = 1; /* 请求边沿触发；后端忽略，按电平处理 */
-    zassert_ok(ns_platform_waitset_add(ws, &ev.waitable), "add with edge_triggered=1");
+    zassert_ok(ns_platform_waitset_add(&ws, &ev.waitable), "add with edge_triggered=1");
 
     zassert_ok(ns_platform_event_signal(&ev), "signal");
-    zassert_ok(ns_platform_waitset_wait(ws, 0u, c, 2u, &count), "wait");
+    zassert_ok(ns_platform_waitset_wait(&ws, 0u, c, 2u, &count), "wait");
     zassert_true(count == 1u, "edge_triggered is ignored; event still fires");
 
     zassert_ok(ns_platform_event_drain(&ev), "drain");
-    zassert_ok(ns_platform_waitset_remove(ws, &ev.waitable), "remove");
+    zassert_ok(ns_platform_waitset_remove(&ws, &ev.waitable), "remove");
     zassert_ok(ns_platform_event_deinit(&ev), "event deinit");
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -266,30 +266,30 @@ static ns_platform_event_t s_cap_ev[CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP];
 
 ZTEST(nanosig_zephyr, test_waitset_capacity_overflow)
 {
-    ns_platform_waitset_t *ws = NULL;
+    ns_platform_waitset_t ws;
     ns_platform_event_t extra;
     int i;
 
-    zassert_ok(ns_platform_waitset_create(&ws), "waitset create");
+    zassert_ok(ns_platform_waitset_init(&ws), "waitset create");
 
     for(i = 0; i < CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP; i++){
         zassert_ok(ns_platform_event_init(&s_cap_ev[i], "cap"), "init %d", i);
         s_cap_ev[i].waitable.events = NS_WAITABLE_EVENT_IN;
-        zassert_ok(ns_platform_waitset_add(ws, &s_cap_ev[i].waitable), "add %d", i);
+        zassert_ok(ns_platform_waitset_add(&ws, &s_cap_ev[i].waitable), "add %d", i);
     }
 
     zassert_ok(ns_platform_event_init(&extra, "extra"), "init extra");
     extra.waitable.events = NS_WAITABLE_EVENT_IN;
-    zassert_equal(ns_platform_waitset_add(ws, &extra.waitable),
+    zassert_equal(ns_platform_waitset_add(&ws, &extra.waitable),
                   NS_E_TOO_MANY_HANDLES, "overflow must report NS_E_TOO_MANY_HANDLES");
     zassert_ok(ns_platform_event_deinit(&extra), "deinit extra");
 
     for(i = 0; i < CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP; i++){
-        zassert_ok(ns_platform_waitset_remove(ws, &s_cap_ev[i].waitable), "remove %d", i);
+        zassert_ok(ns_platform_waitset_remove(&ws, &s_cap_ev[i].waitable), "remove %d", i);
         zassert_ok(ns_platform_event_deinit(&s_cap_ev[i]), "deinit %d", i);
     }
 
-    zassert_ok(ns_platform_waitset_destroy(ws), "waitset destroy");
+    zassert_ok(ns_platform_waitset_deinit(&ws), "waitset destroy");
 }
 
 /* ------------------------------------------------------------------ */
@@ -298,26 +298,26 @@ ZTEST(nanosig_zephyr, test_waitset_capacity_overflow)
 
 ZTEST(nanosig_zephyr, test_wakeup)
 {
-    ns_platform_wakeup_t *wk = NULL;
+    ns_platform_wakeup_t wk;
     ns_platform_wait_result_t r = NS_PLATFORM_WAIT_TIMEOUT;
 
-    zassert_ok(ns_platform_wakeup_create(&wk, "wk"), "wakeup create");
-    zassert_ok(ns_platform_wakeup_signal(wk), "wakeup signal");
-    zassert_ok(ns_platform_wakeup_wait(wk, 100000u, &r), "wakeup wait");
+    zassert_ok(ns_platform_wakeup_init(&wk, "wk"), "wakeup create");
+    zassert_ok(ns_platform_wakeup_signal(&wk), "wakeup signal");
+    zassert_ok(ns_platform_wakeup_wait(&wk, 100000u, &r), "wakeup wait");
     zassert_equal(r, NS_PLATFORM_WAIT_SIGNALED, "first wait should be signaled");
-    zassert_ok(ns_platform_wakeup_wait(wk, 10000u, &r), "wakeup wait timeout");
+    zassert_ok(ns_platform_wakeup_wait(&wk, 10000u, &r), "wakeup wait timeout");
     zassert_equal(r, NS_PLATFORM_WAIT_TIMEOUT, "second wait should time out");
-    zassert_ok(ns_platform_wakeup_destroy(wk), "wakeup destroy");
+    zassert_ok(ns_platform_wakeup_deinit(&wk), "wakeup destroy");
 }
 
 ZTEST(nanosig_zephyr, test_mutex)
 {
-    ns_platform_mutex_t *m = NULL;
+    ns_platform_mutex_t m;
 
-    zassert_ok(ns_platform_mutex_create(&m, "m"), "mutex create");
-    zassert_ok(ns_platform_mutex_lock(m), "mutex lock");
-    zassert_ok(ns_platform_mutex_unlock(m), "mutex unlock");
-    zassert_ok(ns_platform_mutex_destroy(m), "mutex destroy");
+    zassert_ok(ns_platform_mutex_init(&m, "m"), "mutex create");
+    zassert_ok(ns_platform_mutex_lock(&m), "mutex lock");
+    zassert_ok(ns_platform_mutex_unlock(&m), "mutex unlock");
+    zassert_ok(ns_platform_mutex_deinit(&m), "mutex destroy");
 }
 
 static volatile int g_thread_ran;
@@ -330,11 +330,12 @@ static void test_thread_proc(void *arg)
 
 ZTEST(nanosig_zephyr, test_thread_create_join)
 {
-    ns_platform_thread_t *t = NULL;
+    /* k_thread + 内嵌内核栈内联在结构体中：放静态存储，避免占用 ZTEST 线程栈。 */
+    static ns_platform_thread_t t;
 
     g_thread_ran = 0;
-    zassert_ok(ns_platform_thread_create(&t, test_thread_proc, NULL, "t"), "thread create");
-    zassert_ok(ns_platform_thread_join(t), "thread join");
+    zassert_ok(ns_platform_thread_init(&t, test_thread_proc, NULL, "t"), "thread create");
+    zassert_ok(ns_platform_thread_join(&t), "thread join");
     zassert_true(g_thread_ran == 1, "thread entry must have run");
 }
 
@@ -359,7 +360,7 @@ static volatile int g_consumed;
 static void broker_handler(ns_watcher_t *watcher, uint32_t triggered_events)
 {
     ns_waitable_handle_t h = ns_watcher_handle(watcher);
-    struct k_poll_signal *sig = (struct k_poll_signal *)h.handle;
+    struct k_poll_signal *sig = (struct k_poll_signal *)h;
 
     (void)triggered_events;
     k_poll_signal_reset(sig);
@@ -376,7 +377,7 @@ ZTEST(nanosig_zephyr, test_broker_roundtrip)
     zassert_ok(ns_platform_event_init(&ev, "broker-ev"), "event init");
     g_consumed = 0;
 
-    zassert_ok(ns_watcher_init(&watcher, NS_WAITABLE_GET(&ev.waitable),
+    zassert_ok(ns_watcher_init(&watcher, (ev.waitable.primitive),
                                NS_WAITABLE_EVENT_IN, 0, broker_handler),
                "watcher init");
     zassert_ok(ns_broker_add(&watcher), "broker add");

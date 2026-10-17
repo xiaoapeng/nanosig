@@ -26,19 +26,9 @@
 #define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
 #include <nanosig/ns_debug.h>
 
-struct ns_platform_wakeup {
-    int fd;
-};
-
-struct ns_platform_mutex {
-    pthread_mutex_t mutex;
-};
-
-struct ns_platform_thread {
-    pthread_t thread;
-    ns_platform_thread_fn entry;
-    void *arg;
-};
+/* 平台类型（ns_platform_wakeup_t / mutex / thread / waitset）由构建内头
+   platform/linux/nanosig_platform_port.h 提供，均为 Linux 原语的透明别名，
+   存储归调用方所有。 */
 
 /* 宿主后端 ABI 探针符号；FreeRTOS 后端导出对称的 ns_platform_abi_freertos。 */
 const int ns_platform_abi_host = 0;
@@ -48,7 +38,7 @@ static int ns_linux_wakeup_drain(ns_platform_wakeup_t *wakeup)
     uint64_t value;
 
     for(;;){
-        ssize_t rc = read(wakeup->fd, &value, sizeof(value));
+        ssize_t rc = read((*wakeup), &value, sizeof(value));
         if(rc == (ssize_t)sizeof(value)) continue;
         if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
@@ -89,40 +79,31 @@ NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, si
     (void)fwrite(buf, 1, size, stdout);
 }
 
-int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
+int ns_platform_wakeup_init(ns_platform_wakeup_t *wakeup, const char *debug_name)
 {
-    ns_platform_wakeup_t *wakeup;
-
     (void)debug_name;
 
-    if(out_wakeup == NULL) return NS_E_INVAL;
+    if(wakeup == NULL) return NS_E_INVAL;
 
-    *out_wakeup = NULL;
-    wakeup = (ns_platform_wakeup_t *)ns_platform_alloc(sizeof(*wakeup));
-    if(wakeup == NULL) return NS_E_NOMEM;
-
-    wakeup->fd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
-    if(wakeup->fd < 0){
+    (*wakeup) = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
+    if((*wakeup) < 0){
         ns_merrln(PLATFORM, "eventfd failed: %s", strerror(errno));
-        ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
 
-    *out_wakeup = wakeup;
     return NS_OK;
 }
 
-int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
+int ns_platform_wakeup_deinit(ns_platform_wakeup_t *wakeup)
 {
     int rc;
 
     if(wakeup == NULL) return NS_E_INVAL;
 
     do{
-        rc = close(wakeup->fd);
+        rc = close((*wakeup));
     }while((rc < 0) && (errno == EINTR));
 
-    ns_platform_free(wakeup);
     return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
@@ -133,7 +114,7 @@ int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
     if(wakeup == NULL) return NS_E_INVAL;
 
     for(;;){
-        ssize_t rc = write(wakeup->fd, &value, sizeof(value));
+        ssize_t rc = write((*wakeup), &value, sizeof(value));
         if(rc == (ssize_t)sizeof(value)) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
         if((rc < 0) && (errno == EAGAIN)) return NS_E_QUEUE_FULL;
@@ -165,7 +146,7 @@ int ns_platform_wakeup_wait(
         poll_timeout = (ms > (uint64_t)INT32_MAX) ? INT32_MAX : (int)ms;
     }
 
-    pfd.fd = wakeup->fd;
+    pfd.fd = (*wakeup);
     pfd.events = POLLIN;
     pfd.revents = 0;
 
@@ -191,7 +172,7 @@ static int ns_linux_event_drain(ns_platform_event_t *event)
     uint64_t value;
 
     for(;;){
-        ssize_t rc = read(event->waitable.primitive.fd, &value, sizeof(value));
+        ssize_t rc = read(event->waitable.primitive, &value, sizeof(value));
         if(rc == (ssize_t)sizeof(value)) continue;
         if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
@@ -208,7 +189,7 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
     if(event == NULL) return NS_E_INVAL;
 
     ns_waitable_init(&event->waitable);
-    event->signal_handle.fd = -1;
+    event->signal_handle = -1;
 
     efd = eventfd(0u, EFD_CLOEXEC | EFD_NONBLOCK);
     if(efd < 0){
@@ -216,8 +197,8 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
         return NS_E_NOMEM;
     }
 
-    event->waitable.primitive.fd = efd;
-    event->signal_handle.fd = efd;
+    event->waitable.primitive = efd;
+    event->signal_handle = efd;
     return NS_OK;
 }
 
@@ -228,7 +209,7 @@ int ns_platform_event_signal(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
 
     for(;;){
-        ssize_t rc = write(event->signal_handle.fd, &value, sizeof(value));
+        ssize_t rc = write(event->signal_handle, &value, sizeof(value));
         if(rc == (ssize_t)sizeof(value)) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
         if((rc < 0) && (errno == EAGAIN)) return NS_OK; /* 计数器已满 = 已处于 signaled */
@@ -249,55 +230,41 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
 
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
-    if(event->signal_handle.fd < 0) return NS_OK;
+    if(event->signal_handle < 0) return NS_OK;
 
     do{
-        rc = close(event->signal_handle.fd);
+        rc = close(event->signal_handle);
     }while((rc < 0) && (errno == EINTR));
 
-    event->signal_handle.fd = -1;
-    event->waitable.primitive.fd = -1;
+    event->signal_handle = -1;
+    event->waitable.primitive = -1;
     return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
-int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
+int ns_platform_mutex_init(ns_platform_mutex_t *mutex, const char *debug_name)
 {
-    ns_platform_mutex_t *mutex;
-
     (void)debug_name;
 
-    if(out_mutex == NULL) return NS_E_INVAL;
+    if(mutex == NULL) return NS_E_INVAL;
 
-    *out_mutex = NULL;
-    mutex = (ns_platform_mutex_t *)ns_platform_alloc(sizeof(*mutex));
-    if(mutex == NULL) return NS_E_NOMEM;
-
-    if(pthread_mutex_init(&mutex->mutex, NULL) != 0){
-        ns_platform_free(mutex);
+    if(pthread_mutex_init(mutex, NULL) != 0){
         return NS_E_NOMEM;
     }
 
-    *out_mutex = mutex;
     return NS_OK;
 }
 
-int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
+int ns_platform_mutex_deinit(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    if(pthread_mutex_destroy(&mutex->mutex) != 0){
-        ns_platform_free(mutex);
-        return NS_E_INVAL;
-    }
-
-    ns_platform_free(mutex);
-    return NS_OK;
+    return (pthread_mutex_destroy(mutex) == 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    int rc = pthread_mutex_lock(&mutex->mutex);
+    int rc = pthread_mutex_lock(mutex);
     if(rc != 0){
         ns_merrln(PLATFORM, "pthread_mutex_lock failed: %d", rc);
     }
@@ -307,7 +274,7 @@ int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
-    int rc = pthread_mutex_unlock(&mutex->mutex);
+    int rc = pthread_mutex_unlock(mutex);
     if(rc != 0){
         ns_merrln(PLATFORM, "pthread_mutex_unlock failed: %d", rc);
     }
@@ -333,32 +300,25 @@ static void *ns_linux_thread_main(void *arg)
     return NULL;
 }
 
-int ns_platform_thread_create(
-    ns_platform_thread_t **out_thread,
+int ns_platform_thread_init(
+    ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
     const char *debug_name)
 {
-    ns_platform_thread_t *thread;
     int rc;
 
     (void)debug_name;
 
-    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
-
-    *out_thread = NULL;
-    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
-    if(thread == NULL) return NS_E_NOMEM;
+    if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
     thread->entry = entry;
     thread->arg = arg;
     rc = pthread_create(&thread->thread, NULL, ns_linux_thread_main, thread);
     if(rc != 0){
-        ns_platform_free(thread);
         return (rc == EAGAIN) ? NS_E_NOMEM : NS_E_INVAL;
     }
 
-    *out_thread = thread;
     return NS_OK;
 }
 
@@ -369,7 +329,6 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
     if(thread == NULL) return NS_E_INVAL;
 
     rc = pthread_join(thread->thread, NULL);
-    ns_platform_free(thread);
     return (rc == 0) ? NS_OK : NS_E_INVAL;
 }
 
@@ -380,29 +339,19 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 #define NS_WAITSET_MAX_ENTRIES 64u
 #define NS_WAITSET_TIMER_SENTINEL ((void *)(intptr_t)0x1)
 
-/* Linux：epoll data.ptr 直接指向 caller 的 waitable，不需要内部存储 */
-struct ns_platform_waitset {
-    int    epoll_fd;
-    int    timer_fd;
-    size_t count;
-};
+/* Linux：epoll data.ptr 直接指向 caller 的 waitable，不需要内部存储。
+   结构体定义见 platform/linux/nanosig_platform_port.h。 */
 
-int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
+int ns_platform_waitset_init(ns_platform_waitset_t *waitset)
 {
-    ns_platform_waitset_t *ws;
     int epfd;
     int tfd;
 
-    if(out_waitset == NULL) return NS_E_INVAL;
-
-    *out_waitset = NULL;
-    ws = (ns_platform_waitset_t *)ns_platform_alloc(sizeof(*ws));
-    if(ws == NULL) return NS_E_NOMEM;
+    if(waitset == NULL) return NS_E_INVAL;
 
     epfd = epoll_create1(EPOLL_CLOEXEC);
     if(epfd < 0){
         ns_merrln(PLATFORM, "epoll_create1 failed: %s", strerror(errno));
-        ns_platform_free(ws);
         return NS_E_NOMEM;
     }
 
@@ -410,7 +359,6 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
     if(tfd < 0){
         ns_merrln(PLATFORM, "timerfd_create failed: %s", strerror(errno));
         close(epfd);
-        ns_platform_free(ws);
         return NS_E_NOMEM;
     }
 
@@ -423,19 +371,17 @@ int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
             ns_merrln(PLATFORM, "epoll_ctl ADD timerfd failed: %s", strerror(errno));
             close(tfd);
             close(epfd);
-            ns_platform_free(ws);
             return NS_E_NOMEM;
         }
     }
 
-    ws->epoll_fd = epfd;
-    ws->timer_fd = tfd;
-    ws->count = 0u;
-    *out_waitset = ws;
+    waitset->epoll_fd = epfd;
+    waitset->timer_fd = tfd;
+    waitset->count = 0u;
     return NS_OK;
 }
 
-int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
+int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset)
 {
     int rc_epoll, rc_timer;
 
@@ -450,7 +396,6 @@ int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
         rc_timer = close(waitset->timer_fd);
     }while((rc_timer < 0) && (errno == EINTR));
 
-    ns_platform_free(waitset);
     return (rc_epoll == 0 && rc_timer == 0) ? NS_OK : NS_E_INVAL;
 }
 
@@ -483,7 +428,7 @@ int ns_platform_waitset_add(
 {
     struct epoll_event ev;
 
-    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive.fd < 0)) return NS_E_INVAL;
+    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive < 0)) return NS_E_INVAL;
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= NS_WAITSET_MAX_ENTRIES) return NS_E_TOO_MANY_HANDLES;
 
@@ -491,9 +436,9 @@ int ns_platform_waitset_add(
     if(waitable->edge_triggered) ev.events |= EPOLLET;
     ev.data.ptr = (void *)waitable; /* 零拷贝：直接引用 caller 的 waitable */
 
-    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->primitive.fd, &ev) < 0){
+    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_ADD, waitable->primitive, &ev) < 0){
         if(errno == EEXIST) return NS_E_EXISTS;
-        ns_merrln(PLATFORM, "epoll_ctl ADD fd=%d failed: %s", waitable->primitive.fd, strerror(errno));
+        ns_merrln(PLATFORM, "epoll_ctl ADD fd=%d failed: %s", waitable->primitive, strerror(errno));
         return NS_E_INVAL;
     }
 
@@ -506,11 +451,11 @@ int ns_platform_waitset_remove(
     ns_platform_waitset_t *waitset,
     ns_platform_waitable_t *waitable)
 {
-    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive.fd < 0)) return NS_E_INVAL;
+    if((waitset == NULL) || (waitable == NULL) || (waitable->primitive < 0)) return NS_E_INVAL;
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
-    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->primitive.fd, NULL) < 0){
-        ns_merrln(PLATFORM, "epoll_ctl DEL fd=%d failed: %s", waitable->primitive.fd, strerror(errno));
+    if(epoll_ctl(waitset->epoll_fd, EPOLL_CTL_DEL, waitable->primitive, NULL) < 0){
+        ns_merrln(PLATFORM, "epoll_ctl DEL fd=%d failed: %s", waitable->primitive, strerror(errno));
         return NS_E_INVAL;
     }
 

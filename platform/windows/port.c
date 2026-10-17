@@ -19,19 +19,9 @@
 #define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
 #include <nanosig/ns_debug.h>
 
-struct ns_platform_wakeup {
-    HANDLE event;
-};
-
-struct ns_platform_mutex {
-    SRWLOCK lock;
-};
-
-struct ns_platform_thread {
-    HANDLE thread;
-    ns_platform_thread_fn entry;
-    void *arg;
-};
+/* 平台类型（ns_platform_wakeup_t / mutex / thread / waitset）由构建内头
+   platform/windows/nanosig_platform_port.h 提供，均为 Win32 原语的透明别名，
+   存储归调用方所有。 */
 
 /* 宿主后端 ABI 探针符号；FreeRTOS 后端导出对称的 ns_platform_abi_freertos。 */
 const int ns_platform_abi_host = 0;
@@ -81,46 +71,32 @@ NS_FUNCTION_WEAK void platform_stdout_write(void *stream, const uint8_t *buf, si
     (void)fwrite(buf, 1, size, stdout);
 }
 
-int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
+int ns_platform_wakeup_init(ns_platform_wakeup_t *wakeup, const char *debug_name)
 {
-    ns_platform_wakeup_t *wakeup;
-
     (void)debug_name;
 
-    if(out_wakeup == NULL) return NS_E_INVAL;
+    if(wakeup == NULL) return NS_E_INVAL;
 
-    *out_wakeup = NULL;
-    wakeup = (ns_platform_wakeup_t *)ns_platform_alloc(sizeof(*wakeup));
-    if(wakeup == NULL) return NS_E_NOMEM;
-
-    wakeup->event = CreateEventA(NULL, FALSE, FALSE, NULL);
-    if(wakeup->event == NULL){
+    (*wakeup) = CreateEventA(NULL, FALSE, FALSE, NULL);
+    if((*wakeup) == NULL){
         ns_merrln(PLATFORM, "CreateEvent failed: %lu", GetLastError());
-        ns_platform_free(wakeup);
         return NS_E_NOMEM;
     }
 
-    *out_wakeup = wakeup;
     return NS_OK;
 }
 
-int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
+int ns_platform_wakeup_deinit(ns_platform_wakeup_t *wakeup)
 {
     if(wakeup == NULL) return NS_E_INVAL;
 
-    if(CloseHandle(wakeup->event) == 0){
-        ns_platform_free(wakeup);
-        return NS_E_INVAL;
-    }
-
-    ns_platform_free(wakeup);
-    return NS_OK;
+    return (CloseHandle((*wakeup)) != 0) ? NS_OK : NS_E_INVAL;
 }
 
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
 {
     if(wakeup == NULL) return NS_E_INVAL;
-    if(SetEvent(wakeup->event) == 0){
+    if(SetEvent((*wakeup)) == 0){
         ns_merrln(PLATFORM, "SetEvent failed: %lu", GetLastError());
         return NS_E_INVAL;
     }
@@ -137,7 +113,7 @@ int ns_platform_wakeup_wait(
 
     if((wakeup == NULL) || (out_result == NULL)) return NS_E_INVAL;
 
-    wait_result = WaitForSingleObject(wakeup->event, ns_windows_timeout_ms(timeout_us));
+    wait_result = WaitForSingleObject((*wakeup), ns_windows_timeout_ms(timeout_us));
     if(wait_result == WAIT_OBJECT_0){
         *out_result = NS_PLATFORM_WAIT_SIGNALED;
         return NS_OK;
@@ -160,7 +136,7 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
     if(event == NULL) return NS_E_INVAL;
 
     ns_waitable_init(&event->waitable);
-    event->signal_handle.handle = NULL;
+    event->signal_handle = NULL;
 
     handle = CreateEventA(NULL, FALSE, FALSE, NULL); /* auto-reset */
     if(handle == NULL){
@@ -168,15 +144,15 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
         return NS_E_NOMEM;
     }
 
-    event->waitable.primitive.handle = handle;
-    event->signal_handle.handle = handle;
+    event->waitable.primitive = handle;
+    event->signal_handle = handle;
     return NS_OK;
 }
 
 int ns_platform_event_signal(ns_platform_event_t *event)
 {
     if(event == NULL) return NS_E_INVAL;
-    if(SetEvent((HANDLE)event->signal_handle.handle) == 0){
+    if(SetEvent((HANDLE)event->signal_handle) == 0){
         ns_merrln(PLATFORM, "SetEvent failed: %lu", GetLastError());
         return NS_E_INVAL;
     }
@@ -196,37 +172,30 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
 {
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
-    if(event->signal_handle.handle == NULL) return NS_OK;
+    if(event->signal_handle == NULL) return NS_OK;
 
-    if(CloseHandle((HANDLE)event->signal_handle.handle) == 0) return NS_E_INVAL;
+    if(CloseHandle((HANDLE)event->signal_handle) == 0) return NS_E_INVAL;
 
-    event->signal_handle.handle = NULL;
-    event->waitable.primitive.handle = NULL;
+    event->signal_handle = NULL;
+    event->waitable.primitive = NULL;
     return NS_OK;
 }
 
-int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
+int ns_platform_mutex_init(ns_platform_mutex_t *mutex, const char *debug_name)
 {
-    ns_platform_mutex_t *mutex;
-
     (void)debug_name;
 
-    if(out_mutex == NULL) return NS_E_INVAL;
+    if(mutex == NULL) return NS_E_INVAL;
 
-    *out_mutex = NULL;
-    mutex = (ns_platform_mutex_t *)ns_platform_alloc(sizeof(*mutex));
-    if(mutex == NULL) return NS_E_NOMEM;
-
-    InitializeSRWLock(&mutex->lock);
-    *out_mutex = mutex;
+    InitializeSRWLock(mutex);
     return NS_OK;
 }
 
-int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
+int ns_platform_mutex_deinit(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    ns_platform_free(mutex);
+    /* SRWLOCK 无需显式销毁 */
     return NS_OK;
 }
 
@@ -234,7 +203,7 @@ int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    AcquireSRWLockExclusive(&mutex->lock);
+    AcquireSRWLockExclusive(mutex);
     return NS_OK;
 }
 
@@ -242,7 +211,7 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    ReleaseSRWLockExclusive(&mutex->lock);
+    ReleaseSRWLockExclusive(mutex);
     return NS_OK;
 }
 
@@ -272,31 +241,23 @@ static unsigned int __stdcall ns_windows_thread_main(void *arg)
     return 0u;
 }
 
-int ns_platform_thread_create(
-    ns_platform_thread_t **out_thread,
+int ns_platform_thread_init(
+    ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
     const char *debug_name)
 {
-    ns_platform_thread_t *thread;
-
     (void)debug_name;
 
-    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
-
-    *out_thread = NULL;
-    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
-    if(thread == NULL) return NS_E_NOMEM;
+    if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
     thread->entry = entry;
     thread->arg = arg;
     thread->thread = (HANDLE)_beginthreadex(NULL, 0u, ns_windows_thread_main, thread, 0u, NULL);
     if(thread->thread == NULL){
-        ns_platform_free(thread);
         return NS_E_NOMEM;
     }
 
-    *out_thread = thread;
     return NS_OK;
 }
 
@@ -309,7 +270,6 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
     if(WaitForSingleObject(thread->thread, INFINITE) != WAIT_OBJECT_0) rc = NS_E_INVAL;
     if(CloseHandle(thread->thread) == 0) rc = NS_E_INVAL;
 
-    ns_platform_free(thread);
     return rc;
 }
 
@@ -317,47 +277,29 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 /*  waitset                                                            */
 /* ------------------------------------------------------------------ */
 
-#define NS_PLATFORM_WAITSET_MAX_HANDLES 64u
-/* 预留 1 个 slot 给内部 timer handle */
-#define NS_PLATFORM_WAITSET_USER_HANDLES (NS_PLATFORM_WAITSET_MAX_HANDLES - 1u)
+/* Windows：WFMO 返回 index，需要内部存 waitable 指针做映射。
+   结构体与容量宏见 platform/windows/nanosig_platform_port.h。 */
 
-/* Windows：WFMO 返回 index，需要内部存 waitable 指针做映射 */
-struct ns_platform_waitset {
-    HANDLE                  handles[NS_PLATFORM_WAITSET_MAX_HANDLES];
-    const ns_platform_waitable_t *waitables[NS_PLATFORM_WAITSET_USER_HANDLES]; /* index → caller */
-    DWORD                   count;
-    HANDLE                  timer;
-};
-
-int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
+int ns_platform_waitset_init(ns_platform_waitset_t *waitset)
 {
-    ns_platform_waitset_t *ws;
+    if(waitset == NULL) return NS_E_INVAL;
 
-    if(out_waitset == NULL) return NS_E_INVAL;
-
-    *out_waitset = NULL;
-    ws = (ns_platform_waitset_t *)ns_platform_alloc(sizeof(*ws));
-    if(ws == NULL) return NS_E_NOMEM;
-
-    ws->timer = CreateWaitableTimerW(NULL, TRUE, NULL);
-    if(ws->timer == NULL){
+    waitset->timer = CreateWaitableTimerW(NULL, TRUE, NULL);
+    if(waitset->timer == NULL){
         ns_merrln(PLATFORM, "CreateWaitableTimer failed: %lu", GetLastError());
-        ns_platform_free(ws);
         return NS_E_NOMEM;
     }
 
-    ws->count = 0u;
-    *out_waitset = ws;
+    waitset->count = 0u;
     return NS_OK;
 }
 
-int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
+int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset)
 {
     if(waitset == NULL) return NS_E_INVAL;
     if(waitset->count != 0u) return NS_E_EXISTS;
 
     CloseHandle(waitset->timer);
-    ns_platform_free(waitset);
     return NS_OK;
 }
 
@@ -374,8 +316,8 @@ static int ns_waitable_handle_is_invalid(const ns_platform_waitable_t *waitable)
 {
     if(waitable == NULL) return 1;
 
-    return (waitable->primitive.handle == NULL)
-        || (waitable->primitive.handle == INVALID_HANDLE_VALUE);
+    return (waitable->primitive == NULL)
+        || (waitable->primitive == INVALID_HANDLE_VALUE);
 }
 
 int ns_platform_waitset_add(
@@ -386,10 +328,10 @@ int ns_platform_waitset_add(
         return NS_E_INVAL;
     }
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
-    if(ns_waitset_find(waitset, (HANDLE)waitable->primitive.handle) >= 0) return NS_E_EXISTS;
+    if(ns_waitset_find(waitset, (HANDLE)waitable->primitive) >= 0) return NS_E_EXISTS;
     if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;
 
-    waitset->handles[waitset->count] = (HANDLE)waitable->primitive.handle;
+    waitset->handles[waitset->count] = (HANDLE)waitable->primitive;
     waitset->waitables[waitset->count] = waitable;
     waitset->count++;
     waitable->registered_waitset = waitset;
@@ -408,7 +350,7 @@ int ns_platform_waitset_remove(
     }
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
 
-    idx = ns_waitset_find(waitset, (HANDLE)waitable->primitive.handle);
+    idx = ns_waitset_find(waitset, (HANDLE)waitable->primitive);
     if(idx < 0) return NS_E_INVAL;
 
     last = waitset->count - 1u;
@@ -457,7 +399,7 @@ int ns_platform_waitset_wait(
 
     /* 从 waitables 构建临时 handles 数组 */
     for(i = 0u; i < waitset->count; i++){
-        handles[i] = (HANDLE)waitset->waitables[i]->primitive.handle;
+        handles[i] = (HANDLE)waitset->waitables[i]->primitive;
     }
 
     /* arm timer 或设置 timeout */

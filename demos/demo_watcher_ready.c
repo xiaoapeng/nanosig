@@ -22,7 +22,7 @@
 typedef struct ready_ctx {
     ns_platform_event_t ev;
     ns_watcher_t watcher;
-    ns_platform_wakeup_t *sleep_wakeup;
+    ns_platform_wakeup_t sleep_wakeup;
     atomic_int seen;
 } ready_ctx_t;
 
@@ -43,7 +43,7 @@ static void ready_sleep(ns_platform_time_us_t us)
 {
     ns_platform_wait_result_t result;
 
-    (void)ns_platform_wakeup_wait(g_ready.sleep_wakeup, us, &result);
+    (void)ns_platform_wakeup_wait(&g_ready.sleep_wakeup, us, &result);
 }
 
 int main(void)
@@ -56,13 +56,13 @@ int main(void)
 
     ns_atomic_init(&g_ready.seen, 0);
 
-    rc = ns_platform_wakeup_create(&g_ready.sleep_wakeup, "ready-sleep");
+    rc = ns_platform_wakeup_init(&g_ready.sleep_wakeup, "ready-sleep");
     if(rc != NS_OK) goto out_shutdown;
 
     rc = ns_platform_event_init(&g_ready.ev, "ready-ev");
     if(rc != NS_OK) goto out_sleep_wakeup;
 
-    rc = ns_watcher_init(&g_ready.watcher, NS_WAITABLE_GET(&g_ready.ev.waitable),
+    rc = ns_watcher_init(&g_ready.watcher, g_ready.ev.waitable.primitive,
                          NS_WAITABLE_EVENT_IN, 1, ready_handler);
     if(rc != NS_OK) goto out_event;
 
@@ -101,7 +101,7 @@ out_watcher:
 out_event:
     (void)ns_platform_event_deinit(&g_ready.ev);
 out_sleep_wakeup:
-    (void)ns_platform_wakeup_destroy(g_ready.sleep_wakeup);
+    (void)ns_platform_wakeup_deinit(&g_ready.sleep_wakeup);
 out_shutdown:
     (void)ns_shutdown();
     return rc == NS_OK ? 0 : 1;

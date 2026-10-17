@@ -86,7 +86,7 @@ static int setup_watchers(void)
             INTEGRATION_PHASE("hive: failed to create raw waitable %zu", i);
             return -1;
         }
-        { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_raw_waitables[i]);
+        { ns_waitable_handle_t h = (g_raw_waitables[i].primitive);
           rc = ns_watcher_init(&g_watchers[i], h, NS_WAITABLE_EVENT_IN, 1, hive_watcher_handler); }
         if(rc != NS_OK){
             INTEGRATION_PHASE("hive: ns_watcher_init failed for %zu (rc=%d)", i, rc);

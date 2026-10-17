@@ -4,12 +4,14 @@
 # under several platform macro sets without linking. The cross-TU ABI probe
 # link check is covered by the runtime/contract tests, not here.
 
-# _nanosig_api_c_syntax_flags(<out_var> [extra_flag...])
+# _nanosig_api_c_syntax_flags(<out_var> <include_dirs> <defines>)
 #
-# C syntax-only flag set for the active compiler frontend. Extra flags (for
-# example -DNANOSIG_PLATFORM_FREERTOS=1) are appended; the result is returned
-# through <out_var>.
-function(_nanosig_api_c_syntax_flags out_var)
+# C syntax-only flag set for the active compiler frontend. The platform backend
+# header (selected by NANOSIG_PLATFORM_DIR + NANOSIG_PLATFORM_HEADER_DEFINE) is
+# part of the base flag set: every public header transitively needs it.
+# <include_dirs> and <defines> are lists appended with the frontend's own
+# `-I`/`-D` (or `/I`/`/D`) prefix; each element must be unprefixed.
+function(_nanosig_api_c_syntax_flags out_var include_dirs defines)
     if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
         set(_msvc_frontend ON)
     elseif(MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
@@ -28,6 +30,7 @@ function(_nanosig_api_c_syntax_flags out_var)
             /Zc:preprocessor
             /I${PROJECT_SOURCE_DIR}/include
             /I${PROJECT_SOURCE_DIR}
+            /I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
     else()
         set(_flags
@@ -41,10 +44,35 @@ function(_nanosig_api_c_syntax_flags out_var)
             -I${PROJECT_SOURCE_DIR}/include
             -I${CMAKE_BINARY_DIR}/include
             -I${PROJECT_SOURCE_DIR}
+            -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
     endif()
 
-    list(APPEND _flags ${ARGN})
+    # NANOSIG_PLATFORM_HEADER_DEFINE is a target_compile_definitions entry
+    # (no -D), so it needs the flag prefix here. Without it the compiler reads
+    # NAME="..." as an input file.
+    if(_msvc_frontend)
+        list(APPEND _flags "/D${NANOSIG_PLATFORM_HEADER_DEFINE}")
+    else()
+        list(APPEND _flags "-D${NANOSIG_PLATFORM_HEADER_DEFINE}")
+    endif()
+
+    foreach(_dir IN LISTS include_dirs)
+        if(_msvc_frontend)
+            list(APPEND _flags "/I${_dir}")
+        else()
+            list(APPEND _flags "-I${_dir}")
+        endif()
+    endforeach()
+
+    foreach(_define IN LISTS defines)
+        if(_msvc_frontend)
+            list(APPEND _flags "/D${_define}")
+        else()
+            list(APPEND _flags "-D${_define}")
+        endif()
+    endforeach()
+
     set(${out_var} "${_flags}" PARENT_SCOPE)
 endfunction()
 
@@ -81,18 +109,21 @@ function(_nanosig_add_syntax_target name flags)
     )
 endfunction()
 
-# nanosig_add_api_compile_check(<name> <source>... [DEFINES <define>...])
+# nanosig_add_api_compile_check(<name> <source>... [DEFINES <define>...]
+#                               [INCLUDE_DIRS <dir>...])
 #
-# Optional DEFINES are appended to the compiler command line, allowing the same
-# contract header to be checked under several platform macro sets (for example
-# -DNANOSIG_PLATFORM_FREERTOS=1 on the host).
+# Optional DEFINES / INCLUDE_DIRS are appended to the compiler command line,
+# allowing the same contract header to be checked with extra platform headers
+# (for example the FreeRTOS SDK include dirs, which the platform backend header
+# includes).
 function(nanosig_add_api_compile_check name)
-    cmake_parse_arguments(_nanosig_arg "" "" "DEFINES" ${ARGN})
+    cmake_parse_arguments(_nanosig_arg "" "" "DEFINES;INCLUDE_DIRS" ${ARGN})
     if(NOT _nanosig_arg_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "nanosig_add_api_compile_check requires at least one source")
     endif()
 
-    _nanosig_api_c_syntax_flags(_nanosig_flags ${_nanosig_arg_DEFINES})
+    _nanosig_api_c_syntax_flags(_nanosig_flags
+        "${_nanosig_arg_INCLUDE_DIRS}" "${_nanosig_arg_DEFINES}")
     _nanosig_add_syntax_target(${name} "${_nanosig_flags}"
         ${_nanosig_arg_UNPARSED_ARGUMENTS})
 endfunction()
@@ -130,6 +161,7 @@ function(nanosig_add_cpp_compat_check name)
             /I${PROJECT_SOURCE_DIR}/include
             /I${CMAKE_BINARY_DIR}/include
             /I${PROJECT_SOURCE_DIR}
+            /I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
     else()
         set(_syntax_flags
@@ -142,7 +174,14 @@ function(nanosig_add_cpp_compat_check name)
             -I${PROJECT_SOURCE_DIR}/include
             -I${CMAKE_BINARY_DIR}/include
             -I${PROJECT_SOURCE_DIR}
+            -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
+    endif()
+
+    if(_msvc_frontend)
+        list(APPEND _syntax_flags "/D${NANOSIG_PLATFORM_HEADER_DEFINE}")
+    else()
+        list(APPEND _syntax_flags "-D${NANOSIG_PLATFORM_HEADER_DEFINE}")
     endif()
 
     add_custom_target(${name}

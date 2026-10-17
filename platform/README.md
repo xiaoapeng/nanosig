@@ -16,10 +16,15 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 
 - 平台生命周期：`ns_platform_init`、`ns_platform_shutdown`。
 - 内存：`ns_platform_alloc`、`ns_platform_free`。
-- wakeup：创建、销毁、signal、单个等待。
-- 同步：mutex 的创建、销毁、加锁和解锁。
+- wakeup：`init`、`deinit`、signal、单个等待。
+- 同步：mutex 的 `init`、`deinit`、加锁和解锁。
 - 时间：单调微秒时钟。
-- 线程：创建、join。
+- 线程：`init`、join（`ns_platform_thread_join` 保留 join 命名：它确实阻塞至线程结束）。
+
+平台对象（wakeup / mutex / thread / waitset）**全部由调用方拥有存储**：
+`ns_platform_*_init` 在调用方给出的对象上初始化，`ns_platform_*_deinit` 释放其内部资源，
+两者都**不**分配或释放对象本身。对应的类型由构建内头
+`platform/<os>/nanosig_platform_port.h` 以**透明别名**形式提供（见“平台类型注入”节）。
 
 ## waitset 原语
 
@@ -32,7 +37,7 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 
 接口：
 
-- `ns_platform_waitset_create` / `ns_platform_waitset_destroy`
+- `ns_platform_waitset_init` / `ns_platform_waitset_deinit`
 - `ns_platform_waitset_add`（注册 waitable；同一 waitable 已注册时返回 `NS_E_EXISTS`）
 - `ns_platform_waitset_remove`（移除 waitable，未注册返回 `NS_E_INVAL`）
 - `ns_platform_waitset_wait`（等待事件，timeout 映射到平台原生等待能力）
@@ -60,8 +65,11 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 也不需要 drain-重试或 `NS_E_BUSY` 分支。
 
 waitset 不包含任何事件源特定函数，也不与 wakeup 耦合。上层直接构造
-`ns_platform_waitable_t`（Linux/macOS 填 `fd`，Windows 填 `handle`）注册到 waitset。
+`ns_platform_waitable_t`（把平台句柄赋给 `primitive`）注册到 waitset。
 tcp/udp socket 等原始 fd 也可直接构造 waitable 注册。
+
+句柄有效性用平台头提供的 `ns_waitable_handle_is_valid(h)` 判定：POSIX 为 `h >= 0`，
+Windows 为 `h != NULL`，RTOS 为 `h != NULL && h != (void *)~0`。
 
 timeout 语义：微秒输入，后端映射到平台原生等待能力。保证等待至少 `timeout_us`，
 实际可能略长。晚 fire 安全，向下取整导致忙等才是 bug。
@@ -118,12 +126,12 @@ FreeRTOS 后端：
   少计整周期、表现为时间跳变。典型 32 位 tick @`configTICK_RATE_HZ=1000` 回绕周期约 49.7 天；
   `configUSE_16_BIT_TICKS=1` 时周期仅约 65.5 秒 @1kHz，需相应提高采样频率或改用更宽的 tick。
 - 内存分配使用 `pvPortMalloc` / `vPortFree`。
-- waitset 使用 `xQueueCreateSet` 的 queue set：每个 waitable 的 `primitive.handle`
+- waitset 使用 `xQueueCreateSet` 的 queue set：每个 waitable 的 `primitive`
   是调用方提供的 queue-set-capable FreeRTOS 对象（二值/计数信号量或队列）。
   `waitset_wait` 用 `xQueueSelectFromSet` 取就绪成员并映射回 waitable，
   **不**从成员对象消费数据。
-- `ns_platform_event_t` 用二值信号量实现：`waitable.primitive.handle` 与
-  `signal_handle.handle` 指向同一信号量；`signal` = `xSemaphoreGive`，
+- `ns_platform_event_t` 用二值信号量实现：`waitable.primitive` 与
+  `signal_handle` 指向同一信号量；`signal` = `xSemaphoreGive`，
   `drain` = 非阻塞 `xSemaphoreTake`。
 - FreeRTOS 后端只支持 `NS_WAITABLE_EVENT_IN`；含 OUT/ERR 的 waitable 在
   `waitset_add` 返回 `NS_E_INVAL`。
@@ -142,19 +150,59 @@ FreeRTOS 后端：
   remove 会丢弃队列中所有未取走的消息（payload）——这是为满足 `xQueueRemoveFromSet`“成员
   必须为空”而做的妥协，而非有意设计；需要保留数据的调用方必须先自行取走。该行为是
   FreeRTOS 后端特有，其它后端 remove 不消费成员数据（见上节契约）。
-- `waitset_destroy` 仍要求在无注册项时调用（有注册项返回 `NS_E_EXISTS`）。
+- `waitset_deinit` 仍要求在无注册项时调用（有注册项返回 `NS_E_EXISTS`）。
 
 ## 生命周期和所有权
 
-平台层 handle 都是不透明类型。创建函数返回的 handle 归调用方所有，必须用匹配
-destroy 函数释放。
+平台对象都是**调用方拥有存储**的透明别名类型（见“平台类型注入”节）。`init` 在调用方
+提供的存储上初始化（可能申请内部资源，如 fd / 信号量 / kqueue 实例），`deinit` 释放
+这些内部资源。两者都不 malloc/free 对象本身，因此：
+
+- 对象可以是栈、静态或用户结构体成员；**库自身不持有它们的存储**。
+- `init` 失败时对象状态未定义，**不得**对其调用 `deinit`（直接返回即可）。
+- `deinit` 要求对象已初始化，且其内部资源已释放干净（如 waitset 无注册项、event 无
+  所属 waitset）；违约视为 UB，不提供“未初始化 / 已销毁”的状态查询。
+- 所有 `ns_*_init` / `ns_*_deinit` 都要求相关中间资源此前已释放。`ns_init` /
+  `ns_shutdown` 不能与任何其他 nanosig API 并发调用，且必须在其资源全部释放之后进行，
+  违约视为 UB。
 
 同一 `ns_platform_waitable_t` 同一时间只能注册到一个 waitset；调用方必须先
 `ns_platform_waitset_remove`，再把它注册到另一个 waitset。带注册项的 waitset
-destroy 会返回 `NS_E_EXISTS`，避免 waitable 内部注册状态悬挂。
+`deinit` 会返回 `NS_E_EXISTS`，避免 waitable 内部注册状态悬挂。
 
-wakeup、mutex、线程和 waitset 的 create/destroy 可以分配和释放资源。emit 路径只能
-使用已经创建好的资源，不能触发平台分配。
+平台对象存储必须由调用方提供，因此 `init` 只能创建**已在调用方存储中**的资源；emit
+路径只能使用已初始化的资源，不能触发平台分配。
+
+## 平台类型注入
+
+平台类型（`ns_waitable_handle_t` + wakeup / mutex / thread / waitset）定义在五个
+**构建内头** `platform/{linux,macos,windows,freertos,zephyr}/nanosig_platform_port.h`
+中，每个头只描述一个后端。构建系统通过编译定义 `NANOSIG_PLATFORM_HEADER` 指定当前
+平台的头名，`nanosig_port.h` 直接 `#include NANOSIG_PLATFORM_HEADER`，**自身不含任何
+平台判定宏**：
+
+- 顶层 `CMakeLists.txt` 设置 `NANOSIG_PLATFORM_DIR` + `NANOSIG_PLATFORM_HEADER_DEFINE`，
+  以 PUBLIC 方式把 include 路径与宏一起传播给库和所有消费者。
+- Zephyr 走自己的 module 入口（`zephyr/CMakeLists.txt`）设置同名宏。
+- 这些头**不参与安装**：`include/` 之外不新增 `install()` 规则，消费者必须经由
+  构建系统（CMake target 或 Zephyr module）获得平台类型。
+
+因此平台头可以传递平台 SDK 头（`pthread.h` / `windows.h` / `FreeRTOS.h` /
+`zephyr/kernel.h`）：消费者与库必须看到**同一份**类型定义。
+
+### 别名带来的取舍
+
+平台类型是内核原语的**透明别名**（如 POSIX 上 `ns_platform_wakeup_t` 就是 `int` fd，
+Windows 上就是 `HANDLE`，Zephyr 上就是 `struct k_sem`）。好处是零包装、零额外堆分配；
+代价是：
+
+- 别名之间不再有类型区分（POSIX 上 wakeup / mutex 之外的 `ns_waitable_handle_t`、
+  `ns_platform_wakeup_t` 都是 `int`），误用不会被编译器发现。
+- 因为没有指针可判空，**“是否已初始化”不能靠对象自身的哨兵值判断**。库内需要该信息
+  的位置使用独立的位/布尔成员（如 `ns_signal_t.mutex_initialized`、
+  `struct ns_loop.async_started`、`ns_timer_mgr.initialized`）。
+- 后端实现直接读句柄本身（POSIX 写 `(*wakeup)`，Windows 写 `(*wakeup)` /
+  直接用 `mutex`，Zephyr 直接用 `wakeup` / `mutex`）。
 
 ## 等待语义
 
@@ -181,7 +229,7 @@ completion 数组由调用方提供，`out_count` 返回实际触发数。Window
 FreeRTOS 后端是 v1 的第四个后端，使用 queue set 语义（见“后端映射”节），
 不是空目录占位。它面向真实 RTOS 目标构建，通过顶层 `NANOSIG_PLATFORM=freertos`
 选择，并由 `NANOSIG_FREERTOS_INCLUDE_DIRS` 提供 FreeRTOS SDK 头文件路径。
-FreeRTOS 后端复用 `primitive.handle` 承载 queue-set 成员句柄。
+FreeRTOS 后端复用 `primitive` 承载 queue-set 成员句柄。
 
 RTOS ISR 安全是后续课题；v1 FreeRTOS 后端不承诺 ISR 上下文调用。
 
@@ -192,7 +240,7 @@ port 在开发主机上编译该后端，并注册 `test/freertos/` 下的契约
 （`nanosig_test_freertos_waitset` / `nanosig_test_freertos_broker`）。该 harness **只覆盖**
 队列集与信号语义：waitable/waitset 的 add/remove/wait、event
 signal/drain/deinit-busy、stale-token 不产生假完成、broker 端到端往返；并注册编译期平台
-契约检查 `nanosig_api_check_platform_contract`（`-DNANOSIG_PLATFORM_FREERTOS=1` 的
+契约检查 `nanosig_api_check_platform_contract`（带 FreeRTOS SDK include 目录的
 `-fsyntax-only` 检查，随 `ctest` 执行）。
 
 Sanitizer 覆盖：`freertos-debug-asan` / `freertos-debug-ubsan` presets 在该 harness 上
@@ -216,11 +264,16 @@ Sanitizer 覆盖：`freertos-debug-asan` / `freertos-debug-ubsan` presets 在该
 Zephyr 后端是 v1 的第五个后端，使用 `k_poll` 语义，面向 Zephyr RTOS 目标。
 它以 **Zephyr module** 形式接入（仓库根 `zephyr/module.yml`），**不**通过顶层
 `NANOSIG_PLATFORM=zephyr` 构建（该取值只打印引导信息）。后端复用
-`primitive.handle` 承载 `k_poll` 可等待对象指针。
+`primitive` 承载 `k_poll` 可等待对象指针。
 
-- 内存使用 `k_malloc` / `k_free`；线程对象（含内嵌内核栈）用
-  `k_aligned_alloc(Z_KERNEL_STACK_OBJ_ALIGN, ...)` 对齐，避免依赖
-  `CONFIG_DYNAMIC_THREAD`。
+- 内存使用 `k_malloc` / `k_free` 之外，`ns_platform_alloc` 实际走
+  `k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, ...)`：库内部堆上的
+  `ns_loop_t` / broker 内联了 `ns_platform_thread_t`，必须满足 `Z_KERNEL_STACK_OBJ_ALIGN`。
+- 线程对象由**调用方拥有存储**：`ns_platform_thread_t` 内嵌 `K_KERNEL_STACK_MEMBER`，
+  其对齐要求为 `Z_KERNEL_STACK_OBJ_ALIGN`，且会抬高整个结构体的对齐。用声明存储
+  （static / 全局 / 结构体成员 / 局部变量）由编译器自动满足；若自行用 `k_malloc`
+  在堆上分配，必须改用 `k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, ...)`；
+  用 `ns_platform_alloc` 分配则已对齐。
 - 线程使用 `k_thread_create` / `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
   内嵌在 `struct ns_platform_thread` 中。
 - mutex 使用 `k_mutex`。
@@ -229,8 +282,8 @@ Zephyr 后端是 v1 的第五个后端，使用 `k_poll` 语义，面向 Zephyr 
 - 单调时间使用 `k_uptime_ticks` 经 `k_ticks_to_us_floor64` 换算。
 - waitset 使用 `k_poll`：每次 `wait` 由活跃 slot 重建 `struct k_poll_event[]`，
   固定 `K_POLL_TYPE_SIGNAL` + `K_POLL_MODE_NOTIFY_ONLY`。
-- `ns_platform_event_t` 用 `k_poll_signal` 实现：`waitable.primitive.handle` 与
-  `signal_handle.handle` 指向同一 `k_poll_signal`；`signal` =
+- `ns_platform_event_t` 用 `k_poll_signal` 实现：`waitable.primitive` 与
+  `signal_handle` 指向同一 `k_poll_signal`；`signal` =
   `k_poll_signal_raise`（`-EAGAIN` 视为成功），`drain` = `k_poll_signal_reset`。
 - Zephyr 后端只支持 `NS_WAITABLE_EVENT_IN`，且 v1 只接受 signal 类
   （`k_poll_signal`）waitable；含 OUT/ERR 的 waitable 在 `waitset_add` 返回
@@ -268,12 +321,15 @@ RTOS ISR 安全是后续课题；v1 Zephyr 后端不承诺 ISR 上下文调用�
 
 新增一个平台后端时，需要：
 
-1. **实现文件**：在 `platform/` 下创建 `<platform>/port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。
-2. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。使用自带构建系统的 RTOS（如 Zephyr）改为提供 `<platform>/module.yml` + `<platform>/CMakeLists.txt` 作为 module 入口，顶层只给出引导式错误。
-3. **编译检查**：`cmake --build` 零警告通过。
-4. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
-5. **完整构建 + 测试**：`cmake --build <preset> --target api-compile-checks` + `ctest <preset>` 全通过。
-6. **bench 基线**（可选）：跑 1 轮 bench 归档到 `bench/results/`。
+1. **平台类型头**：在 `platform/<platform>/` 下创建 `nanosig_platform_port.h`，提供
+   `ns_waitable_handle_t`、`ns_waitable_handle_is_valid`、`ns_platform_{wakeup,mutex,thread,waitset}_t`
+   与 `NS_PLATFORM_ABI_PROBE`（见“平台类型注入”节）。
+2. **实现文件**：在 `platform/<platform>/` 下创建 `port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。
+3. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_DIR` / `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。使用自带构建系统的 RTOS（如 Zephyr）改为提供 `zephyr/module.yml` + `zephyr/CMakeLists.txt` 作为 module 入口，顶层只给出引导式错误。
+4. **编译检查**：`cmake --build` 零警告通过。
+5. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
+6. **完整构建 + 测试**：`cmake --build <preset> --target api-compile-checks` + `ctest <preset>` 全通过。
+7. **bench 基线**（可选）：跑 1 轮 bench 归档到 `bench/results/`。
 
 新增后端**不允许**：
 - 在 `src/` 或 `include/nanosig/` 中新增 OS 分支。

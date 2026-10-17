@@ -40,7 +40,7 @@ static int test_broker_add_remove_stress(void)
         fprintf(stderr, "raw waitable creation failed\n");
         return 1;
     }
-    h = NS_WAITABLE_GET(&watcher.waitable);
+    h = (watcher.waitable.primitive);
     EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, broker_remove_handler) == NS_OK);
 
     /* Repeatedly add and remove. ns_broker_add returns NS_E_EXISTS after

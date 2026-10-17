@@ -10,7 +10,7 @@
  * - wakeup：**每对象独立二值信号量**；禁止用 task notification 实现 wakeup，
  *   loop 与 broker op-proxy 的唤醒共享每任务 notification value 会互相误消费。
  * - event：二值信号量，`waitable` 与 `signal_handle` 指向同一信号量。
- * - waitset：queue set；`waitable.primitive.handle` 是调用方提供的
+ * - waitset：queue set；`waitable.primitive` 是调用方提供的
  *   queue-set-capable 对象（二值/计数信号量或队列）。
  * - 时间：`xTaskGetTickCount`；内存：`pvPortMalloc` / `vPortFree`。
  *
@@ -69,28 +69,9 @@
 /*  平台对象定义                                                        */
 /* ------------------------------------------------------------------ */
 
-struct ns_platform_wakeup {
-    SemaphoreHandle_t sem;
-};
-
-struct ns_platform_mutex {
-    SemaphoreHandle_t sem;
-};
-
-struct ns_platform_thread {
-    TaskHandle_t       task;
-    SemaphoreHandle_t  join_sem;
-    ns_platform_thread_fn entry;
-    void              *arg;
-};
-
-struct ns_platform_waitset {
-    QueueSetHandle_t       set;
-    size_t                 count;
-    UBaseType_t            sum_cap;
-    UBaseType_t            max_cap;
-    ns_platform_waitable_t *slots[NANOSIG_FREERTOS_WAITSET_CAP];
-};
+/* 平台类型（ns_platform_wakeup_t / mutex / thread / waitset）由构建内头
+   platform/freertos/nanosig_platform_port.h 提供，均为 FreeRTOS 原语的透明
+   别名，存储归调用方所有。 */
 
 /* FreeRTOS 后端 ABI 探针符号；宿主后端导出对称的 ns_platform_abi_host。 */
 const int ns_platform_abi_freertos = 0;
@@ -181,7 +162,7 @@ static ns_platform_waitable_t *ns_freertos_find_active_member(
 
     for(i = 0; i < NANOSIG_FREERTOS_WAITSET_CAP; i++){
         ns_platform_waitable_t *wp = waitset->slots[i];
-        if((wp != NULL) && (wp->primitive.handle == (void *)member)) return wp;
+        if((wp != NULL) && (wp->primitive == (void *)member)) return wp;
     }
 
     return NULL;
@@ -269,42 +250,34 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us)
 /*  wakeup                                                             */
 /* ------------------------------------------------------------------ */
 
-int ns_platform_wakeup_create(ns_platform_wakeup_t **out_wakeup, const char *debug_name)
+int ns_platform_wakeup_init(ns_platform_wakeup_t *wakeup, const char *debug_name)
 {
-    ns_platform_wakeup_t *wakeup;
-
     (void)debug_name;
 
-    if(out_wakeup == NULL) return NS_E_INVAL;
+    if(wakeup == NULL) return NS_E_INVAL;
 
-    wakeup = (ns_platform_wakeup_t *)ns_platform_alloc(sizeof(*wakeup));
-    if(wakeup == NULL) return NS_E_NOMEM;
-
-    wakeup->sem = xSemaphoreCreateBinary();
-    if(wakeup->sem == NULL){
-        ns_platform_free(wakeup);
+    (*wakeup) = xSemaphoreCreateBinary();
+    if((*wakeup) == NULL){
         return NS_E_NOMEM;
     }
 
-    *out_wakeup = wakeup;
     return NS_OK;
 }
 
-int ns_platform_wakeup_destroy(ns_platform_wakeup_t *wakeup)
+int ns_platform_wakeup_deinit(ns_platform_wakeup_t *wakeup)
 {
     if(wakeup == NULL) return NS_E_INVAL;
 
-    if(wakeup->sem != NULL) vSemaphoreDelete(wakeup->sem);
-    ns_platform_free(wakeup);
+    if((*wakeup) != NULL) vSemaphoreDelete((*wakeup));
     return NS_OK;
 }
 
 int ns_platform_wakeup_signal(ns_platform_wakeup_t *wakeup)
 {
-    if((wakeup == NULL) || (wakeup->sem == NULL)) return NS_E_INVAL;
+    if((wakeup == NULL) || ((*wakeup) == NULL)) return NS_E_INVAL;
 
     /* 布尔语义：已 signaled 时 give 失败也视为成功。 */
-    (void)xSemaphoreGive(wakeup->sem);
+    (void)xSemaphoreGive((*wakeup));
     return NS_OK;
 }
 
@@ -315,9 +288,9 @@ int ns_platform_wakeup_wait(
 {
     BaseType_t rc;
 
-    if((wakeup == NULL) || (wakeup->sem == NULL) || (out_result == NULL)) return NS_E_INVAL;
+    if((wakeup == NULL) || ((*wakeup) == NULL) || (out_result == NULL)) return NS_E_INVAL;
 
-    rc = xSemaphoreTake(wakeup->sem, ns_freertos_us_to_ticks(timeout_us));
+    rc = xSemaphoreTake((*wakeup), ns_freertos_us_to_ticks(timeout_us));
     *out_result = (rc == pdTRUE) ? NS_PLATFORM_WAIT_SIGNALED : NS_PLATFORM_WAIT_TIMEOUT;
     return NS_OK;
 }
@@ -326,49 +299,41 @@ int ns_platform_wakeup_wait(
 /*  mutex                                                              */
 /* ------------------------------------------------------------------ */
 
-int ns_platform_mutex_create(ns_platform_mutex_t **out_mutex, const char *debug_name)
+int ns_platform_mutex_init(ns_platform_mutex_t *mutex, const char *debug_name)
 {
-    ns_platform_mutex_t *mutex;
-
     (void)debug_name;
 
-    if(out_mutex == NULL) return NS_E_INVAL;
+    if(mutex == NULL) return NS_E_INVAL;
 
-    mutex = (ns_platform_mutex_t *)ns_platform_alloc(sizeof(*mutex));
-    if(mutex == NULL) return NS_E_NOMEM;
-
-    mutex->sem = xSemaphoreCreateMutex();
-    if(mutex->sem == NULL){
-        ns_platform_free(mutex);
+    (*mutex) = xSemaphoreCreateMutex();
+    if((*mutex) == NULL){
         return NS_E_NOMEM;
     }
 
-    *out_mutex = mutex;
     return NS_OK;
 }
 
-int ns_platform_mutex_destroy(ns_platform_mutex_t *mutex)
+int ns_platform_mutex_deinit(ns_platform_mutex_t *mutex)
 {
     if(mutex == NULL) return NS_E_INVAL;
 
-    if(mutex->sem != NULL) vSemaphoreDelete(mutex->sem);
-    ns_platform_free(mutex);
+    if((*mutex) != NULL) vSemaphoreDelete((*mutex));
     return NS_OK;
 }
 
 int ns_platform_mutex_lock(ns_platform_mutex_t *mutex)
 {
-    if((mutex == NULL) || (mutex->sem == NULL)) return NS_E_INVAL;
+    if((mutex == NULL) || ((*mutex) == NULL)) return NS_E_INVAL;
 
-    if(xSemaphoreTake(mutex->sem, portMAX_DELAY) != pdTRUE) return NS_E_INVAL;
+    if(xSemaphoreTake((*mutex), portMAX_DELAY) != pdTRUE) return NS_E_INVAL;
     return NS_OK;
 }
 
 int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 {
-    if((mutex == NULL) || (mutex->sem == NULL)) return NS_E_INVAL;
+    if((mutex == NULL) || ((*mutex) == NULL)) return NS_E_INVAL;
 
-    if(xSemaphoreGive(mutex->sem) != pdTRUE) return NS_E_INVAL;
+    if(xSemaphoreGive((*mutex)) != pdTRUE) return NS_E_INVAL;
     return NS_OK;
 }
 
@@ -387,28 +352,23 @@ static void ns_freertos_task_entry(void *arg)
     vTaskDelete(NULL);
 }
 
-int ns_platform_thread_create(
-    ns_platform_thread_t **out_thread,
+int ns_platform_thread_init(
+    ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
     const char *debug_name)
 {
-    ns_platform_thread_t *thread;
     BaseType_t rc;
 
     (void)debug_name;
 
-    if((out_thread == NULL) || (entry == NULL)) return NS_E_INVAL;
-
-    thread = (ns_platform_thread_t *)ns_platform_alloc(sizeof(*thread));
-    if(thread == NULL) return NS_E_NOMEM;
+    if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
     thread->task = NULL;
     thread->entry = entry;
     thread->arg = arg;
     thread->join_sem = xSemaphoreCreateBinary();
     if(thread->join_sem == NULL){
-        ns_platform_free(thread);
         return NS_E_NOMEM;
     }
 
@@ -418,11 +378,9 @@ int ns_platform_thread_create(
                      &thread->task);
     if(rc != pdPASS){
         vSemaphoreDelete(thread->join_sem);
-        ns_platform_free(thread);
         return NS_E_NOMEM;
     }
 
-    *out_thread = thread;
     return NS_OK;
 }
 
@@ -432,7 +390,6 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 
     (void)xSemaphoreTake(thread->join_sem, portMAX_DELAY);
     vSemaphoreDelete(thread->join_sem);
-    ns_platform_free(thread);
     return NS_OK;
 }
 
@@ -449,30 +406,30 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
     if(event == NULL) return NS_E_INVAL;
 
     ns_waitable_init(&event->waitable);
-    event->signal_handle.handle = NULL;
+    event->signal_handle = NULL;
 
     sem = xSemaphoreCreateBinary();
     if(sem == NULL) return NS_E_NOMEM;
 
-    event->waitable.primitive.handle = (void *)sem;
-    event->signal_handle.handle = (void *)sem;
+    event->waitable.primitive = (void *)sem;
+    event->signal_handle = (void *)sem;
     return NS_OK;
 }
 
 int ns_platform_event_signal(ns_platform_event_t *event)
 {
-    if((event == NULL) || (event->signal_handle.handle == NULL)) return NS_E_INVAL;
+    if((event == NULL) || (event->signal_handle == NULL)) return NS_E_INVAL;
 
     /* 布尔语义：已 signaled 时 give 失败也视为成功。 */
-    (void)xSemaphoreGive((SemaphoreHandle_t)event->signal_handle.handle);
+    (void)xSemaphoreGive((SemaphoreHandle_t)event->signal_handle);
     return NS_OK;
 }
 
 int ns_platform_event_drain(ns_platform_event_t *event)
 {
-    if((event == NULL) || (event->waitable.primitive.handle == NULL)) return NS_E_INVAL;
+    if((event == NULL) || (event->waitable.primitive == NULL)) return NS_E_INVAL;
 
-    (void)xSemaphoreTake((SemaphoreHandle_t)event->waitable.primitive.handle, 0);
+    (void)xSemaphoreTake((SemaphoreHandle_t)event->waitable.primitive, 0);
     return NS_OK;
 }
 
@@ -481,12 +438,12 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
     if(event == NULL) return NS_E_INVAL;
     if(event->waitable.registered_waitset != NULL) return NS_E_BUSY;
 
-    if(event->waitable.primitive.handle != NULL){
-        vSemaphoreDelete((SemaphoreHandle_t)event->waitable.primitive.handle);
+    if(event->waitable.primitive != NULL){
+        vSemaphoreDelete((SemaphoreHandle_t)event->waitable.primitive);
     }
 
     ns_waitable_init(&event->waitable);
-    event->signal_handle.handle = NULL;
+    event->signal_handle = NULL;
     return NS_OK;
 }
 
@@ -494,33 +451,25 @@ int ns_platform_event_deinit(ns_platform_event_t *event)
 /*  waitset                                                            */
 /* ------------------------------------------------------------------ */
 
-int ns_platform_waitset_create(ns_platform_waitset_t **out_waitset)
+int ns_platform_waitset_init(ns_platform_waitset_t *waitset)
 {
-    ns_platform_waitset_t *waitset;
-
-    if(out_waitset == NULL) return NS_E_INVAL;
-
-    waitset = (ns_platform_waitset_t *)ns_platform_alloc(sizeof(*waitset));
-    if(waitset == NULL) return NS_E_NOMEM;
+    if(waitset == NULL) return NS_E_INVAL;
 
     memset(waitset, 0, sizeof(*waitset));
     waitset->set = xQueueCreateSet((UBaseType_t)NANOSIG_FREERTOS_WAITSET_CAP);
     if(waitset->set == NULL){
-        ns_platform_free(waitset);
         return NS_E_NOMEM;
     }
 
-    *out_waitset = waitset;
     return NS_OK;
 }
 
-int ns_platform_waitset_destroy(ns_platform_waitset_t *waitset)
+int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset)
 {
     if(waitset == NULL) return NS_E_INVAL;
     if(waitset->count != 0u) return NS_E_EXISTS;
 
     vQueueDelete(waitset->set);
-    ns_platform_free(waitset);
     return NS_OK;
 }
 
@@ -544,7 +493,7 @@ int ns_platform_waitset_add(
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= (size_t)NANOSIG_FREERTOS_WAITSET_CAP) return NS_E_TOO_MANY_HANDLES;
 
-    member = (QueueSetMemberHandle_t)waitable->primitive.handle;
+    member = (QueueSetMemberHandle_t)waitable->primitive;
     if(member == NULL) return NS_E_INVAL;
 
     /* FreeRTOS queue set 要求成员在加入时为空。 */
@@ -593,7 +542,7 @@ int ns_platform_waitset_remove(
     }
     if(i == (size_t)NANOSIG_FREERTOS_WAITSET_CAP) return NS_E_INVAL;
 
-    member = (QueueSetMemberHandle_t)waitable->primitive.handle;
+    member = (QueueSetMemberHandle_t)waitable->primitive;
     cap = ns_freertos_member_capacity(member);
 
     /* 先 drain 成员使其为空，xQueueRemoveFromSet 才能成功。残留 set token 由
@@ -614,7 +563,7 @@ int ns_platform_waitset_remove(
         for(j = 0; j < (size_t)NANOSIG_FREERTOS_WAITSET_CAP; j++){
             if(waitset->slots[j] != NULL){
                 UBaseType_t c = ns_freertos_member_capacity(
-                    (QueueSetMemberHandle_t)waitset->slots[j]->primitive.handle);
+                    (QueueSetMemberHandle_t)waitset->slots[j]->primitive);
                 if(c > max_cap) max_cap = c;
             }
         }

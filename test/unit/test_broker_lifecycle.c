@@ -34,8 +34,8 @@ static void test_yield(void)
 #endif
 }
 
-/* RAW_TO_HANDLE delegates to NS_WAITABLE_GET in nanosig_port.h; no platform branching needed. */
-#define RAW_TO_HANDLE(raw) NS_WAITABLE_GET(&(raw))
+/* RAW_TO_HANDLE 直接读取 waitable 的平台句柄；句柄是平台头里的标量别名，无需分支。 */
+#define RAW_TO_HANDLE(raw) ((raw).primitive)
 
 /* ------------------------------------------------------------------ */
 /*  Shared test scaffolding                                            */
@@ -146,16 +146,15 @@ static int test_watcher_invalid_paths(void)
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_E_INVAL);
 
     EXPECT_OK(ns_init() == NS_OK);
-    { ns_waitable_handle_t h = {.fd = 0};
+    { ns_waitable_handle_t h = 0;
       /* AC-1: handler == NULL → NS_E_INVAL（先于 watcher NULL / runtime 校验）。 */
       EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, NULL) == NS_E_INVAL); }
-    { ns_waitable_handle_t h = {.fd = 0}; EXPECT_OK(ns_watcher_init(NULL, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
-    /* 无效句柄：POSIX 用负 fd；Windows 的无效句柄是 NULL（联合体里 .fd=-1 会留下
-       非零 HANDLE 位，被判为有效）。 */
+    { ns_waitable_handle_t h = 0; EXPECT_OK(ns_watcher_init(NULL, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
+    /* 无效句柄：POSIX 用负 fd，Windows 用 NULL（平台头定义各自的谓词）。 */
 #if defined(_WIN32)
-    { ns_waitable_handle_t h = {.handle = NULL}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
+    { ns_waitable_handle_t h = NULL; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
 #else
-    { ns_waitable_handle_t h = {.fd = -1}; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
+    { ns_waitable_handle_t h = -1; EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
 #endif
     /* 有效句柄 + 非法 events 位 → NS_E_INVAL；须用真实句柄，否则会先因句柄无效返回。 */
     raw = test_create_raw_waitable();
@@ -462,10 +461,10 @@ static int test_broker_add_invalid_fd(void)
        Windows：唯一无效句柄是 NULL，会在 ns_watcher_init 阶段被拒绝；
        Windows waitset 只拒绝 NULL 句柄，故按平台语义断言。 */
 #if defined(_WIN32)
-    { ns_waitable_handle_t h = {.handle = NULL};
+    { ns_waitable_handle_t h = NULL;
     EXPECT_OK(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_E_INVAL); }
 #else
-    { ns_waitable_handle_t h = {.fd = -1};
+    { ns_waitable_handle_t h = -1;
     if(ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_IN, 0, noop_watcher_handler) == NS_OK){
         EXPECT_OK(ns_broker_add(&watcher) != NS_OK);
         (void)ns_broker_remove(&watcher);

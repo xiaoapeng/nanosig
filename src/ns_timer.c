@@ -18,7 +18,7 @@
 #include <nanosig/ns_debug.h>
 
 typedef struct ns_timer_mgr {
-    ns_platform_mutex_t *mutex;
+    ns_platform_mutex_t mutex;
     ns_rbtree_t tree;
     ns_platform_time_us_t now;
     ns_timer_notify_fn notify;
@@ -71,15 +71,15 @@ static int ns_timer_mgr_lock(void)
 {
     int rc;
 
-    if(!g_timer_mgr.initialized || (g_timer_mgr.mutex == NULL)) return NS_E_SHUTDOWN;
-    rc = ns_platform_mutex_lock(g_timer_mgr.mutex);
+    if(!g_timer_mgr.initialized) return NS_E_SHUTDOWN;
+    rc = ns_platform_mutex_lock(&g_timer_mgr.mutex);
     if(rc != NS_OK) ns_merrln(TIMER, "mutex_lock failed: %d", rc);
     return rc;
 }
 
 static int ns_timer_mgr_unlock(void)
 {
-    int rc = ns_platform_mutex_unlock(g_timer_mgr.mutex);
+    int rc = ns_platform_mutex_unlock(&g_timer_mgr.mutex);
 
     if(rc != NS_OK) ns_merrln(TIMER, "mutex_unlock failed: %d", rc);
     return rc;
@@ -109,7 +109,7 @@ static int ns_timer_is_running(const ns_timer_t *timer)
 
 static int ns_timer_validate_created(const ns_timer_t *timer)
 {
-    if(timer->signal.mutex == NULL) return NS_E_INVAL;
+    if(!timer->signal.mutex_initialized) return NS_E_INVAL;
     if(timer->signal.payload_size != 0u) return NS_E_INVAL;
     return NS_OK;
 }
@@ -181,13 +181,12 @@ int ns_timer_mgr_global_init(ns_timer_notify_fn notify, void *ctx)
 
     if(g_timer_mgr.initialized) return NS_E_EXISTS;
 
-    g_timer_mgr.mutex = NULL;
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = notify;
     g_timer_mgr.notify_ctx = ctx;
     ns_rbtree_root_init((&g_timer_mgr.tree), ns_timer_cmp);
 
-    rc = ns_platform_mutex_create(&g_timer_mgr.mutex, "nanosig-timer-mgr");
+    rc = ns_platform_mutex_init(&g_timer_mgr.mutex, "nanosig-timer-mgr");
     if(rc != NS_OK){
         g_timer_mgr.notify = NULL;
         g_timer_mgr.notify_ctx = NULL;
@@ -209,16 +208,15 @@ void ns_timer_mgr_global_shutdown(void)
     g_timer_mgr.initialized = 0;
 
     /* ② 等待正在执行锁内操作者完成，然后清空树 */
-    if(ns_platform_mutex_lock(g_timer_mgr.mutex) == NS_OK){
+    if(ns_platform_mutex_lock(&g_timer_mgr.mutex) == NS_OK){
         while((node = ns_rbtree_first(&g_timer_mgr.tree)) != NULL){
             ns_rbtree_del(node, &g_timer_mgr.tree);
         }
-        (void)ns_platform_mutex_unlock(g_timer_mgr.mutex);
+        (void)ns_platform_mutex_unlock(&g_timer_mgr.mutex);
     }
 
     /* ③ 安全销毁 mutex — 所有潜在调用者已被 initialized==0 阻断 */
-    (void)ns_platform_mutex_destroy(g_timer_mgr.mutex);
-    g_timer_mgr.mutex = NULL;
+    (void)ns_platform_mutex_deinit(&g_timer_mgr.mutex);
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = NULL;
     g_timer_mgr.notify_ctx = NULL;

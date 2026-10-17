@@ -119,7 +119,7 @@ static int scenario_multi_route(void)
     /* Create watcher */
     g_mr_raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(g_mr_raw));
-    { ns_waitable_handle_t h = NS_WAITABLE_GET(&g_mr_raw); EXPECT_OK(ns_watcher_init(&g_mr_watcher, h, NS_WAITABLE_EVENT_IN, 1, mr_watcher_handler) == NS_OK); }
+    { ns_waitable_handle_t h = (g_mr_raw.primitive); EXPECT_OK(ns_watcher_init(&g_mr_watcher, h, NS_WAITABLE_EVENT_IN, 1, mr_watcher_handler) == NS_OK); }
     EXPECT_OK(ns_broker_add(&g_mr_watcher) == NS_OK);
 
     /* Start all loops in background threads */

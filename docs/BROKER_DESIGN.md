@@ -33,7 +33,7 @@ timer_mgr 层（独立模块）：
   notify 回调唤醒 broker
 
 平台层：
-  ns_platform_thread_create / join
+  ns_platform_thread_init / join（调用方拥有 thread 存储）
   ns_platform_waitset
   ns_platform_event_*（caller-owned waitable-first 事件原语）
 ```
@@ -110,10 +110,10 @@ int ns_watcher_init(
 int ns_watcher_deinit(ns_watcher_t *watcher);
 ```
 
-- `init`：统一初始化入口，接受 `ns_waitable_handle_t`（Linux/macOS 填 `.fd`，
-  Windows/FreeRTOS/Zephyr 填 `.handle`）和必填 `handler`。内部通过
-  `NS_WAITABLE_SET` 填充 `watcher->waitable.primitive`（events、edge_triggered），
-  初始化 `broker_node`，并保存 `handler`。
+- `init`：统一初始化入口，接受 `ns_waitable_handle_t`（平台内核原语的透明别名，
+  由构建注入的平台头提供：POSIX 是 fd，Windows 是 HANDLE，RTOS 是对象指针）和必填
+  `handler`。内部直接把句柄赋给 `watcher->waitable.primitive`（events、
+  edge_triggered 同步设置），初始化 `broker_node`，并保存 `handler`。
 - `init` 校验顺序固定：`watcher == NULL` → `NS_E_INVAL`；`handler == NULL` →
   `NS_E_INVAL`；句柄/事件非法 → `NS_E_INVAL`；runtime 未就绪 → `NS_E_SHUTDOWN`。
 - `init` **不做重复初始化判定**（统一策略，同 `ns_signal_init_raw`）：重复 init
@@ -268,15 +268,15 @@ ns_init()
   → ns_platform_init()
   → ns_broker_init()
     → ns_platform_alloc(broker)
-    → ns_platform_waitset_create(&broker->waitset)
+    → ns_platform_waitset_init(&broker->waitset)
     → ns_platform_event_init(&broker->event, "nanosig-broker")
     → broker->event.waitable.events = NS_WAITABLE_EVENT_IN
-    → ns_platform_waitset_add(broker->waitset, &broker->event.waitable)
-    → ns_platform_mutex_create(&broker->watcher_mutex)
+    → ns_platform_waitset_add(&broker->waitset, &broker->event.waitable)
+    → ns_platform_mutex_init(&broker->watcher_mutex)
     → ns_list_init(&broker->watcher_head)
     → ns_timer_mgr_global_init(ns_broker_notify, broker)
     → atomic_init(&broker->quit_requested, 0)
-    → ns_platform_thread_create(&broker->thread, broker_run, broker)
+    → ns_platform_thread_init(&broker->thread, broker_run, broker)
     → g_broker = broker
   → atomic_store(g_ns_initialized, 1)
 ```
@@ -295,7 +295,7 @@ ns_shutdown()
   → ns_broker_destroy()
     → atomic_store(broker->quit_requested, 1)
     → ns_platform_event_signal(&broker->event)
-    → ns_platform_thread_join(broker->thread)
+    → ns_platform_thread_join(&broker->thread)
     → g_broker = NULL
     → ns_timer_mgr_global_shutdown()
     → mutex_lock(broker->watcher_mutex)
@@ -339,14 +339,16 @@ handler 在其内部 emit 用户 signal 时，该 emit 已经指向用户自己�
 
 ## 平台层新增接口
 
-### ns_platform_thread_create / join
+### ns_platform_thread_init / join
+
+平台类型由构建注入的平台头提供（caller-owned 存储，不再是 `struct` 前向声明）：
 
 ```c
-typedef struct ns_platform_thread ns_platform_thread_t;
 typedef void (*ns_platform_thread_fn)(void *arg);
 
-int ns_platform_thread_create(
-    ns_platform_thread_t **out_thread,
+/* ns_platform_thread_t 是平台头的透明别名（pthread_t / HANDLE / 任务句柄 + 内嵌栈） */
+int ns_platform_thread_init(
+    ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
     const char *debug_name);
@@ -354,9 +356,10 @@ int ns_platform_thread_create(
 int ns_platform_thread_join(ns_platform_thread_t *thread);
 ```
 
-- Windows：`CreateThread` + wrapper 函数适配 `LPTHREAD_START_ROUTINE`。
+- Windows：`_beginthreadex` + wrapper 函数适配 `LPTHREAD_START_ROUTINE`。
 - Linux/macOS：`pthread_create`。
-- `join` 后释放线程句柄和内部结构体。
+- `init` 在调用方提供的存储上初始化，不分配 thread 对象；`join` 只回收线程自身
+  的平台资源（如 Windows 的线程句柄），不释放调用方存储。
 
 ### ns_platform_event_*
 

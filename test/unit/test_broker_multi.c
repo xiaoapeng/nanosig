@@ -31,8 +31,8 @@ static void test_yield(void)
 #endif
 }
 
-/* RAW_TO_HANDLE delegates to NS_WAITABLE_GET in nanosig_port.h; no platform branching needed. */
-#define RAW_TO_HANDLE(raw) NS_WAITABLE_GET(&(raw))
+/* RAW_TO_HANDLE 直接读取 waitable 的平台句柄；句柄是平台头里的标量别名，无需分支。 */
+#define RAW_TO_HANDLE(raw) ((raw).primitive)
 
 /* ------------------------------------------------------------------ */
 /*  Test: multiple watchers registered simultaneously                  */
@@ -99,7 +99,7 @@ static void mixed_handler_a(ns_watcher_t *w, uint32_t triggered_events)
 
     (void)triggered_events;
 #if !defined(_WIN32)
-    { uint64_t dummy; ssize_t n; do { n = read(h.fd, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR); (void)n; }
+    { uint64_t dummy; ssize_t n; do { n = read(h, &dummy, sizeof(dummy)); } while(n < 0 && errno == EINTR); (void)n; }
 #endif
     (void)h;
     ns_atomic_store_explicit(&g_mixed_handler_a_called, 1, ns_memory_order_release);

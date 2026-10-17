@@ -32,8 +32,8 @@ static void test_yield(void)
 #endif
 }
 
-/* RAW_TO_HANDLE delegates to NS_WAITABLE_GET in nanosig_port.h; no platform branching needed. */
-#define RAW_TO_HANDLE(raw) NS_WAITABLE_GET(&(raw))
+/* RAW_TO_HANDLE 直接读取 waitable 的平台句柄；句柄是平台头里的标量别名，无需分支。 */
+#define RAW_TO_HANDLE(raw) ((raw).primitive)
 
 /* ------------------------------------------------------------------ */
 /*  Test: edge_triggered vs level_triggered event delivery semantics    */
@@ -65,7 +65,7 @@ static void handler_edge_level(ns_watcher_t *w, uint32_t triggered_events)
         uint64_t dummy;
         ssize_t n;
         do {
-            n = read(h.fd, &dummy, sizeof(dummy));
+            n = read(h, &dummy, sizeof(dummy));
         } while(n < 0 && errno == EINTR);
         (void)n;
 #else
@@ -237,10 +237,10 @@ static int test_watcher_out_event_delivery(void)
 
     if(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) goto fail;
 
-    raw.primitive.fd = sv[0];
+    raw.primitive = sv[0];
     raw.events = NS_WAITABLE_EVENT_OUT;
 
-    { ns_waitable_handle_t h = {.fd = sv[0]}; rc = ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_OUT, 0, handler_out_event); }
+    { ns_waitable_handle_t h = sv[0]; rc = ns_watcher_init(&watcher, h, NS_WAITABLE_EVENT_OUT, 0, handler_out_event); }
     if(rc != NS_OK) goto fail;
     watcher_ok = 1;
 
