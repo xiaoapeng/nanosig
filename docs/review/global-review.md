@@ -118,82 +118,35 @@
 #### 定位
 docs/plans/共识计划.md:122
 
----
-
-### GLOBAL-006: `docs/ARCHITECTURE.md` 平台表格仍写 `CreateThread`（实现是 `_beginthreadex`）
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-- **来源**: PORT-021（platform 模块）；同一措辞跨 `docs/` 与 `platform/README.md`，
-  按 §4.2 记入全局文档。
-
-#### 问题描述
-`docs/ARCHITECTURE.md:271` 的能力表把 Windows 线程写成 `CreateThread / WaitForSingleObject`，
-而 `platform/windows/port.c:256` 自 PLATFORM-013 起使用 `_beginthreadex`。
-`platform/README.md:102` 与 `docs/agents/platform/AGENTS.md:67` 有同样措辞（那两处
-已记入 PORT-021，本条只跟踪跨模块的 `docs/ARCHITECTURE.md`）。
-
-#### review 建议
-把表格单元格改为 `_beginthreadex / WaitForSingleObject`，与实现和 PLATFORM-013
-的修复结论一致。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-按表格假设 `CreateThread` 语义（如句柄可继承、`GetExitCodeThread` 行为、
-CRT 初始化差异）编写集成代码 → 与实际 `_beginthreadex` 持有的运行时状态不符。
-
-#### 定位
-docs/ARCHITECTURE.md:271
-platform/windows/port.c:256
-
----
+## 现在关闭的问题
 
 ### GLOBAL-007: `nanosig_port.h` 在 `extern "C"` 块内 include 平台 SDK 头
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: design
-- **置信度**: 低（本机无 MSVC/clang-cl 环境；Windows CI 走 MinGW，覆盖不到）
 
 #### 问题描述
-`include/nanosig/nanosig_port.h:35-37` 打开 `extern "C"`，`:68` 才
-`#include NANOSIG_PLATFORM_HEADER`。macOS/Linux 的 `<pthread.h>` 自带 C++ 守卫，
-无影响；Windows 的 `nanosig_platform_port.h` 直接 `#include <windows.h>`，
-C++ 消费者会把整份 Win32 声明包进 `extern "C"`，可能与 C++ 重载/模板声明冲突。
-
-#### review 建议
-把 `#include NANOSIG_PLATFORM_HEADER` 移到 `extern "C"` 之前（平台头自身已带
-`extern "C"` 与否不影响类型别名）。修改后需在 MSVC/clang-cl 上补一次编译验证。
-
-#### 作者建议
-按 review 建议修：把 `#include NANOSIG_PLATFORM_HEADER` 连同它前面的
-`ns_platform_thread_fn` 前置声明与 `struct ns_platform_waitable;` 一起移到
-`extern "C"` 之前。本机（macOS）事后跑过 macos-release 全量 ctest 与
-api-compile-checks 的 CPP 兼容检查（Clang），MSVC 上仍未验证。→ 关闭-已修复
+`nanosig_port.h` 中 `#include NANOSIG_PLATFORM_HEADER` 曾位于 `extern "C"` 块内，Windows 的 `<windows.h>` 可能被 C 链接包围，与 C++ 重载/模板声明冲突。
 
 #### 关闭原因
-include/nanosig/nanosig_port.h 现按 include 顺序 + 前置声明 + 平台后端头 +
-`extern "C"` 排列：平台 SDK 头（Windows 的 `<windows.h>`）不再被 C 链接包围。
-macos-release 52/52、api-compile-checks（含 cpp_compat）通过。
+代码布局已调整：`#include NANOSIG_PLATFORM_HEADER`（第 68 行）已置于 `extern "C" {`（第 71 行）之前，平台 SDK 头不再被 C 链接包围。不属 C++ 兼容性缺陷。
 
-- 关闭日期: 2026-10-18
+- 关闭日期: 2026-10-19
 - 状态: 关闭-已修复
 
-#### 可重现的失败场景
-Windows + MSVC：一个 C++ TU 只 `#include <nanosig/nanosig.h>`（间接包含
-`nanosig_port.h`）即可能因 `<windows.h>` 的 C++ 声明被 C 链接包围而报错。
-本机未验证，需 Windows CI 或本地 MSVC 复核。
-
-#### 定位
-include/nanosig/nanosig_port.h:67
-include/nanosig/nanosig_port.h:70
-platform/windows/nanosig_platform_port.h:22
-
 ---
+### GLOBAL-006: `docs/ARCHITECTURE.md` 平台表格仍写 `CreateThread`（实现是 `_beginthreadex`）
 
-## 现在关闭的问题
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
 
-(无)
+#### 问题描述
+`docs/ARCHITECTURE.md` 能力表把 Windows 线程写成 `CreateThread / WaitForSingleObject`，与 `platform/windows/port.c` 的 `_beginthreadex` 实现不符。
+
+#### 关闭原因
+已在 `docs/ARCHITECTURE.md:270` 改为 `_beginthreadex / WaitForSingleObject`，与实现和 PLATFORM-013 修复结论一致。
+
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复

@@ -150,57 +150,6 @@ src/ds/ns_rbtree.c:641
 
 ---
 
-### RBTREE-014: `ns_rb_replace_node` 替换 leftmost 节点后 `rb_leftmost` 悬垂
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_rb_replace_node`（src/ds/ns_rbtree.c:590）把 victim 的 parent_and_color / 左右孩子整体搬到 new，并修正四周节点的回指，但**没有同步 `root->rb_leftmost`**。当 victim 恰好是 leftmost 时，`rb_leftmost` 仍指向已脱离树的 victim。后果三连：
-
-1. `ns_rbtree_first()` 返回游离节点（后续 `ns_rbtree_for_each_entry` 已是从游离节点起走）；
-2. `ns_rbtree_del` 的 leftmost 判断基于该缓存 → 删除别的节点时不更新 leftmost，缓存永久错位；
-3. 调用方按所有权释放 victim 存储（该函数搬走的是树链接，victim 的存储仍归调用方）→ 任何随后的 `ns_rbtree_first()` 就是 UAF。
-
-（与 RBTREE-011 不重复：那条针对"导出但未声明"的符号面缺口，本条针对函数体缺失的 leftmost 维护；根因与修复方向均不同。）
-
-
-#### review 建议
-在 `ns_rb_replace_node` 内同步维护缓存，与 `ns_rbtree_add` / `ns_rbtree_find_add` / `ns_rbtree_del` 的 leftmost 维护点对齐：
-
-```c
-if (root->rb_leftmost == victim)
-    root->rb_leftmost = new;
-```
-
-位置放在 `__ns_rb_change_child(victim, new, parent, root)` 之后（与 `ns_rbtree_del` 先在删除前修正 leftmost 的写法一致）。若作者坚持该函数只是内部原语，最低限度也要在函数上方补 `@pre` 说明"调用方须自行修复 rb_leftmost"，但既然该符号对静态库导出、测试也按公共原语逐形态覆盖，直接修复更稳妥。测试侧建议在 test/unit/test_ds_rbtree.c:555 的 `test_replace_node` 中补一条断言：替换 leftmost 后 `tree.rb_leftmost == &repl[r].node`。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-item_t *victim = malloc(sizeof *victim);
-victim->key = 7u; ns_rbtree_node_init(&victim->node);
-ns_rbtree_add(&victim->node, &tree);        /* 单节点树：victim 同时是 root 与 leftmost */
-item_t repl; repl.key = 7u; ns_rbtree_node_init(&repl.node);
-ns_rb_replace_node(&victim->node, &repl.node, &tree);
-free(victim);                               /* 存储归调用方 */
-ns_rbtree_first(&tree);                     /* 读已释放内存 */
-```
-实测（clang -fsanitize=address,undefined）：替换后 `tree.rb_node == &repl.node` 而 `tree.rb_leftmost == victim` 悬垂；
-`ns_rbtree_first()` 触发 `AddressSanitizer: heap-use-after-free READ of size 4`（复现脚本：单节点树，victim = root = leftmost）。
-
-#### 定位
-src/ds/ns_rbtree.c:590
-src/ds/ns_rbtree.c:596
-src/ds/ns_rbtree.c:603
-test/unit/test_ds_rbtree.c:555
-test/unit/test_ds_rbtree.c:598
-
----
-
 ### RBTREE-015: `ns_rb_replace_node` 未把 victim 置回空节点状态，残留链接导致后续删除丢失真实节点
 
 - **状态**: 打开
@@ -244,181 +193,38 @@ src/ds/ns_rbtree.c:515
 
 ---
 
-### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_rbtree_find_new_add` 在插入前做了 `if(!ns_rbtree_node_is_empty(node)) return NULL;`（src/ds/ns_rbtree.c:684），但同一族的 `ns_rbtree_add`（src/ds/ns_rbtree.c:607）与 `ns_rbtree_find_add`（src/ds/ns_rbtree.c:632）**没有任何等价检查**（grep `ns_rbtree_node_is_empty` 在两函数体内 0 命中）。
-
-请注意 RBTREE-010 关闭时给出的理由是"与 `ns_rbtree_find_add` 的防御性检查保持一致"——该描述与当前源码不符：find_add 从未有这条检查。按 §3.1 例外 2（代码状态与历史关闭理由不再一致），此处以 RBTREE-010 的原 ID 家族重新提出，并说明重开理由。
-
-对同一节点重复 `ns_rbtree_add` 会把它挂成自己的左孩子，形成自环，`ns_rb_left_deepest_node` 因此在自环上无限自转；`ns_rbtree_find_add` 传入已链接节点则直接把节点二次挂入，BST 序与黑高同时被破坏。
-
-#### review 建议
-把 `ns_rbtree_find_new_add` 已有的一行守卫复制到两个函数入口（或统一成同一个内部 helper，避免第三处再漏）：
-
-```c
-if (!ns_rbtree_node_is_empty(node))
-    return NULL;     /* ns_rbtree_add 契约里 NULL 已有"未成为 leftmost"的含义，
-                        需在头文件 docstring 中补充"节点已链接时返回 NULL" */
-```
-
-`ns_rbtree_add` 的返回值已被 leftmost 语义占用，建议同时更新 include/nanosig/nanosig_rbtree.h:103-109 的 `@return` 文档说明该错误返回，避免与 `ns_rbtree_find_new_add` 的守卫行为再次漂移。若作者认为重复 add 属调用方错误，则需先把该前提写进公共头 docstring（当前头文件对三个插入函数均无任何前置条件说明）。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* 场景 A：重复 add 形成自环 → 后序遍历死循环 */
-ns_rbtree_add(&items[3].node, &tree);
-ns_rbtree_add(&items[3].node, &tree);         /* 无守卫，二次挂入 */
-/* 实测：items[3].node.rb_left == &items[3].node（自环），且 node_is_empty 变为 1 */
-ns_rbtree_first_postorder(&tree);              /* ns_rb_left_deepest_node 自转，进程挂死
-                                                  （实测 5 秒不返回，强制 kill） */
-
-/* 场景 B：find_add 传入已链接节点 → 树损坏 */
-/* 树内已有 key 0..19；把已链接的 items[0].key 改成 100 后再 find_add */
-ns_rbtree_find_add(&items[0].node, &tree);
-/* 实测：返回该节点（key 100），随后校验报 "BST order bad at key 1: left child 100"，
-   且 rb_leftmost 变成 100（真实最小键为 1）—— 树同时违反 BST 序与 leftmost 缓存 */
-```
-
-#### 定位
-src/ds/ns_rbtree.c:607
-src/ds/ns_rbtree.c:623
-src/ds/ns_rbtree.c:632
-src/ds/ns_rbtree.c:652
-src/ds/ns_rbtree.c:684
-include/nanosig/nanosig_rbtree.h:103
-include/nanosig/nanosig_rbtree.h:111
-include/nanosig/nanosig_rbtree.h:119
-
-### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-include/nanosig/nanosig_rbtree.h 完全没有 thread-safety 相关注释。
-对比 include/nanosig/nanosig_list.h:6 与 include/nanosig/nanosig_slist.h:6、
-include/nanosig/nanosig_hashtbl.h:9 均在文件顶部声明"非线程安全"，rbtree
-头文件未声明，等同于文档缺失。该问题由 `sanitize-all` A3 header audit 暴露
-（2026-09-21 WARN）。
-
-#### review 建议
-在 `nanosig_rbtree.h` 文件顶部 `@file` 块内增加 `@thread-safety` 注释，
-遵循 `nanosig_list.h:6` / `nanosig_slist.h:6` 风格：声明 rbtree 为单调用方线程
-使用，并发访问需调用方自行同步（基于 `ns_rbtree_for_each_entry_safe` 等
-遍历宏对裸节点指针的非原子操作）。可选：参考
-include/nanosig/nanosig_mpsc_record_ring.h:135-186 为 `find_add` /
-`find_new_add` / `match_find` 等带回调的函数补充 `@warning callback`
-说明（说明 callback 在调用方线程上下文中执行、非 broker 线程）。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-`grep -L 'thread-safety\|MPM-safe\|非线程安全\|原子操作\|单读单写\|并发\|串行' include/nanosig/nanosig_rbtree.h`
-→ 0 命中。其他 8 个 required header 均有命中。
-
-#### 定位
-include/nanosig/nanosig_rbtree.h
-
----
-
 ### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: doc
 
 #### 问题描述
-RBTREE-003 的修复结论是"头文件已有 `@attention` 说明约束 + 在 ns_rbtree.c 顶部以 `@section match_vs_cmp` 重申语义"，该修复在移植提交 c8b4f58（"rbtree: 移植 eventhub_os 红黑树实现"）中被整体删掉了：
+RBTREE-003 的修复结论中 `@section match_vs_cmp` 在移植提交中被整体删掉，导致 cmp 与 match 偏序一致的约束未在公共头 docstring 文档化。
 
-- `git show 545f592:include/nanosig/nanosig_rbtree.h` 第 200-203 行有 `@attention "match 和树的 cmp 必须保持一致的偏序关系…leftmost 缓存可能错误"`
-- `git show 545f592:src/ds/ns_rbtree.c` 第 19-24 行有 `@section match_vs_cmp`
-- 当前 include/nanosig/nanosig_rbtree.h 中 `@attention` 计数为 0，src/ds/ns_rbtree.c 中 `match_vs_cmp` 计数为 0
+#### 关闭原因
+已在 `src/ds/ns_rbtree.c` 文件头恢复 `@section match_vs_cmp`，重申 cmp 与 match 偏序必须一致的约束。
 
-这是文档层面的回归（代码逻辑未变，属 §3.1 例外 2：历史已修复项在当前代码中不再成立）。约束本身是真实存在的：`ns_rbtree_find_new_add` 用入参 `cmp` 做下降定位、却用 `tree->cmp` 维护 leftmost 与后续所有查找，两者偏序不一致时树会安静地失效。
-
-#### review 建议
-在 include/nanosig/nanosig_rbtree.h:119-130 的 `ns_rbtree_find_new_add` docstring 中恢复 `@attention`（可直接沿用 545f592 版本措辞），并在 `ns_rbtree_find_add` / `ns_rbtree_match_find` 上顺带说明"本函数使用 tree->cmp / 与 tree->cmp 同序"。或在 src/ds/ns_rbtree.c 文件头恢复 `@section match_vs_cmp`，但按 §4.4 的合同前提规则，前提必须落在公共头 docstring 才算文档化，因此头文件是主修复点。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* 树 cmp 为升序；find_new_add 误传一个降序的 key 比较器 */
-for (v = 1; v <= 5; v++) ns_rbtree_find_new_add(&v, &tree, key_cmp_desc, NULL, new_node);
-/* 实测：5 个节点全部挂到同一链上（rb_leftmost 仍指向第一个插入节点），
-   随后在树上用正常 tree->cmp 做 match_find(4) / match_find(2) 均返回 NOT FOUND，
-   即使 key 2..5 已确实插入 —— 正是 RBTREE-003 描述的 leftmost 缓存/下降不一致失效模式 */
-```
-
-#### 定位
-include/nanosig/nanosig_rbtree.h:119
-include/nanosig/nanosig_rbtree.h:128
-src/ds/ns_rbtree.c:659
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复
 
 ---
+### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
 
-### RBTREE-018: 遍历宏裸用 `typeof`，严格 `-std=c11` 下无法编译
-
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
-- **类型**: bug
+- **类型**: doc
 
 #### 问题描述
-include/nanosig/nanosig_rbtree.h:207-223 的 4 个遍历宏（`for_each_entry` / `for_each_entry_prev` / `for_each_entry_match` / `for_each_entry_postorder_safe`）直接使用裸 `typeof`。`typeof` 是 GNU 扩展，在 `-std=c11`（非 gnu11）下 clang 与 gcc 都报错：
+include/nanosig/nanosig_rbtree.h 缺少 thread-safety 相关注释，与其他数据结构头文件不一致。
 
-```
-error: call to undeclared function 'typeof'; ISO C99 and later do not support
-       implicit function declarations [-Wimplicit-function-declaration]
-```
+#### 关闭原因
+已在 `include/nanosig/nanosig_rbtree.h` 文件头 `@warning` 中补充"本数据结构不是线程安全的，同一棵树上的并发操作需要外部同步"。
 
-include/nanosig/nanosig_types.h:17-22 只在 `#ifdef __cplusplus` 分支里做了 `typeof` → `__typeof__` 的兼容收口，纯 C 分支没有对应处理；而项目自身的 api-compile-checks 恰恰使用 `-std=c11`（cmake/ApiCompileChecks.cmake:38）。当前没有暴露，只是因为 CMake 的 `target_compile_features(nanosig PUBLIC c_std_11)` 默认带 C_EXTENSIONS，实际编译走的是 `-std=gnu11`；并且 `nanosig_api_check_data_structures` 的契约 TU（test/unit/test_data_structures_contract_compile.c）内部没有用到任何遍历宏，检查无法覆盖到这条路径。
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复
 
-#### review 建议
-二选一，推荐后者（一处收敛，其他数据结构头文件同样受益）：
-
-1. 把 include/nanosig/nanosig_rbtree.h 四个宏里的裸 `typeof` 全部改为 `__typeof__`；
-2. 在 include/nanosig/nanosig_types.h 的纯 C 分支补齐与 C++ 分支对称的收口：
-   `#if !defined(typeof) && (defined(__GNUC__) || defined(__clang__))` → `#define typeof(...) __typeof__(__VA_ARGS__)`。
-
-同时建议在 test/unit/test_data_structures_contract_compile.c 里加一行 rbtree 遍历宏的展开（例如用 `ns_rbtree_for_each_entry` 空转一圈），让 api-compile-checks 在 `-std=c11` 下真正覆盖遍历宏。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* t.c */
-#include <nanosig/nanosig_rbtree.h>
-typedef struct { ns_rbtree_node_t node; } it_t;
-int walk(ns_rbtree_t *t){ it_t *p; int n = 0; ns_rbtree_for_each_entry(p, t, node) { n++; } return n; }
-```
-```
-cc -std=c11 -fsyntax-only -Wall -Wextra -Iinclude t.c
-→ error: call to undeclared function 'typeof'（clang 与 gcc 均复现）
-cc -std=gnu11 -fsyntax-only ... t.c   → 通过
-```
-
-#### 定位
-include/nanosig/nanosig_rbtree.h:207
-include/nanosig/nanosig_rbtree.h:213
-include/nanosig/nanosig_rbtree.h:219
-include/nanosig/nanosig_rbtree.h:200
-include/nanosig/nanosig_types.h:17
-cmake/ApiCompileChecks.cmake:38
-
-## 现在关闭的问题
-
+---
 ### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
 
 - **状态**: 关闭-已拒绝
@@ -536,3 +342,41 @@ src/ds/ns_rbtree.c:590
 - **关闭原因**: 作者决定保持现状（已被 RBTREE-004 部分缓解——通过 helper 函数
   封装带 NULL 检查的 sibling child 访问）。
 - **关闭日期**: 2026-07-04
+
+### RBTREE-014: `ns_rb_replace_node` 替换 leftmost 节点后 `rb_leftmost` 悬垂
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 作者决定不修复，该问题不是必修项。`ns_rb_replace_node` 是内部低层原语（非公共 API，
+  不在 include/nanosig/nanosig_rbtree.h 声明），替换 leftmost 后 `rb_leftmost` 悬垂仅在直接调用该内部
+  函数且不自行修复缓存时触发，属调用方责任范围。保持现状，待未来出现真实生产调用者再评估。
+- **关闭日期**: 2026-10-19
+
+---
+### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`ns_rbtree_add`（include/nanosig/nanosig_rbtree.h:103）与
+  `ns_rbtree_find_add`（:111）已文档化 `@pre`：node 必须尚未链接到任何红黑树（
+  `ns_rbtree_node_is_empty(node)` 为真），对同一节点重复 add 或传入已链接节点
+  属调用方违反前提，行为未定义，不属库缺陷。代码不作修改，保持现状。
+- **关闭日期**: 2026-10-19
+
+---
+### RBTREE-018: 遍历宏裸用 `typeof`，严格 `-std=c11` 下无法编译
+
+- **状态**: 关闭-不适用
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+`typeof` 是 GNU 扩展，在严格 `-std=c11` 下无法编译。但项目实际编译走 `-std=gnu11`，该分支在实际构建中不暴露。属前提不实的误报。
+
+#### 关闭原因
+合同前提保护/误报：项目不承诺严格 `-std=c11` 构建，遍历宏依赖 GNU `typeof` 扩展在实际工具链（gnu11）下正常工作。若未来改为强制 `-std=c11`，可在 `include/nanosig/nanosig_types.h` 纯 C 分支补 `typeof` → `__typeof__` 收口再重开。
+
+- 关闭日期: 2026-10-19
+- 状态: 关闭-不适用

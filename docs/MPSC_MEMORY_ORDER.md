@@ -29,17 +29,19 @@ ring->read_pos     (atomic, 消费进度)
 
 ### 阶段 1：预留（reserve）
 
-生产者通过 CAS 竞争 `reserve_pos`：
+生产者通过 CAS 竞争 `write_pos` 以获取独占写入权：
 
 ```c
-reserve_pos = atomic_load(&ring->reserve_pos, relaxed);
-// CAS(reserve_pos, reserve_pos + publish_size)
-atomic_compare_exchange_weak(&ring->reserve_pos, &reserve_pos, reserve_pos + publish_size,
+write_pos = atomic_load(&ring->write_pos, acquire);
+// 抢占语义：只有 reserve_pos == write_pos 时才能拿到整环的独占写入权；
+// reserve_pos > write_pos 表示存在在途生产者，该状态不被自动回收。
+atomic_compare_exchange_weak(&ring->reserve_pos, &write_pos, write_pos + publish_size,
                              acq_rel, relaxed);
 ```
 
-- **relaxed load**：允许读取陈旧值，CAS 失败时重试即可
-- **acq_rel CAS**：成功时获取该槽位的独占所有权，同时释放上一轮操作的内存序。CAS 失败不产生任何内存序副作用
+- **acquire load**：读取当前 `write_pos` 作为 CAS 的 expected 值，只有 `reserve_pos == write_pos` 时才能抢占。
+- **acq_rel CAS**：成功时将 `reserve_pos` 推进到 `write_pos + publish_size`，获取该槽位的独占所有权，同时释放上一轮操作的内存序。CAS 失败时 `write_pos` 被更新为当前 `reserve_pos`，下次迭代重试。
+- **`reserve_pos > write_pos`**：表示存在在途生产者（已 reserve 但尚未 commit），该状态不被自动回收，生产者不得在 reserve 与 commit 之间终止（见 MPSC-012）。
 
 ### 阶段 2：写入（write）
 
@@ -113,9 +115,8 @@ read_pos = atomic_load(&ring->read_pos, acquire);
 
 | 操作 | 原子变量 | 内存序 | 作用 |
 |------|---------|--------|------|
-| 加载 reserve_pos | `reserve_pos` | relaxed | 探测起始位置，失败重试 |
-| CAS reserve_pos | `reserve_pos` | acq_rel | 竞争槽位所有权 |
-| 加载 write_pos（生产者） | `write_pos` | acquire | 观察其他生产者写入进度 |
+| 加载 write_pos（生产者） | `write_pos` | acquire | 作为 CAS expected 值，探测当前写入进度 |
+| CAS reserve_pos | `reserve_pos` | acq_rel | 竞争槽位所有权，推进 reserve_pos |
 | 存储 write_pos | `write_pos` | release | 发布写入完成 |
 | 加载 meta（消费者） | header.meta | acquire | 观察 valid=1 及记录元数据 |
 | 存储 meta（valid=1） | header.meta | release | 提交记录到消费者 |

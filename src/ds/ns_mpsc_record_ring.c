@@ -119,6 +119,13 @@ static int ns_mpsc_record_ring_capacity_is_valid(size_t capacity)
     if(capacity > (SIZE_MAX / 2u)) return 0;
     if(capacity < (sizeof(ns_mpsc_record_header_t) * 3u)) return 0;
 
+    /* 32 位构建下 meta 的 stride 字段仅 16 位（0xFFFF），record_total_size
+       最大可达 capacity/2，会被编进 meta 做 stride。若 capacity/2 超过
+       stride 掩码，入队时 stride 会被静默截断（0xFFFF），导致记录错位，
+       或 stride 解码为 0 使环永久不可用。这里拒绝过大容量，换取一个
+       明确的 NS_E_INVAL，而非静默损坏。 */
+    if((capacity / 2u) > NS_MPSC_META_STRIDE_MASK) return 0;
+
     return 1;
 }
 

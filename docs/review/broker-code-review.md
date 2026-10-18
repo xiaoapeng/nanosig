@@ -241,60 +241,6 @@ platform/freertos/port.c:493
 
 ---
 
-### BROKER-033: `ns_watcher_init` 的 `handle` 参数文档仍是联合体写法
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-`include/nanosig/nanosig_broker.h:88` 写"Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr
-填 `.handle`"。`bafb78d` 之后 `ns_waitable_handle_t` 已是平台原语的透明别名，
-不再是联合体；照此文档编写 `.fd` / `.handle` 会直接编译失败。`ns_watcher_handle`
-的 docstring 已同步改写，本行遗漏。
-
-#### review 建议
-改为"传平台原语句柄本身（同 `ns_platform_waitable_t::primitive`）"，与
-`demos/demo_watcher_ready.c` 的既有写法一致。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-按文档写 `ns_watcher_init(&w, h.fd, ...)` → 编译错误
-`member reference base type 'ns_waitable_handle_t' (aka 'int') is not a structure`。
-
-#### 定位
-include/nanosig/nanosig_broker.h:88
-
----
-
-### BROKER-034: 源码注释引用仅存在于 docs/ 的计划决策编号
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: cleanup
-
-#### 问题描述
-`src/ns_broker.c:165` 注释末尾带 `（D14）`。D14 只定义在
-`docs/plans/子计划-ns_watcher回调化.md:63`，违反项目硬性规则"源码中禁止出现阶段/计划编号"。
-
-#### review 建议
-删掉编号，保留可观测语义即可（"使 `ns_watcher_handle` 在已 deinit 的 watcher 上
-返回无效哨兵而非陈旧句柄"）。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-对源码 grep `\bD[0-9]+\b`（排除 `PORT`/`PRIO` 等）命中 src/ns_broker.c:165；
-计划编号无法在源码树内解析。
-
-#### 定位
-src/ns_broker.c:165
-docs/plans/子计划-ns_watcher回调化.md:63
-
----
 
 ### BROKER-035: `ns_broker_dispatch_pending_events` 中的死转换 `(void)broker;`
 
@@ -532,6 +478,38 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ## 现在关闭的问题
 
+### BROKER-034: 源码注释引用仅存在于 docs/ 的计划决策编号
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`src/ns_broker.c:165` 注释曾带 `（D14）` 计划决策编号，违反"源码中禁止出现阶段/计划编号"。已删除该编号，保留可观测语义："使 ns_watcher_handle 在已 deinit 的 watcher 上返回无效哨兵而非陈旧句柄"。
+
+#### 关闭原因
+已在 src/ns_broker.c:165 删除 `（D14）` 编号，源码中不再出现阶段/计划编号。
+
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复
+
+---
+### BROKER-033: `ns_watcher_init` 的 `handle` 参数文档仍是联合体写法
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`include/nanosig/nanosig_broker.h:88` 曾写"Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr 填 `.handle`"，与 `ns_waitable_handle_t` 透明别名不符。已改为"传平台原语句柄本身（同 `ns_platform_waitable_t::primitive`）"。
+
+#### 关闭原因
+已在 nanosig_broker.h:89 修正 `@param handle` docstring，与 `demos/demo_watcher_ready.c` 的既有写法一致。
+
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复
+
+---
 ### BROKER-025: 文件注释声称 `consume_fn` "在持 watcher_mutex 下调用"，但 `dispatch_pending_events` 明确不取锁 `doc`
 
 - **状态**: 关闭-已修复

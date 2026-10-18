@@ -86,7 +86,7 @@ struct ns_watcher {
  * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
- * @param handle 平台句柄（Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr 填 `.handle`）。
+ * @param handle 传平台原语句柄本身（同 `ns_platform_waitable_t::primitive`）。
  * @param events `NS_WAITABLE_EVENT_*` 位组合，**至少包含一个事件位**；传 `0`
  *        表示不监听任何事件，五后端统一返回 `NS_E_INVAL`（host 后端曾注册成功
  *        但永不触发，已修正）。

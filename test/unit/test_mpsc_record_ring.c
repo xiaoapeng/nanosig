@@ -49,6 +49,10 @@ typedef struct producer_ctx {
 #define MAX_PAYLOAD_SIZE 64u
 #define RECORD_BUF_SIZE  (sizeof(test_record_header_t) + MAX_PAYLOAD_SIZE)
 
+/* 32 位目标上 stride 仅 16 位，capacity/2 不得超过 0xFFFF。
+   NS_CAPACITY_65536 是 32 位下最大合法容量；用静态存储避免栈溢出。 */
+static uint8_t large_storage[NS_CAPACITY_65536];
+
 static int expect_true(int condition)
 {
     return condition ? 0 : 1;
@@ -224,6 +228,11 @@ static int test_invalid_args(void)
     if(expect_true(ns_mpsc_record_ring_init(&ring, &((uint8_t *)misaligned_storage)[1], NS_CAPACITY_128) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, (ns_capacity_t)0) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, (ns_capacity_t)3) == NS_E_INVAL) != 0) return 1;
+
+    /* 32 位下 stride 仅 16 位：NS_CAPACITY_65536（capacity/2=32768）是上限，应初始化成功；
+       NS_CAPACITY_131072（capacity/2=65536 > 0xFFFF）在 32 位下会被 capacity_is_valid 拒绝，
+       返回 NS_E_INVAL 而非静默截断 stride。 */
+    if(expect_true(ns_mpsc_record_ring_init(&ring, large_storage, NS_CAPACITY_65536) == NS_OK) != 0) return 1;
 
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
 
