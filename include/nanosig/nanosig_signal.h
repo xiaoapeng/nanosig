@@ -175,6 +175,27 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
 #endif
 
 /**
+ * @brief payload 类型的对齐上限（字节）。
+ *
+ * 跨线程 emit 把 payload 原样放进 record ring 的记录体内，因此交付给 slot 的
+ * 指针只保证该对齐（等于 record ring 的记录对齐粒度）。超过上限的类型不是运行期
+ * 拒绝，而是在 `ns_signal_init` / `ns_signal_connect_typed` 处编译期报错；
+ * 需要更高对齐时改写为传指针——入队的是指针本身，其对齐始终满足上限。
+ */
+#define NS_SIGNAL_PAYLOAD_ALIGN_MAX ((size_t)sizeof(size_t))
+
+/**
+ * @brief 编译期检查 payload 类型对齐不超过 `NS_SIGNAL_PAYLOAD_ALIGN_MAX`。
+ *
+ * 表达式式断言，可放进宏的逗号表达式里；失败时报 "array size is negative"。
+ *
+ * @param payload_type signal 的 payload 类型。
+ */
+#define NS_SIGNAL_PAYLOAD_ALIGN_CHECK(payload_type) \
+    NS_STATIC_ASSERT_EXPR(ns_alignof(payload_type) <= NS_SIGNAL_PAYLOAD_ALIGN_MAX, \
+                          "payload type alignment exceeds NS_SIGNAL_PAYLOAD_ALIGN_MAX; emit a pointer instead")
+
+/**
  * @brief 在头文件中声明一个外部 signal 对象。
  *
  * @param name signal 对象名。
@@ -219,9 +240,12 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
  * @param user_data 传给 slot 的调用方数据，nanosig 不接管其所有权。
  * @param connection 调用方拥有的连接对象指针。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ * @note 编译期检查 slot 签名与 `payload_type` 对齐（`ns_alignof(payload_type)`
+ *       不得超过 `NS_SIGNAL_PAYLOAD_ALIGN_MAX`）。
  */
 #define ns_signal_connect_typed(signal_name, slot_fn, payload_type, target_loop, user_data, connection) \
     (NS_SLOT_TYPECHECK(slot_fn, payload_type), \
+     NS_SIGNAL_PAYLOAD_ALIGN_CHECK(payload_type), \
      ns_signal_connect(&(signal_name), (ns_slot_fn)(slot_fn), (target_loop), (user_data), (connection)))
 
 /**
@@ -254,9 +278,12 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
  * @param payload_type signal 的 payload 类型；无 payload signal 使用
  *        `ns_no_payload_t`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ * @note 编译期检查 `ns_alignof(payload_type)` 不超过
+ *       `NS_SIGNAL_PAYLOAD_ALIGN_MAX`；需要更高对齐的类型请改写为传指针。
  */
 #define ns_signal_init(signal, payload_type) \
-    ns_signal_init_raw((signal), NS_SIGNAL_PAYLOAD_SIZE(payload_type), 0u, #payload_type)
+    (NS_SIGNAL_PAYLOAD_ALIGN_CHECK(payload_type), \
+     ns_signal_init_raw((signal), NS_SIGNAL_PAYLOAD_SIZE(payload_type), 0u, #payload_type))
 
 /**
  * @brief 以原始 payload 大小动态初始化 signal。
@@ -266,6 +293,9 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
  *
  * @warning 本函数不幂等；重复 init 会导致旧 mutex 泄漏。调用方必须保证
  *          init 一次 → deinit 一次。
+ * @note 本函数只接收字节数，无法检查 payload 类型的对齐；调用方必须自行保证
+ *       `ns_alignof(payload) <= NS_SIGNAL_PAYLOAD_ALIGN_MAX`，否则交付给 slot
+ *       的指针可能不满足该类型的对齐要求（未定义行为）。
  *
  * @param signal 待初始化的 signal 对象。
  * @param payload_size 每次 emit 复制的 payload 字节数；无 payload signal 为 0。
@@ -298,6 +328,8 @@ extern int ns_signal_init_raw(ns_signal_t *signal, size_t payload_size, size_t s
  *      `ns_signal_disconnect` 断开连接）。
  * @warning 对已连接到某个 signal 的 `connection` 再次调用本函数（未先
  *          disconnect）会导致原 signal 的 slot_list 损坏。
+ * @note 本函数接收 `ns_slot_fn`，不做 payload 类型检查；需要编译期校验 slot
+ *       签名与 payload 对齐时使用 `ns_signal_connect_typed`。
  *
  * @param signal 要连接的 signal。
  * @param slot_fn slot 函数。

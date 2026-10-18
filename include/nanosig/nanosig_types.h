@@ -92,6 +92,25 @@
 #define ns_same_type(a, b) 0
 #endif
 
+/**
+ * @brief 取类型名的对齐要求（字节）。
+ *
+ * 只接受类型名，不接受表达式：C11/C++ 的 `_Alignof`/`alignof` 都以类型名为操作数。
+ * 用于在宏里对调用方传入的类型做编译期对齐检查。
+ *
+ * @param type 类型名。
+ * @return 该类型的对齐字节数（编译期常量）。
+ */
+#if defined(__cplusplus)
+#define ns_alignof(type) alignof(type)
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define ns_alignof(type) _Alignof(type)
+#elif defined(_MSC_VER)
+#define ns_alignof(type) __alignof(type)
+#else
+#define ns_alignof(type) __alignof__(type)   /* GNU 系的非 C11 模式 */
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define NS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define NS_UNLIKELY(x) __builtin_expect(!!(x), 0)
