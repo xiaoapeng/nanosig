@@ -206,59 +206,6 @@ include/nanosig/nanosig_loop.h:138
 
 ---
 
-### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_loop_dispatch_pending`（src/nanosig.c:194-199）把交付给 slot 的 payload 指针设为 `record + sizeof(ns_slot_call_t)`，即记录起始 + 24 字节。record ring 的头部/记录粒度是 `NS_MPSC_RECORD_RING_ALIGNMENT`（= `sizeof(size_t)` = 8，include/nanosig/nanosig_mpsc_record_ring.h:28），记录头 8 字节，因此 payload 起始地址只保证 **8 字节对齐**。
-
-公开 API 不对 payload 类型提出任何对齐要求：`ns_signal_init(signal, payload_type)`（include/nanosig/nanosig_signal.h:258）与 `ns_signal_init_raw` 接受任意类型，`ns_slot_fn`（include/nanosig/nanosig_signal.h:57）以 `const void *` 交付。当 payload 类型带 `_Alignof >= 16`（SIMD 向量类型、含 `_Atomic` 成员或 `aligned(16)` 的结构体）时，slot 内对该指针的正常解引用即为未对齐访问——C11 未定义行为，在 aarch64 的向量载入、TSAN/UBSAN 或带对齐检查的代码生成下会实际出问题。文档中没有任何"payload 类型对齐上限"的说明可供调用方规避。
-
-#### review 建议
-二选一：
-1. 把 ring 的对齐粒度与 payload 交付对齐提升到 `_Alignof(max_align_t)`（会改变 record ring 头部与记录布局，须与 mpsc-record-ring 模块同步评估）；
-2. 在 `nanosig_signal.h` 文档化"payload 类型的对齐不得超过 `sizeof(size_t)`"，并给 `ns_signal_init` 宏/`ns_signal_init_raw` 加编译期检查（如基于 `_Alignof` 的 `NS_STATIC_ASSERT`），把问题从运行期 UB 提前到编译期。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-typedef struct __attribute__((aligned(16))) vec4 { unsigned char b[16]; } vec4_t;
-static unsigned long g_sum;
-static void slot_vec(void *ud, const vec4_t *p){ (void)ud; g_sum += (unsigned long)p->b[0]; }
-
-ns_loop_init(&loop, NULL);
-ns_signal_init(&sig, vec4_t);
-ns_signal_connect_typed(sig, slot_vec, vec4_t, loop, NULL, &conn);
-for(i = 0; i < 3; i++) (void)ns_signal_emit_raw(&sig, &pl, sizeof(pl));
-ns_loop_quit(loop);
-ns_loop_run(loop);
-```
-以 `-fsanitize=alignment,undefined -fno-sanitize-recover=all` 构建库与用例，观测：
-```
-runtime error: member access within misaligned address 0x00010290e3f8 for type 'const vec4_t'
-(aka 'const struct vec4'), which requires 16 byte alignment
-SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior
-```
-对照观察（同一 loop 内连续 emit 3 次、`_Alignof(payload) == 1` 的普通结构体，`sizeof` 分别为 8 / 24）：
-```
-plain 8        sizeof=  8 align= 1  payload mod16/32 -> 0/0 8/8 0/16
-plain 24       sizeof= 24 align= 1  payload mod16/32 -> 0/0 8/24 0/16
-```
-第 2 条记录的 payload 地址 `mod 16 == 8`，证明 16 字节对齐不在保证范围内。
-
-#### 定位
-src/nanosig.c:194
-src/nanosig.c:196
-include/nanosig/nanosig_signal.h:57
-include/nanosig/nanosig_signal.h:258
-
----
-
 ### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
 
 - **状态**: 打开
@@ -523,4 +470,46 @@ include/nanosig/nanosig_loop.h:133
 - 状态: 关闭-已拒绝
 
 ---
+
+### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+
+#### 问题描述
+跨线程 emit 把 payload 原样写进 record ring 的记录体，交付给 slot 的指针只保证 8 字节
+对齐（诚实口径是 record ring 的对齐粒度 = `sizeof(size_t)`：64 位下 8，32 位下 4）。
+`_Alignof >= 16` 的 payload 类型（SIMD 向量、含 `_Atomic` 成员、`aligned(16)` 的结构体、
+x86-64 的 `long double`）在 slot 内解引用即未对齐访问：C11 未定义行为，x86-64 上
+"声明 16 对齐"的结构体拷贝会被编成 `movaps`，地址落在 8 mod 16 直接 SIGSEGV。
+
+#### 关闭原因
+作者决定（人话：按 review 建议 2 做，把问题从运行期 UB 提前到编译期）：不提升 ring 的
+对齐粒度，而是**文档化对齐上限 + 编译期断言**。
+
+- nanosig_types.h 新增 `ns_alignof(type)`（C++ `alignof` / C11 `_Alignof` /
+  MSVC `__alignof` / GNU `__alignof__`），补上仓库此前缺的类型名取对齐工具。
+- nanosig_signal.h 新增 `NS_SIGNAL_PAYLOAD_ALIGN_MAX`（= `sizeof(size_t)`）与
+  `NS_SIGNAL_PAYLOAD_ALIGN_CHECK`（表达式式 `NS_STATIC_ASSERT_EXPR`，失败报
+  "array size is negative"），挂到两个拿得到类型名的公开入口：`ns_signal_init`、
+  `ns_signal_connect_typed`。
+- 文档：上述两处说明编译期检查与逃生舱（改写为传指针——入队的是指针本身，其对齐
+  始终满足上限）；`ns_signal_init_raw` / `ns_signal_connect` 说明它们拿不到类型、
+  不做检查，调用方须自负对齐。
+- src/nanosig.c 两条 `NS_STATIC_ASSERT` 把"上限 == ring 粒度"与"payload 相对记录
+  起点的偏移是粒度整数倍"钉死，防止以后改 ring 布局时文档变成假话。
+- 实测（clang 21，`-fsyntax-only`）：C 与 C++（`-pedantic-errors`）下正常 payload 通过；
+  `aligned(16)` payload 在 `ns_signal_init` 与 `ns_signal_connect_typed` 两处均编译报错。
+
+未采用：提升 ring 对齐粒度到 16——会改记录布局，且 32 位下 payload 偏移
+`sizeof(size_t) + sizeof(ns_slot_call_t)` 不是 16 的整数倍，还得连带调布局。
+
+遗留口径：32 位目标上 `NS_SIGNAL_PAYLOAD_ALIGN_MAX` = 4，`double` / `uint64_t`
+这类 8 对齐 payload 会被断言拒绝——它们在 32 位下今天本来就是未对齐访问。若要在
+32 位也支持，需把 ring 粒度提到 8 并在 loop 的分配里自对齐 ring 基址，另开条目评估。
+
+- 修复分支: fix/core015-payload-align-check
+
+#### 关闭日期
+2026-10-19
 

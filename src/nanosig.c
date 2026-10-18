@@ -42,6 +42,14 @@ typedef struct ns_slot_call {
     size_t payload_size;
 } ns_slot_call_t;
 
+/* 兑现 NS_SIGNAL_PAYLOAD_ALIGN_MAX 的两个条件：记录起点按 ring 粒度对齐，且
+   payload 相对记录起点的偏移（环头 size_t + 本结构）是该粒度的整数倍。
+   任一不成立，ns_signal_init 的编译期断言就是在骗调用方。 */
+NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_ALIGN_MAX == NS_MPSC_RECORD_RING_ALIGNMENT,
+                 "payload alignment limit must equal the record ring alignment");
+NS_STATIC_ASSERT(((sizeof(size_t) + sizeof(ns_slot_call_t)) % NS_SIGNAL_PAYLOAD_ALIGN_MAX) == 0u,
+                 "payload offset inside a record must be a multiple of the alignment limit");
+
 
 static int ns_signal_lock(ns_signal_t *signal)
 {
