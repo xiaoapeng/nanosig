@@ -1,3 +1,74 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "SLIST-001"
+    module: "slist"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/slist-code-review.md#SLIST-001"
+  - id: "SLIST-003"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "cleanup"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/slist-code-review.md#SLIST-003"
+  - id: "SLIST-004"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/slist-code-review.md#SLIST-004"
+  - id: "SLIST-005"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/slist-code-review.md#SLIST-005"
+  - id: "SLIST-006"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/slist-code-review.md#SLIST-006"
+  - id: "SLIST-007"
+    module: "slist"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/slist-code-review.md#SLIST-007"
+  - id: "SLIST-008"
+    module: "slist"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/slist-code-review.md#SLIST-008"
+  - id: "SLIST-002"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/slist-code-review.md#SLIST-002"
+  - id: "SLIST-001"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/slist-code-review.md#SLIST-001"
+---
 # Slist 代码审查报告
 
 **日期**: 2026-07-04
@@ -7,6 +78,7 @@
 
 ## 修复历史
 
+<a id="SLIST-001"></a>
 ### SLIST-001: `ns_slist_for_each` 宏在 C++ 下无法编译 (CRITICAL) `bug`
 
 - **修复 commit**: 当前 diff
@@ -16,6 +88,7 @@
 
 ## 现在打开的问题
 
+<a id="SLIST-003"></a>
 ### SLIST-003: `ns_slist_del_node_in_for_each_safe` 不重置被删除节点的 `next` 指针
 
 - **状态**: 关闭-已拒绝
@@ -43,6 +116,7 @@ include/nanosig/nanosig_slist.h:276-285
 
 ---
 
+<a id="SLIST-004"></a>
 ### SLIST-004: `ns_slist_for_each` 宏双重求值 `head` 参数
 
 - **状态**: 关闭-已拒绝
@@ -70,6 +144,7 @@ include/nanosig/nanosig_slist.h:367
 
 ---
 
+<a id="SLIST-005"></a>
 ### SLIST-005: `ns_slist_for_each` 文档描述与实际遍历起始位置不符
 
 - **状态**: 关闭-已修复
@@ -97,6 +172,7 @@ include/nanosig/nanosig_slist.h:358-359
 
 ---
 
+<a id="SLIST-006"></a>
 ### SLIST-006: `ns_slist_append_list` 自拼接导致数据损坏
 
 - **状态**: 关闭-已拒绝
@@ -130,6 +206,7 @@ include/nanosig/nanosig_slist.h:290-303
 
 ---
 
+<a id="SLIST-007"></a>
 ### SLIST-007: `ns_slist_del_node_in_for_each_safe` 删除头节点后留下悬垂 `list->last`，后续复用该链表会把新节点写进头字段
 
 - **状态**: 打开
@@ -203,9 +280,80 @@ include/nanosig/nanosig_slist.h:109-114
 include/nanosig/nanosig_slist.h:152-165
 include/nanosig/nanosig_slist.h:32-38
 
+---
+
+<a id="SLIST-008"></a>
+### SLIST-008: 遍历宏族裸用 `typeof`，与同仓库 rbtree 的 RBTREE-018 同一根因（严格 `-std=c11` 下两个 entry 遍历宏无法编译）
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+`ns_slist_for_each_entry`（`include/nanosig/nanosig_slist.h:408-411`）与 `ns_slist_for_each_entry_safe`（`include/nanosig/nanosig_slist.h:421-425`）
+直接使用裸 `typeof`（`include/nanosig/nanosig_slist.h:409,411,422,423,425`，共 5 处）。`typeof` 是 GNU 扩展，在 `-std=c11`（非 `gnu11`）下 gcc 与 clang 均报错；本模块这两个宏在严格 C11 下不可用。
+
+复现（与 `api-compile-checks` 相同的 flag 组合 `-std=c11`，`cmake/ApiCompileChecks.cmake:37`）：
+```
+$ gcc -std=c11 -I include -fsyntax-only t.c          # t.c 含 ns_slist_for_each_entry
+.../nanosig_slist.h:409:52: error: call to undeclared function 'typeof'
+.../nanosig_types.h:108:42: note: expanded from macro 'NS_CONTAINER_OF'
+.../nanosig_slist.h:353:5: note: expanded from macro 'ns_slist_entry_safe'
+.../nanosig_slist.h:141:41: note: expanded from macro 'NS_CONTAINER_OF_SAFE'
+```
+
+**与 RBTREE-018 的重复性说明（按 §3.1 例外条款 3 显式引用历史条目并说明重提理由）**：
+同一根因已在 `docs/review/rbtree-code-review.md:371` 的 `RBTREE-018` 中记录（我不可跨模块复核该条状态，按"不假定未关闭"处理）。
+此处重新提出的理由是：**受影响面远大于 rbtree 模块**。除 `nanosig_rbtree.h` 外，本模块与 `nanosig_list.h`、
+以及可能的其它 `NS_CONTAINER_OF` 消费者都在同一路径上；RBTREE-018 只覆盖 rbtree 自己的 4 个宏，
+按"每个 agent 只 review 自己模块"的分工，本模块的复核不能由 rbtree 条目代劳。
+**建议由维护者把根因合并为一处修复**：在 `include/nanosig/nanosig_types.h` 的**纯 C** 分支
+（现仅有 `#ifdef __cplusplus` 分支，`include/nanosig/nanosig_types.h:17-22`）补 `typeof` → `__typeof__` 收口，
+六个宏与本条一起闭环；若认为严格 C11 非支持目标，则应按 §2.4 文档仲裁在公共头写明"MSVC 以外仅支持 `gnu11`"，
+本条即转为 `关闭-不适用`。
+
+#### review 建议
+1. 首选：在 `include/nanosig/nanosig_types.h` 增补纯 C 分支的 `typeof` 收口（一行 `#define`），或把这两处宏里的 `typeof` 改写为 `__typeof__`，
+   与 `CMakeLists.txt:150` 的 `target_compile_features(nanosig PUBLIC c_std_11)`（实际编译带 `C_EXTENSIONS`，即 `gnu11`）语义对齐。
+2. 次选：若明确放弃严格 C11，则在 `include/nanosig/nanosig_slist.h` 文件头注明"遍历宏依赖 GNU `typeof` 扩展"。
+3. 无论选哪条，建议让 `test/unit/test_data_structures_contract_compile.c` 的实际使用面覆盖遍历宏
+   （该 TU 目前只做 `ns_slist_push_back` / `ns_slist_pop_front`，不触碰任何 `for_each_entry`，
+   因此 `api-compile-checks` 无法发现这条路径）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+/* t.c */
+#include <nanosig/nanosig_slist.h>
+struct s { ns_slist_node_t node; int v; };
+int f(void)
+{
+    ns_slist_t l = NS_SLIST_INITIALIZER;
+    struct s a, *p, *n;
+    ns_slist_node_init(&a.node);
+    ns_slist_push_back(&l, &a.node);
+    ns_slist_for_each_entry(p, &l, node){ p->v++; }        /* <- 编译失败 */
+    ns_slist_for_each_entry_safe(p, n, &l, node){ p->v++; } /* <- 编译失败 */
+    return a.v;
+}
+/* gcc/clang -std=c11 均报 21 条 error；改成 -std=gnu11 后两个文件都能编译通过。
+   实测：gnu11 下 slist/list 的 entry 宏均正常编译。 */
+```
+
+#### 定位
+include/nanosig/nanosig_slist.h:408-411
+include/nanosig/nanosig_slist.h:421-425
+include/nanosig/nanosig_types.h:17-22
+include/nanosig/nanosig_types.h:108
+docs/review/rbtree-code-review.md:371
+
+---
 
 ## 现在关闭的问题
 
+<a id="SLIST-002"></a>
 ### SLIST-002: `ns_slist_for_each_entry_safe` 在非空链表末尾迭代时解引用空指针 (UB/crash)
 
 - **状态**: 关闭-已修复
@@ -221,19 +369,3 @@ include/nanosig/nanosig_slist.h:32-38
 - **严重度**: 🔴 关键
 - **关闭原因**: 添加 `#ifdef __cplusplus` 框架：C++ 分支用 `reinterpret_cast` 读公共首指针，避免 `_Generic` 和 `({})` 语法。修复还修正了 C 分支中 memcpy 放到 condition 导致每次迭代重置 `list.first` 的死循环 bug。C++17 编译通过 + 运行时验证通过。
 - **关闭日期**: 2026-07-04
-
----
-### SLIST-008: 遍历宏族裸用 `typeof`，与同仓库 rbtree 的 RBTREE-018 同一根因（严格 `-std=c11` 下两个 entry 遍历宏无法编译）
-
-- **状态**: 关闭-不适用
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`typeof` 是 GNU 扩展，在严格 `-std=c11` 下无法编译。但项目实际编译走 `-std=gnu11`（CMake `c_std_11` 带 C_EXTENSIONS），且 api-compile-checks 的契约 TU 未触及遍历宏，该分支在实际构建中不暴露。属前提不实的误报。
-
-#### 关闭原因
-合同前提保护/误报：项目不承诺严格 `-std=c11` 构建，遍历宏依赖 GNU `typeof` 扩展在实际工具链（gnu11）下正常工作。若未来改为强制 `-std=c11`，可在 `include/nanosig/nanosig_types.h` 纯 C 分支补 `typeof` → `__typeof__` 收口再重开。
-
-- 关闭日期: 2026-10-19
-- 状态: 关闭-不适用

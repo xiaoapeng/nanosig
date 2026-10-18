@@ -1,3 +1,56 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "FREERTOS-001"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-001"
+  - id: "FREERTOS-002"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-002"
+  - id: "FREERTOS-003"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-003"
+  - id: "FREERTOS-004"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-004"
+  - id: "FREERTOS-005"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-005"
+  - id: "FREERTOS-006"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-006"
+  - id: "FREERTOS-007"
+    module: "freertos"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/freertos-code-review.md#FREERTOS-007"
+---
 # FreeRTOS Backend 代码审查报告
 
 **日期**: 2026-10-11
@@ -9,6 +62,7 @@
 
 ## 修复历史
 
+<a id="FREERTOS-001"></a>
 ### FREERTOS-001: `ns_platform_clock_monotonic_us` 在 32 位 tick 目标上不再单调
 
 - **修复**: 平台层改用回绕扩展的 64 位 tick 累加器（无符号回绕差值 `now - last` 累加 +
@@ -20,6 +74,7 @@
 - **分支**: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-002"></a>
 ### FREERTOS-002: `ns_platform_waitset_remove` 对"数据队列"成员用 `xQueueReset` 静默丢弃未处理负载
 
 - **修复**: 采用文档化（review 建议 ①）：明确 FreeRTOS 后端 remove 会排空被移除成员、
@@ -33,6 +88,7 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-003"></a>
 ### FREERTOS-003: `edge_triggered` 在 FreeRTOS 后端被忽略但未文档化
 
 - **澄清（修正 review 原文）**: FreeRTOS queue set 是“每次 send/give 记一次就绪”的
@@ -47,6 +103,7 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-004"></a>
 ### FREERTOS-004: `ns_platform_waitset_add` 中 `i == NANOSIG_FREERTOS_WAITSET_CAP` 分支不可达
 
 - **作者决策**: 删除该死分支（review 建议的第一种：直接删除防线）。
@@ -56,6 +113,7 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-005"></a>
 ### FREERTOS-005: FreeRTOS 契约测试覆盖缺口（非空成员 add、drain 幂等、max_completions 截断）
 
 - **作者决策**: 4 项全做（①②③ 补测试；④ 先实测 sanitizer，可用则接入、不可用则文档化）。
@@ -72,6 +130,7 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-006"></a>
 ### FREERTOS-006: `api-compile-checks` 未注册到 FreeRTOS 构建，平台契约编译检查未覆盖 FreeRTOS 分支
 
 - **澄清（修正 review 原文）**: `test/unit/test_platform_contract_compile.c` 实际**未**引用
@@ -97,6 +156,7 @@
 - **工作区**（未提交）: fix/freertos-clock-monotonic-wrap
 - **日期**: 2026-10-11
 
+<a id="FREERTOS-007"></a>
 ### FREERTOS-007: `waitset_add` / `event_signal` / `event_drain` 未排除 `(void *)~0` 无效哨兵
 
 - **来源**: Zephyr review（ZEPHYR-002）发现的同根因问题；作者指示随 Zephyr 修复一并加固。
