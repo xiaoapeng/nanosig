@@ -310,7 +310,9 @@ int ns_loop_stop(ns_loop_t *loop)
 
     (void)ns_loop_quit(loop);
     rc = ns_platform_thread_join(&loop->async_thread);
-    loop->async_started = 0;
+    /* join 失败（如 loop 自身线程内调用导致 EDEADLK）时 worker 仍存活，必须保留
+     * async_started，否则 start/deinit 的 NS_E_BUSY 守卫失效。 */
+    if(rc == NS_OK) loop->async_started = 0;
 
     return rc != NS_OK ? rc : loop->async_rc;
 }
