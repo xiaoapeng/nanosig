@@ -156,7 +156,7 @@ static int teardown_all(void)
 
     if(g_loop != NULL){
         (void)ns_loop_stop(g_loop);
-        (void)ns_loop_deinit(g_loop);
+        (void)ns_loop_destroy(g_loop);
         g_loop = NULL;
     }
 

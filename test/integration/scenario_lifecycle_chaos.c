@@ -165,7 +165,7 @@ static int scenario_lifecycle_chaos(void)
     }
 
     EXPECT_OK(ns_signal_deinit_raw(&g_chaos_signal) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(g_chaos_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_chaos_loop) == NS_OK);
     g_chaos_loop = NULL;
 
     integration_verify_clean_shutdown();

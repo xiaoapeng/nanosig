@@ -47,10 +47,10 @@ static int test_invalid_args_and_lifecycle(void)
 
     EXPECT_OK(ns_loop_quit(NULL) == NS_E_INVAL);
     EXPECT_OK(ns_loop_run(NULL) == NS_E_INVAL);
-    EXPECT_OK(ns_loop_deinit(NULL) == NS_E_INVAL);
+    EXPECT_OK(ns_loop_destroy(NULL) == NS_E_INVAL);
 
     EXPECT_OK(ns_is_initialized() == 0);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_E_SHUTDOWN);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_E_SHUTDOWN);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     EXPECT_OK(ns_init() == NS_OK);
@@ -74,10 +74,10 @@ static int test_same_thread_binding(void)
 
     EXPECT_OK(cfg.queue_byte_capacity == NS_CAPACITY_1024);
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, &invalid_cfg) == NS_E_INVAL);
-    EXPECT_OK(ns_loop_init(&loop, &cfg) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, &invalid_cfg) == NS_E_INVAL);
+    EXPECT_OK(ns_loop_create(&loop, &cfg) == NS_OK);
     EXPECT_OK(loop != NULL);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -99,7 +99,7 @@ static int loop_thread_entry(void *arg)
 
     cfg.debug_name = "worker-loop";
 
-    rc = ns_loop_init(&ctx->loop, &cfg);
+    rc = ns_loop_create(&ctx->loop, &cfg);
     if(rc != NS_OK){
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
         test_thread_signal_failed(&g_loop_thread, rc);
@@ -113,7 +113,7 @@ static int loop_thread_entry(void *arg)
     if(ns_timer_init(&marker_timer, 1u, 0) != NS_OK){
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
         test_thread_signal_failed(&g_loop_thread, NS_E_NOMEM);
-        (void)ns_loop_deinit(ctx->loop);
+        (void)ns_loop_destroy(ctx->loop);
         ctx->loop = NULL;
         return NS_E_NOMEM;
     }
@@ -122,7 +122,7 @@ static int loop_thread_entry(void *arg)
         ns_timer_deinit(&marker_timer);
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
         test_thread_signal_failed(&g_loop_thread, NS_E_INVAL);
-        (void)ns_loop_deinit(ctx->loop);
+        (void)ns_loop_destroy(ctx->loop);
         ctx->loop = NULL;
         return NS_E_INVAL;
     }
@@ -142,7 +142,7 @@ static int loop_thread_entry(void *arg)
     }
 
     if(ctx->loop != NULL){
-        int destroy_rc = ns_loop_deinit(ctx->loop);
+        int destroy_rc = ns_loop_destroy(ctx->loop);
         if((rc == NS_OK) && (destroy_rc != NS_OK)){
             rc = destroy_rc;
             ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
@@ -199,10 +199,10 @@ static int test_async_start_stop(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -214,11 +214,11 @@ static int test_async_repeat_start(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_E_BUSY);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -230,9 +230,9 @@ static int test_async_stop_without_start(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_loop_stop(loop) == NS_E_INVAL);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -244,11 +244,11 @@ static int test_async_run_while_started(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_loop_run(loop) == NS_E_BUSY);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -260,11 +260,11 @@ static int test_async_destroy_while_started(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_E_BUSY);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_E_BUSY);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -276,7 +276,7 @@ static int test_async_twice(void)
     ns_loop_t *loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
@@ -284,7 +284,7 @@ static int test_async_twice(void)
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
 
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -312,7 +312,7 @@ static int test_async_signal_delivery(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
     EXPECT_OK(ns_signal_connect_typed(sig, on_slot, ns_no_payload_t, loop, NULL, &conn) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
@@ -329,7 +329,7 @@ static int test_async_signal_delivery(void)
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -356,7 +356,7 @@ static int test_async_quit_in_slot(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_signal_connect_typed(sig, on_quit_slot, ns_no_payload_t, loop, loop, &conn) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
 
@@ -368,7 +368,7 @@ static int test_async_quit_in_slot(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -406,7 +406,7 @@ static int test_async_stop_in_slot(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_signal_connect_typed(sig, on_self_stop_slot, ns_no_payload_t, loop, loop, &conn) == NS_OK);
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
     EXPECT_OK(ns_signal_emit(sig, NS_NO_PAYLOAD) == NS_OK);
@@ -420,14 +420,14 @@ static int test_async_stop_in_slot(void)
     EXPECT_OK(ns_atomic_load_explicit(&g_self_stop_rc, ns_memory_order_acquire) != NS_OK);
     /* 旧 worker 仍存活：不得再 start，也不得释放 loop */
     EXPECT_OK(ns_loop_start(loop) == NS_E_BUSY);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_E_BUSY);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_E_BUSY);
 
     /* slot 已返回且 quit 已被请求，其他线程再次 stop 应能完成 join */
     EXPECT_OK(ns_loop_stop(loop) == NS_OK);
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -464,7 +464,7 @@ static int multi_loop_entry(void *arg)
     multi_loop_ctx_t *ctx = (multi_loop_ctx_t *)arg;
     int rc;
 
-    rc = ns_loop_init(&ctx->loop, NULL);
+    rc = ns_loop_create(&ctx->loop, NULL);
     if(rc != NS_OK){
         test_thread_signal_failed(ctx->self, rc);
         return rc;
@@ -472,7 +472,7 @@ static int multi_loop_entry(void *arg)
 
     test_thread_signal_ready(ctx->self);
     rc = ns_loop_run(ctx->loop);
-    ns_loop_deinit(ctx->loop);
+    ns_loop_destroy(ctx->loop);
     return rc;
 }
 
@@ -571,7 +571,7 @@ static int test_loop_queue_overflow(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init_raw(&sig, 0u, 0u, "overflow") == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, &small_cfg) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, &small_cfg) == NS_OK);
     EXPECT_OK(ns_signal_connect(&sig, slot_overflow_helper, loop, NULL, &conn) == NS_OK);
 
     /* Emit until E_QUEUE_FULL — small ring should fill up quickly */
@@ -591,7 +591,7 @@ static int test_loop_queue_overflow(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;
@@ -628,7 +628,7 @@ static int test_async_cross_thread(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     EXPECT_OK(ns_signal_connect_typed(sig, slot_async_cross, ns_no_payload_t, loop, loop, &conn) == NS_OK);
 
     EXPECT_OK(ns_loop_start(loop) == NS_OK);
@@ -644,7 +644,7 @@ static int test_async_cross_thread(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
 
     return 0;

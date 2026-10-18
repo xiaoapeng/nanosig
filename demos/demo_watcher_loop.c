@@ -95,7 +95,7 @@ int main(void)
 
     cfg = NS_LOOP_CONFIG_DEFAULT();
     cfg.debug_name = "watcher-demo-loop";
-    rc = ns_loop_init(&g_loop_ctx.loop, &cfg);
+    rc = ns_loop_create(&g_loop_ctx.loop, &cfg);
     if(rc != NS_OK) goto out_wakeup_signal;
 
     rc = ns_signal_connect_typed(g_loop_ctx.wakeup, wakeup_slot, ns_no_payload_t,
@@ -133,7 +133,7 @@ out_event:
 out_wakeup_conn:
     (void)ns_signal_disconnect(&wakeup_conn);
 out_loop:
-    (void)ns_loop_deinit(g_loop_ctx.loop);
+    (void)ns_loop_destroy(g_loop_ctx.loop);
 out_wakeup_signal:
     (void)ns_signal_deinit(&g_loop_ctx.wakeup);
 out_sleep_wakeup:

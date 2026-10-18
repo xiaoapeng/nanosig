@@ -110,7 +110,7 @@ static int scenario_lifecycle_marathon(void)
             EXPECT_OK(ns_signal_disconnect(&timer_conns[i]) == NS_OK);
             EXPECT_OK(ns_timer_deinit(&timers[i]) == NS_OK);
         }
-        EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+        EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
         integration_verify_clean_shutdown();
         INTEGRATION_PASS("marathon: round %u/3 complete", round + 1u);

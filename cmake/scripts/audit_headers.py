@@ -40,7 +40,7 @@ THREAD_SAFETY_MARKERS = (
 )
 
 KEY_SYMBOLS = {
-    "include/nanosig/nanosig_loop.h":   ("ns_loop_init", "ns_loop_deinit", "ns_loop_run", "ns_loop_quit", "ns_loop_stop"),
+    "include/nanosig/nanosig_loop.h":   ("ns_loop_create", "ns_loop_destroy", "ns_loop_run", "ns_loop_quit", "ns_loop_stop"),
     "include/nanosig/nanosig_broker.h": ("ns_broker", "ns_broker_add", "ns_broker_remove"),
     "include/nanosig/nanosig_signal.h": ("ns_signal_init", "ns_signal_deinit", "ns_signal_emit"),
 }
