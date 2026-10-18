@@ -266,16 +266,15 @@ Zephyr 后端是 v1 的第五个后端，使用 `k_poll` 语义，面向 Zephyr 
 `NANOSIG_PLATFORM=zephyr` 构建（该取值只打印引导信息）。后端复用
 `primitive` 承载 `k_poll` 可等待对象指针。
 
-- 内存使用 `k_malloc` / `k_free` 之外，`ns_platform_alloc` 实际走
-  `k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, ...)`：库内部堆上的
-  `ns_loop_t` / broker 内联了 `ns_platform_thread_t`，必须满足 `Z_KERNEL_STACK_OBJ_ALIGN`。
-- 线程对象由**调用方拥有存储**：`ns_platform_thread_t` 内嵌 `K_KERNEL_STACK_MEMBER`，
-  其对齐要求为 `Z_KERNEL_STACK_OBJ_ALIGN`，且会抬高整个结构体的对齐。用声明存储
-  （static / 全局 / 结构体成员 / 局部变量）由编译器自动满足；若自行用 `k_malloc`
-  在堆上分配，必须改用 `k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, ...)`；
-  用 `ns_platform_alloc` 分配则已对齐。
+- 内存使用 `k_malloc` / `k_free`；`ns_platform_alloc` 即 `k_malloc`。
 - 线程使用 `k_thread_create` / `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
-  内嵌在 `struct ns_platform_thread` 中。
+  内嵌在 `struct ns_platform_thread` 中（不依赖 `CONFIG_DYNAMIC_THREAD`）。
+- 线程对象是**唯一不由调用方拥有存储**的平台对象：它内嵌内核栈、对齐要求为
+  `Z_KERNEL_STACK_OBJ_ALIGN`，故由 port 按该对齐分配（`ns_platform_thread_init`）、
+  由 `ns_platform_thread_join` 回收；调用方仍只声明 `ns_platform_thread_t` 变量并取
+  地址。这样该对齐要求不会经堆上的 `ns_loop_t` / broker 传给通用分配器——否则开
+  MPU 栈保护（对齐等于栈尺寸）时，哈希表节点、格式化缓冲等小对象分配都会按栈尺寸
+  对齐，小堆会提前撞上 `NS_E_NOMEM`。
 - mutex 使用 `k_mutex`。
 - wakeup 使用**每对象独立 `k_sem`**（上限 1）；`signal` = `k_sem_give`
   （已满视为成功），`wait` = `k_sem_take`。

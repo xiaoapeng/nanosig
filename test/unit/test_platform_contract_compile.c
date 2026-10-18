@@ -37,8 +37,9 @@
 _Static_assert(sizeof(ns_platform_time_us_t) == sizeof(uint64_t), "platform time must be uint64_t microseconds");
 #endif
 
-/* 平台对象一律由调用方拥有存储：本 TU 只做语法检查（-fsyntax-only），
-   因此声明真实存储并调用 init/deinit 就能验证公共契约的类型完整性。 */
+/* 平台对象由调用方拥有存储（唯一例外：Zephyr 后端的线程对象由 port 分配/回收）：
+   本 TU 只做语法检查（-fsyntax-only），因此声明真实存储并调用 init/deinit 就能验证
+   公共契约的类型完整性。 */
 static void platform_contract_accept_caller_storage(void)
 {
     ns_platform_wakeup_t wakeup;
