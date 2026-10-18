@@ -38,8 +38,11 @@ extern const int ns_platform_abi_host;
 /** 平台可等待原语的句柄：Windows 为内核对象句柄。 */
 typedef HANDLE ns_waitable_handle_t;
 
-/** 句柄有效性谓词：HANDLE 非 NULL 即有效。 */
-#define ns_waitable_handle_is_valid(h) ((h) != NULL)
+/** 句柄有效性谓词：排除 NULL 与 `ns_waitable_init` 写出的全 1 哨兵——在 Windows
+    上全 1 就是 INVALID_HANDLE_VALUE，判定必须与 `ns_waitable_init` 的 docstring
+    （"句柄型平台对应无效句柄"）一致。 */
+#define ns_waitable_handle_is_valid(h) \
+    (((h) != NULL) && ((h) != INVALID_HANDLE_VALUE))
 
 /** wakeup：自动重置事件对象句柄。 */
 typedef HANDLE ns_platform_wakeup_t;

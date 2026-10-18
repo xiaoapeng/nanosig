@@ -96,6 +96,10 @@ static int ns_watcher_events_are_valid(uint32_t events)
 {
     const uint32_t valid_events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR;
 
+    /* 0 表示"不监听任何事件"：host 三后端会注册成功但永不触发，RTOS 后端则
+       报 NS_E_INVAL。统一在此拒绝，避免同一段代码跨平台行为分裂。 */
+    if(events == 0u) return 0;
+
     return (events & ~valid_events) == 0u;
 }
 

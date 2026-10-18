@@ -63,6 +63,12 @@
 ### 2026-07-04 — 第三轮修复（review 仲裁 + 代码修复 + 合同补全）
 
 - **BROKER-011**: `ns_watcher_init_common` 入口加 `if(signal.mutex != NULL) return NS_E_EXISTS`，运行时阻止二次 init。
+
+  > **加注（2026-10-17，watcher 回调化）**：`f165902` 按 D13 删除该守卫，改为
+  > "重复 init 属调用方 UB"（`nanosig_broker.h` 的 `@warning`）。该决定把已注册
+  > watcher 的二次 init 从"返回 `NS_E_EXISTS`"变成"`ns_shutdown` 死循环"，触发
+  > 场景根本改变，已按 §3.1 例外 2 以原 ID **重开**，见"现在打开的问题"BROKER-011。
+
 - **BROKER-013**: `ns_watcher_set_consume_handle` 文档重写为**持久句柄语义**——句柄可在一早设置、跨多次 dispatch 有效、生命周期由调用方保证。
 - **BROKER-015**: 删除 `ns_broker_add` 和 `ns_broker_remove` 末尾的 `ns_broker_notify`（proxy 已 wake 循环，重复通知仅造成徒劳 wakeup）。
 - **BROKER-018**: `ns_broker_dispatch_watcher` 中 `has_pending_event` 注释与代码行为同步（提前清零是设计意图）。
@@ -92,6 +98,229 @@
 ---
 
 ## 现在打开的问题
+
+### BROKER-011: 二次 `ns_watcher_init` 让已注册 watcher 的 waitset 槽位无法注销（回归，重开）
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **重开说明**: 本 ID 原为 2026-07-04 修复历史条目（`ns_watcher_init_common` 入口加
+  `NS_E_EXISTS` 守卫，见本文件"修复历史"）。commit `f165902`（watcher 回调化）删除
+  该守卫并改写为"重复 init 属调用方 UB"，但未给本条目加注；触发场景根本改变，按
+  AGENTS.md §3.1 例外 2 重开。
+- **症状更新**: 本条最初记录的症状是"`ns_shutdown` 永不返回"——死循环位于
+  `ns_broker_remove_all_watchers` 的 `while(!ns_list_empty())`。该函数已由
+  `fix/broker-no-timeout`（PR #14，已合入 master）删除，同场景**不再挂死**，退化为
+  `ns_broker_remove` 恒返回 `NS_E_INVAL` + `ns_shutdown` 泄漏 waitset 句柄。根因不变。
+
+#### 问题描述
+`ns_watcher_init` 对**已注册到 broker** 的 watcher 再次调用时：
+`ns_watcher_init_common` → `ns_watcher_reset_empty` 经 `ns_waitable_init` 把
+`registered_waitset` 清零，但 broker 的 waitset 槽位（Linux 上是 epoll 的
+`data.ptr`）仍指向该 `waitable`。此后：
+
+- `ns_broker_remove` → `ns_broker_do_remove` → `ns_platform_waitset_remove`，
+  平台层因 `registered_waitset != waitset` 返回 `NS_E_INVAL`，槽位无法摘除；
+- `ns_shutdown` → `ns_platform_waitset_deinit` 因 `count != 0` 返回 `NS_E_EXISTS`，
+  且在 `close()` **之前**提前返回，epoll fd 与 timerfd 双双泄漏。
+
+头文件虽把重复 init 声明为 UB，但 AGENTS.md §4.4.5 认为：违反文档化前提仍导致
+UB/挂死的场景值得防御性加固。
+
+#### review 建议
+在 `ns_watcher_init` 的 `ns_watcher_init_common` **之前**恢复一行守卫：
+
+```c
+if(ns_watcher_is_registered(watcher)) return NS_E_EXISTS;
+```
+
+`ns_watcher_is_registered`（src/ns_broker.c:113）即
+`g_broker != NULL && watcher->waitable.registered_waitset == &g_broker->waitset`，
+对零初始化 watcher 安全。
+
+#### 作者建议
+合同前提保护，不修。`ns_watcher_init` 的 `@warning` 已文档化"不检测重复初始化，
+属调用方错误（未定义行为）"，重复 init 是用户主动违反已写明的契约。核查
+`docs/review/AGENTS.md:258` 的三个关键词：UB 命中，但契约本身即把它定义为 UB；
+**数据竞争不成立**（broker 侧所有访问都在 broker 线程）；**内存安全不成立**——
+dispatch 路径上 `user_data` 已被 `ns_waitable_init` 清成 NULL，
+`ns_broker_dispatch_pending_events` 直接 `continue`，不会解引用野指针。命中的只有
+资源泄漏，而泄漏不在该例外条款列举的后果之内。`ns_signal_init_raw` / `ns_timer_init`
+同样不检测重复 init（src/nanosig.c:318+、src/ns_timer.c:327），给 watcher 单独开
+例外会破坏一致性。→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：头文件 `@warning` 已明确文档化该调用属调用方错误且不检测。AGENTS.md:258
+的例外三关键词中，数据竞争与内存安全均不成立，仅剩资源泄漏，不构成防御性加固的充分
+理由。已在 `@warning` 中补写违反后的可观测后果（`ns_broker_remove` 恒返回
+`NS_E_INVAL`；`ns_shutdown` 因 waitset 非空泄漏句柄），使用户违约后能自行定位。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已拒绝
+
+#### 可重现的失败场景
+macOS host（当前 master）：
+
+```c
+ns_init();
+ns_platform_event_init(&ev, "e");
+ns_watcher_init(&w, ev.waitable.primitive, NS_WAITABLE_EVENT_IN, 0, h);
+ns_broker_add(&w);                       /* NS_OK */
+ns_watcher_init(&w, ev.waitable.primitive, NS_WAITABLE_EVENT_IN, 0, h); /* NS_OK，覆盖状态 */
+ns_broker_remove(&w);                    /* NS_E_INVAL，槽位摘不掉 */
+ns_shutdown();                           /* NS_OK，但 epoll fd + timerfd 泄漏 */
+```
+
+#### 定位
+src/ns_broker.c:131
+src/ns_broker.c:157
+include/nanosig/nanosig_broker.h:80
+
+---
+
+### BROKER-036: `ns_watcher_init` 接受 `events == 0`，host 三后端注册成功后永不触发
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **说明**: 本条与 platform 侧 PORT-018 同源（无效输入未被公共层拒绝），但本条的
+  触发面在 broker 校验函数，记在本模块（`ns_watcher_handle` 无效哨兵承诺在 Windows
+  上不成立的问题本身记在 PORT-018）。
+
+#### 问题描述
+`ns_watcher_events_are_valid` 只检查"是否含有非法位"
+（`(events & ~valid_events) == 0u`），因此 `events == 0` 被视为合法。
+五个后端对 0 的态度不一致：
+
+- Linux / macOS / Windows：`waitset_add` 接受（macOS 的 `make_changes` 产生 0 个
+  kevent 直接返回 `NS_OK`），watcher 注册成功但永远不会产生 completion；
+- FreeRTOS / Zephyr：`waitset_add` 因缺少 `NS_WAITABLE_EVENT_IN` 返回 `NS_E_INVAL`。
+
+同一段调用方代码在 host 上"静默不工作"、在 RTOS 上"报错"，属可移植性缺陷。
+
+#### review 建议
+在 `ns_watcher_events_are_valid` 增加 `events != 0u` 条件，使 `ns_watcher_init`
+在五后端统一返回 `NS_E_INVAL`；`nanosig_broker.h` 的 `@param events` 补一句
+"至少包含一个事件位"。若认为 0 有合法语义（纯超时唤醒），则需反过来让
+FreeRTOS/Zephyr 接受 0 并在文档写明——但那需要 RTOS 后端为空 waitable 造事件源，
+不建议。
+
+#### 作者建议
+采纳 review 建议：`ns_watcher_events_are_valid` 增加 `events != 0u`，五后端统一
+返回 `NS_E_INVAL`；`@param events` 已补"至少包含一个事件位"及 host 后端此前的
+静默失效说明。→ 关闭-已修复
+
+#### 关闭原因
+`src/ns_broker.c:95-104` 已在 `events == 0u` 时返回无效（附带说明注释）；
+`include/nanosig/nanosig_broker.h:89-91` 已补 `@param events` 说明。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已修复
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+macOS host 实测：
+
+```c
+ns_watcher_init(&w, ev.waitable.primitive, 0u, 0, h);  /* NS_OK */
+ns_broker_add(&w);                                     /* NS_OK */
+ns_platform_event_signal(&ev);
+/* 等待 100ms：handler 调用 0 次 —— 事件永远不投递 */
+```
+
+同一代码在 Zephyr/FreeRTOS 上 `ns_broker_add` 返回 `NS_E_INVAL`。
+
+#### 定位
+src/ns_broker.c:93
+src/ns_broker.c:148
+include/nanosig/nanosig_broker.h:89
+platform/zephyr/port.c:375
+platform/freertos/port.c:493
+
+---
+
+### BROKER-033: `ns_watcher_init` 的 `handle` 参数文档仍是联合体写法
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`include/nanosig/nanosig_broker.h:88` 写"Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr
+填 `.handle`"。`bafb78d` 之后 `ns_waitable_handle_t` 已是平台原语的透明别名，
+不再是联合体；照此文档编写 `.fd` / `.handle` 会直接编译失败。`ns_watcher_handle`
+的 docstring 已同步改写，本行遗漏。
+
+#### review 建议
+改为"传平台原语句柄本身（同 `ns_platform_waitable_t::primitive`）"，与
+`demos/demo_watcher_ready.c` 的既有写法一致。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+按文档写 `ns_watcher_init(&w, h.fd, ...)` → 编译错误
+`member reference base type 'ns_waitable_handle_t' (aka 'int') is not a structure`。
+
+#### 定位
+include/nanosig/nanosig_broker.h:88
+
+---
+
+### BROKER-034: 源码注释引用仅存在于 docs/ 的计划决策编号
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`src/ns_broker.c:165` 注释末尾带 `（D14）`。D14 只定义在
+`docs/plans/子计划-ns_watcher回调化.md:63`，违反项目硬性规则"源码中禁止出现阶段/计划编号"。
+
+#### review 建议
+删掉编号，保留可观测语义即可（"使 `ns_watcher_handle` 在已 deinit 的 watcher 上
+返回无效哨兵而非陈旧句柄"）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+对源码 grep `\bD[0-9]+\b`（排除 `PORT`/`PRIO` 等）命中 src/ns_broker.c:165；
+计划编号无法在源码树内解析。
+
+#### 定位
+src/ns_broker.c:165
+docs/plans/子计划-ns_watcher回调化.md:63
+
+---
+
+### BROKER-035: `ns_broker_dispatch_pending_events` 中的死转换 `(void)broker;`
+
+- **状态**: 关闭-已修复（由 PR #14 顺带处理）
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`src/ns_broker.c:383` 的 `(void)broker;` 意在压制未使用参数告警，但同一函数
+第 390 行就解引用了 `broker`（`broker->event.waitable`），转换是死代码，
+会误导读者以为该参数未使用。
+
+#### review 建议
+删除该行。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+静态阅读即可确认：删除后无告警、行为不变（`broker` 仍被使用）。
+
+#### 定位
+src/ns_broker.c:383
+src/ns_broker.c:390
+
+---
 
 ### BROKER-031: `ns_broker_run` 在 `waitset_wait` 失败后将未初始化的 `completions`/`count` 传入 dispatch 路径
 
