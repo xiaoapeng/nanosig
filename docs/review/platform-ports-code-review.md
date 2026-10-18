@@ -19,7 +19,210 @@
 
 ---
 
-## 现在打开的问题（2026-07-05 review）
+## 现在打开的问题（2026-07-05 review；PORT-018…022 来自 2026-10-18 review）
+
+### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关联**: BROKER-036（`ns_watcher_init` 接受 `events == 0`）与本条同源——都是
+  "无效输入未被公共层拒绝"，但本条的具体承诺来自平台谓词，记在本模块。
+
+#### 问题描述
+`ns_waitable_init` 把 `primitive` 写成全 1（`include/nanosig/nanosig_port.h:109`），
+在 Windows 上全 1 **就是** `INVALID_HANDLE_VALUE`。但
+`platform/windows/nanosig_platform_port.h:42` 的谓词只有 `((h) != NULL)`，
+于是 Windows 成为唯一一个"谓词与 `ns_waitable_init` 互相矛盾"的后端：
+
+- 违反 `ns_waitable_init` docstring"句柄型平台对应无效句柄"；
+- 违反 `nanosig_broker.h:146-148`"watcher 为 NULL 时返回全 1 哨兵，经
+  `ns_waitable_handle_is_valid` 判定为无效"；
+- `platform/windows/port.c:315-321` 自己实现了正确规则
+  （`NULL || INVALID_HANDLE_VALUE`），但私有重复，未用于公共谓词。
+
+后果：未绑定的 waitable 能通过 `ns_watcher_init`，直到 `ns_broker_add` 才失败；
+`test/test_helpers.h` 的 `test_raw_waitable_is_valid` 在 Windows 上也会把
+未绑定的 waitable 报成有效（测试假阳性）。
+
+#### review 建议
+```c
+#define ns_waitable_handle_is_valid(h) \
+    (((h) != NULL) && ((h) != INVALID_HANDLE_VALUE))
+```
+并删除 `platform/windows/port.c` 内的私有 `ns_waitable_handle_is_invalid`，
+`waitset_add` / `waitset_remove` 改用公共谓词，避免两处判据再次漂移。
+
+#### 作者建议
+采纳 review 建议：公共谓词补 `INVALID_HANDLE_VALUE` 排除，删除 `port.c` 内的私有
+副本，`waitset_add` / `waitset_remove` 改用公共谓词。→ 关闭-已修复
+
+#### 关闭原因
+`platform/windows/nanosig_platform_port.h:42` 的 `ns_waitable_handle_is_valid` 已改为
+排除 `NULL` 与 `INVALID_HANDLE_VALUE`；`platform/windows/port.c` 的私有判定已删除
+（改为直接调用公共谓词的 `ns_waitable_is_invalid`），两处判据不再可能漂移。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已修复
+
+#### 可重现的失败场景
+Windows：
+
+```c
+ns_platform_waitable_t w;
+ns_waitable_init(&w);                     /* primitive == INVALID_HANDLE_VALUE */
+ns_watcher_init(&watcher, w.primitive, NS_WAITABLE_EVENT_IN, 0, h); /* 现在返回 NS_E_INVAL */
+```
+
+#### 定位
+platform/windows/nanosig_platform_port.h:42
+platform/windows/port.c:315
+include/nanosig/nanosig_port.h:109
+include/nanosig/nanosig_broker.h:147
+
+---
+
+### PORT-019: Linux `waitset_wait` 在 timerfd 与 waitable 同批就绪时丢弃 completion
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+- **说明**: 既有缺陷，非 `bafb78d` 引入；按 `docs/review/AGENTS.md` 属本模块
+  打开问题（PORT-015 是无关的超时换算溢出，已关闭-已拒绝，不构成重复）。
+
+#### 问题描述
+`ns_platform_waitset_wait` 把 timerfd 永久注册进 epoll。有限超时 armed 时，
+若同一次 `epoll_wait` 中 timerfd 与某个 waitable 同时就绪、且 timer 事件在
+`events[]` 里排在前面，循环遇到 sentinel 直接 `return NS_OK`，同一批里后面的
+就绪 fd 根本不会被转换成 completion：
+
+- 电平触发（默认）：下一次 `waitset_wait` 会重新报告，可自愈；
+- 边沿触发（`edge_triggered != 0` → `EPOLLET`）：内核已把该边沿消费给本次
+  `epoll_wait`，不会再报告 → completion 永久丢失，watcher 永不 dispatch。
+
+#### review 建议
+遇到 sentinel 且 `timer_armed` 时记录"本轮已超时"并 `continue`，循环结束后
+统一返回 `NS_OK`；非 armed 路径（INFINITE/0）的 timerfd 残余 readiness drain
+保持现状。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+1. 两个 waitable 以 `edge_triggered = 1` 注册，broker 以有限超时（如 50ms）等待；
+2. 恰好某次 timer 到期瞬间，某个 `EPOLLET` fd 变为可读；
+3. `epoll_wait` 返回 `[timerfd, fd]` → 代码在 timer 分支 return，fd 的边沿被内核
+   消费但从未上报；
+4. 该 watcher 的 handler 此后不再被调用，直到用户重新触发另一条边沿。
+
+#### 定位
+platform/linux/port.c:532
+platform/linux/port.c:521
+
+---
+
+### PORT-020: Zephyr `ns_platform_alloc` 对所有内部分配强制内核栈对齐
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: design
+
+#### 问题描述
+`bafb78d` 让 `ns_platform_alloc` 统一走
+`k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, size)`，因为堆上的
+`ns_loop_t` / `ns_event_broker_t` 现在按值内联了含 `K_KERNEL_STACK_MEMBER` 的
+`ns_platform_thread_t`。但同一分配器也服务哈希表节点、格式化缓冲等普通内部分配：
+开启 MPU 栈保护时对齐量会随栈尺寸放大，小对象分配可能各自浪费接近一个栈的堆空间，
+64KB 堆下数据结构的分配会更早撞到 `NS_E_NOMEM`。
+
+#### review 建议
+给 loop/broker 单独提供对齐分配入口（如 `ns_platform_alloc_aligned(size, align)`
+仅在这两处使用），通用路径回到 `k_malloc`；若维持现状，至少在
+`platform/zephyr/nanosig_platform_port.h` 与 `platform/README.md` 写明这个代价。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+`CONFIG_MPU_STACK_GUARD=y`（栈对齐等于栈大小时）配置 64KB 堆，连续创建若干
+`ns_hashtbl` / 格式化大缓冲：每次分配按栈尺寸对齐，堆被快速碎片化并提前返回
+`NS_E_NOMEM`，而同样负载在未开 MPU 时正常。
+
+#### 定位
+platform/zephyr/port.c:125
+platform/zephyr/nanosig_platform_port.h:11
+
+---
+
+### PORT-021: 平台文档仍描述重构前的原语
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`bafb78d` 改写了平台所有权模型，但以下描述未同步：
+
+- `platform/README.md:93`："wakeup 使用 kqueue `EVFILT_USER`，通过 wakeup 自身的
+  kqueue fd 暴露为 waitable"——重构后 wakeup 不再暴露 waitable，`NS_WAITABLE_GET`
+  已删除；
+- `platform/README.md:102`：Windows 线程写 `CreateThread`，实现是
+  `_beginthreadex`（`platform/windows/port.c:256`），属 PLATFORM-013 已修文档的回归；
+- `docs/agents/platform/AGENTS.md:67`：同上 `CreateThread`；
+- `docs/agents/platform/AGENTS.md:69`：仍写 "`k_malloc`/`k_free` for internal state"，
+  与 PORT-020 的实际实现（`k_aligned_alloc`）不一致；
+- `docs/ARCHITECTURE.md:271`：跨模块表格同样写 `CreateThread`。
+
+#### review 建议
+按上述逐行更新；`docs/ARCHITECTURE.md` 的同一措辞记入 `global-review.md`
+（跨模块问题按规范写全局文档）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+照 README 在 macOS 上调用 wakeup 侧转换宏（`NS_WAITABLE_GET`）→ 编译错误，
+宏已不存在；照 Windows 小节期望 `CreateThread` 语义（如继承句柄/线程退出码）→
+与实际 `_beginthreadex` 行为不符。
+
+#### 定位
+platform/README.md:93
+platform/README.md:102
+docs/agents/platform/AGENTS.md:67
+docs/agents/platform/AGENTS.md:69
+docs/ARCHITECTURE.md:271
+
+---
+
+### PORT-022: Windows `ns_platform_waitset_deinit` 丢弃 `CloseHandle` 失败
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`platform/windows/port.c:302` 直接 `CloseHandle(waitset->timer); return NS_OK;`，
+关闭失败被静默吞掉。Linux（`platform/linux/port.c:399`）与 macOS
+（`platform/macos/port.c:411`）都会把失败传播成 `NS_E_INVAL`，三后端行为不一致。
+
+#### review 建议
+```c
+return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;
+```
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit` 返回 `NS_OK`，
+调用方误以为资源已释放，与 Linux/macOS 上的结果不同。
+
+#### 定位
+platform/windows/port.c:302
+platform/linux/port.c:399
+platform/macos/port.c:411
+
+---
 
 ### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
 

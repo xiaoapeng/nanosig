@@ -80,11 +80,16 @@ struct ns_watcher {
  * @warning 本函数不幂等，且**不检测重复初始化**：对已初始化的 watcher 再次调用
  *          属调用方错误（未定义行为，会覆盖已有状态），与 `ns_signal_init_raw`
  *          统一策略。调用方必须保证 init 一次 → deinit 一次。
+ *          若该 watcher 已注册到 broker，其 waitset 槽位此后**无法注销**：
+ *          `ns_broker_remove` 将返回 `NS_E_INVAL`，`ns_shutdown` 也会因 waitset
+ *          非空而泄漏底层句柄（Linux/macOS 为 epoll/kqueue 与 timer fd）。
  * @warning 本函数必须串行化调用，非 MPM-safe。
  *
  * @param watcher 待初始化的 watcher。
  * @param handle 平台句柄（Linux/macOS 填 `.fd`，Windows/FreeRTOS/Zephyr 填 `.handle`）。
- * @param events `NS_WAITABLE_EVENT_*` 位组合。
+ * @param events `NS_WAITABLE_EVENT_*` 位组合，**至少包含一个事件位**；传 `0`
+ *        表示不监听任何事件，五后端统一返回 `NS_E_INVAL`（host 后端曾注册成功
+ *        但永不触发，已修正）。
  * @param edge_triggered 非零表示边沿触发，零表示电平触发；Linux 映射 `EPOLLET`、
  *        macOS 映射 `EV_CLEAR`，Windows/Zephyr/FreeRTOS 后端忽略该参数。
  * @param handler 就绪回调，必填；为 NULL 时返回 `NS_E_INVAL`。

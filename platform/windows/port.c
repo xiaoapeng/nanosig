@@ -312,19 +312,20 @@ static int ns_waitset_find(const ns_platform_waitset_t *waitset, HANDLE handle)
     return -1;
 }
 
-static int ns_waitable_handle_is_invalid(const ns_platform_waitable_t *waitable)
+/* 句柄有效性判据统一由公共谓词 ns_waitable_handle_is_valid 提供（排除 NULL 与
+   INVALID_HANDLE_VALUE），此处不再维护私有副本，避免两处判据漂移。 */
+static int ns_waitable_is_invalid(const ns_platform_waitable_t *waitable)
 {
     if(waitable == NULL) return 1;
 
-    return (waitable->primitive == NULL)
-        || (waitable->primitive == INVALID_HANDLE_VALUE);
+    return !ns_waitable_handle_is_valid(waitable->primitive);
 }
 
 int ns_platform_waitset_add(
     ns_platform_waitset_t *waitset,
     ns_platform_waitable_t *waitable)
 {
-    if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
+    if((waitset == NULL) || ns_waitable_is_invalid(waitable)){
         return NS_E_INVAL;
     }
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
@@ -345,7 +346,7 @@ int ns_platform_waitset_remove(
     int idx;
     DWORD last;
 
-    if((waitset == NULL) || ns_waitable_handle_is_invalid(waitable)){
+    if((waitset == NULL) || ns_waitable_is_invalid(waitable)){
         return NS_E_INVAL;
     }
     if(waitable->registered_waitset != waitset) return NS_E_INVAL;
