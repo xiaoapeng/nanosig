@@ -4,17 +4,17 @@
  * @date 2026-10-17
  *
  * 本头文件把 nanosig 平台层使用的原语类型映射为 Zephyr 原语的**透明别名**，
- * 使平台对象全部变为调用方拥有存储。它只装当前平台这一个后端，由构建系统经
+ * 使平台对象变为调用方拥有存储。它只装当前平台这一个后端，由构建系统经
  * `NANOSIG_PLATFORM_HEADER` 注入到 `nanosig_port.h`；`nanosig_port.h` 本身
  * 不含任何平台判定宏。
  *
- * @warning `ns_platform_thread_t` 内嵌 `K_KERNEL_STACK_MEMBER`，其对齐要求为
- * `Z_KERNEL_STACK_OBJ_ALIGN`，并因此**抬高整个结构体的对齐要求**。声明的存储
- * （static / 全局 / 结构体成员 / 局部变量）由编译器自动满足该对齐；若用
- * `k_malloc` 在堆上自行分配，必须改用
- * `k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, ...)`。
- * `ns_platform_alloc` 已按该对齐返回内存（库内 ns_loop_t / broker 就内联了该类型），
- * 因此用 `ns_platform_alloc` 分配是安全的。
+ * @note 唯一例外是 `ns_platform_thread_t`：它内嵌内核栈（`K_KERNEL_STACK_MEMBER`），
+ * 对齐要求为 `Z_KERNEL_STACK_OBJ_ALIGN`。若该类型按值内嵌，这个要求会经堆上的
+ * `ns_loop_t` / broker 传递到整个 `ns_platform_alloc`，使所有小对象分配都按栈尺寸
+ * 对齐（开 MPU 栈保护时尤其浪费堆）。因此本后端把它做成**由 port 分配的不透明对象**：
+ * `ns_platform_thread_init` 按 `Z_KERNEL_STACK_OBJ_ALIGN` 分配，
+ * `ns_platform_thread_join` 回收；`ns_platform_alloc` 则保持普通 `k_malloc`。
+ * 调用方仍然只声明 `ns_platform_thread_t` 变量并取地址，接口形态不变。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -83,13 +83,9 @@ typedef struct k_sem ns_platform_wakeup_t;
 /** mutex：`k_mutex`，按值内嵌。 */
 typedef struct k_mutex ns_platform_mutex_t;
 
-/** thread：`k_thread` + 内嵌内核栈 + 入口/参数簿记。 */
-typedef struct ns_platform_thread {
-    struct k_thread        thread;
-    ns_platform_thread_fn  entry;
-    void                  *arg;
-    K_KERNEL_STACK_MEMBER(stack, NS_ZEPHYR_THREAD_STACK_SIZE);
-} ns_platform_thread_t;
+/** thread：由 port 分配、`ns_platform_thread_join` 回收的不透明对象（内嵌内核栈）。 */
+struct ns_platform_thread;
+typedef struct ns_platform_thread *ns_platform_thread_t;
 
 /** waitset：`k_poll` 每次等待按活跃 slot 重建事件数组，故内联存储两者。 */
 typedef struct ns_platform_waitset {

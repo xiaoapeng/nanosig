@@ -12,7 +12,8 @@
  * ——平台层不再为平台对象分配内存。
  *
  * @thread-safety
- * 平台对象按值内嵌在调用方存储中，库不分配也不保护其生命周期：
+ * 平台对象的存储由调用方拥有，库不分配也不保护其生命周期（唯一例外：Zephyr 后端的
+ * 线程对象由 port 分配、`ns_platform_thread_join` 回收）：
  * - `*_init` / `*_deinit` / `ns_platform_thread_join` / `*_wakeup_wait` /
  *   `*_waitset_wait` 不得对同一对象并发调用。
  * - `ns_platform_wakeup_signal` / `ns_platform_event_signal` 允许跨线程调用。
@@ -434,11 +435,11 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us);
  * @warning 非幂等：重复 init 而不先 `ns_platform_thread_join` 会覆盖字段并泄漏第一次
  *          分配的平台资源。
  * @pre 调用方必须保证 `thread` 在 `ns_platform_thread_join` 返回前一直有效。
- * @note 对齐：部分后端（如 Zephyr，`ns_platform_thread_t` 内嵌内核栈）要求存储满足
- *       超过 malloc 的对齐。声明的存储由编译器自动满足；若在堆上自行分配，须使用该
- *       后端平台头注明的对齐分配方式（Zephyr：`k_aligned_alloc`）。
+ * @note Zephyr 后端的 `ns_platform_thread_t` 是由 port 分配、`ns_platform_thread_join`
+ *       回收的不透明对象（内含内核栈），因此 init 可能返回 `NS_E_NOMEM`；其余后端的
+ *       该类型是调用方存储，无额外对齐要求。
  *
- * @param thread 调用方拥有的线程存储。
+ * @param thread 线程存储；Zephyr 后端为 port 分配的对象句柄。
  * @param entry 线程入口。
  * @param arg 传给入口的参数。
  * @param debug_name 调试名称；平台层不接管字符串所有权。

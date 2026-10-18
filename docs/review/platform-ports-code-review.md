@@ -132,39 +132,6 @@ platform/linux/port.c:532
 
 ---
 
-### PORT-020: Zephyr `ns_platform_alloc` 对所有内部分配强制内核栈对齐
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: design
-
-#### 问题描述
-`bafb78d` 让 `ns_platform_alloc` 统一走
-`k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, size)`，因为堆上的
-`ns_loop_t` / `ns_event_broker_t` 现在按值内联了含 `K_KERNEL_STACK_MEMBER` 的
-`ns_platform_thread_t`。但同一分配器也服务哈希表节点、格式化缓冲等普通内部分配：
-开启 MPU 栈保护时对齐量会随栈尺寸放大，小对象分配可能各自浪费接近一个栈的堆空间，
-64KB 堆下数据结构的分配会更早撞到 `NS_E_NOMEM`。
-
-#### review 建议
-给 loop/broker 单独提供对齐分配入口（如 `ns_platform_alloc_aligned(size, align)`
-仅在这两处使用），通用路径回到 `k_malloc`；若维持现状，至少在
-`platform/zephyr/nanosig_platform_port.h` 与 `platform/README.md` 写明这个代价。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-`CONFIG_MPU_STACK_GUARD=y`（栈对齐等于栈大小时）配置 64KB 堆，连续创建若干
-`ns_hashtbl` / 格式化大缓冲：每次分配按栈尺寸对齐，堆被快速碎片化并提前返回
-`NS_E_NOMEM`，而同样负载在未开 MPU 时正常。
-
-#### 定位
-platform/zephyr/port.c:125
-platform/zephyr/nanosig_platform_port.h:11
-
----
-
 ### PORT-021: 平台文档仍描述重构前的原语
 
 - **状态**: 打开
@@ -985,3 +952,31 @@ platform/windows/port.c:443
 - **状态**: 关闭-已修复
 - **关闭原因**: 替换为 `_beginthreadex` + 线程函数签名匹配 `unsigned __stdcall(void *)` + 添加 `#include <process.h>`，当前工作树（未提交）
 - **关闭日期**: 2026-07-04
+
+### PORT-020: Zephyr `ns_platform_alloc` 对所有内部分配强制内核栈对齐
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+
+#### 关闭原因
+作者决定（人话：这是变通，且只对 Zephyr 生效）：把 Zephyr 后端的**线程对象**改成由
+port 拥有——`ns_platform_thread_t` 变为指向 `port.c` 内定义的
+`struct ns_platform_thread`（内嵌 `K_KERNEL_STACK_MEMBER`）的不透明指针，
+`ns_platform_thread_init` 用 `k_aligned_alloc(Z_KERNEL_STACK_OBJ_ALIGN, ...)` 分配，
+`ns_platform_thread_join` 回收；`ns_platform_alloc` 回到普通 `k_malloc`。
+
+内核栈的对齐要求因此被约束在这一个分配里，不再经堆上的 `ns_loop_t` / broker 传给
+哈希表节点、格式化缓冲等小对象（开 MPU 栈保护时正是这些分配被按栈尺寸对齐）。
+这是对"平台对象由调用方拥有存储"约定的一处**有意例外**，已在
+platform/zephyr/nanosig_platform_port.h、include/nanosig/nanosig_port.h、
+platform/README.md 与 docs/agents/platform/AGENTS.md 文档化；调用方接口形态不变
+（仍是声明 `ns_platform_thread_t` 变量并取地址）。
+
+review 建议的 `ns_platform_alloc_aligned` 未采用：对 loop/broker 而言两者等价，
+但新增的公共分配入口会把"对齐"这个平台细节泄漏给 src/。另一条备选（把内核栈从
+结构体里搬出去、用 `K_KERNEL_STACK_LEN` 手搓缓冲区）也未采用：Zephyr 文档要求栈
+必须由 `K_KERNEL_STACK_DEFINE` 宏定义，手搓长度可能 UB。
+- 修复分支: fix/zephyr-thread-object-owned
+
+#### 关闭日期
+2026-10-19

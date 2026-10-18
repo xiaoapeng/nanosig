@@ -5,12 +5,14 @@
  *
  * 本后端把 `nanosig/nanosig_port.h` 的平台契约映射到 Zephyr：
  *
- * - 内存：`k_aligned_alloc` / `k_free`（按 `Z_KERNEL_STACK_OBJ_ALIGN` 对齐，
- *   因为堆上的 ns_loop_t / broker 内联了含内核栈的 `ns_platform_thread_t`）；
- *   平台对象（wakeup / mutex / thread / waitset）由调用方拥有存储。
+ * - 内存：`k_malloc` / `k_free`；平台对象（wakeup / mutex / waitset）由调用方拥有
+ *   存储，唯一例外是线程对象（见下条）。
  * - mutex：`k_mutex`（`k_mutex_lock` / `k_mutex_unlock`）。
  * - 线程：`k_thread_create` + `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
- *   内嵌在 `struct ns_platform_thread` 中，不依赖 `CONFIG_DYNAMIC_THREAD`。
+ *   内嵌在 `struct ns_platform_thread` 中，不依赖 `CONFIG_DYNAMIC_THREAD`；
+ *   该对象由本后端按 `Z_KERNEL_STACK_OBJ_ALIGN` 分配、`ns_platform_thread_join`
+ *   回收，使内核栈的对齐要求不外传给通用分配器（见 `nanosig_platform_port.h`
+ *   的 @note）。
  * - wakeup：**每对象独立 `k_sem`**（上限 1，二值语义）；`signal` = `k_sem_give`
  *   （已满视为成功），`wait` = `k_sem_take`。
  * - event：`k_poll_signal`；`waitable` 与 `signal_handle` 指向同一 `k_poll_signal`；
@@ -124,11 +126,7 @@ int ns_platform_shutdown(void)
 
 void *ns_platform_alloc(size_t size)
 {
-    /* `ns_platform_thread_t` 内嵌内核栈，要求 Z_KERNEL_STACK_OBJ_ALIGN 对齐；
-       库把该类型按值内联在堆上的 ns_loop_t / ns_event_broker_t 中，故这里比
-       k_malloc 的指针宽度对齐更严格。k_aligned_alloc 接受 size 非 2 的幂倍数，
-       且结果仍由 k_free 释放。 */
-    return k_aligned_alloc((size_t)Z_KERNEL_STACK_OBJ_ALIGN, size);
+    return k_malloc(size);
 }
 
 void ns_platform_free(void *ptr)
@@ -237,9 +235,18 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 /*  thread                                                             */
 /* ------------------------------------------------------------------ */
 
+/* 线程对象由本后端拥有：内嵌内核栈要求 Z_KERNEL_STACK_OBJ_ALIGN 对齐，把该要求约束在
+   这一个分配里，通用分配器（ns_platform_alloc）就不必按栈尺寸对齐每个小对象。 */
+struct ns_platform_thread {
+    struct k_thread        thread;
+    ns_platform_thread_fn  entry;
+    void                  *arg;
+    K_KERNEL_STACK_MEMBER(stack, NS_ZEPHYR_THREAD_STACK_SIZE);
+};
+
 static void ns_zephyr_thread_trampoline(void *p1, void *p2, void *p3)
 {
-    ns_platform_thread_t *thread = (ns_platform_thread_t *)p1;
+    struct ns_platform_thread *thread = (struct ns_platform_thread *)p1;
 
     (void)p2;
     (void)p3;
@@ -253,27 +260,39 @@ int ns_platform_thread_init(
     void *arg,
     const char *debug_name)
 {
+    struct ns_platform_thread *obj;
+
     (void)debug_name;
 
-    if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
+    if(thread == NULL) return NS_E_INVAL;
 
-    thread->entry = entry;
-    thread->arg = arg;
+    *thread = NULL;
+    if(entry == NULL) return NS_E_INVAL;
 
-    (void)k_thread_create(&thread->thread, thread->stack,
-                          (size_t)K_KERNEL_STACK_SIZEOF(thread->stack),
-                          ns_zephyr_thread_trampoline, thread, NULL, NULL,
+    obj = (struct ns_platform_thread *)k_aligned_alloc(
+        (size_t)Z_KERNEL_STACK_OBJ_ALIGN, sizeof(*obj));
+    if(obj == NULL) return NS_E_NOMEM;
+
+    obj->entry = entry;
+    obj->arg = arg;
+
+    (void)k_thread_create(&obj->thread, obj->stack,
+                          (size_t)K_KERNEL_STACK_SIZEOF(obj->stack),
+                          ns_zephyr_thread_trampoline, obj, NULL, NULL,
                           NS_ZEPHYR_THREAD_PRIORITY, 0u, K_NO_WAIT);
 
+    *thread = obj;
     return NS_OK;
 }
 
 int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
-    if(thread == NULL) return NS_E_INVAL;
+    if((thread == NULL) || (*thread == NULL)) return NS_E_INVAL;
 
-    if(k_thread_join(&thread->thread, K_FOREVER) != 0) return NS_E_INVAL;
+    if(k_thread_join(&(*thread)->thread, K_FOREVER) != 0) return NS_E_INVAL;
 
+    k_free(*thread);
+    *thread = NULL;
     return NS_OK;
 }
 
