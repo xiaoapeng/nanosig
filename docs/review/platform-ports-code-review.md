@@ -1,3 +1,228 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "PLATFORM-012"
+    module: "platform-ports"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-012"
+  - id: "PLATFORM-013"
+    module: "platform-ports"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
+  - id: "PORT-018"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/platform-ports-code-review.md#PORT-018"
+  - id: "PORT-019"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/platform-ports-code-review.md#PORT-019"
+  - id: "PORT-021"
+    module: "platform-ports"
+    status: "open"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-021"
+  - id: "PORT-022"
+    module: "platform-ports"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/platform-ports-code-review.md#PORT-022"
+  - id: "PORT-014"
+    module: "platform-ports"
+    status: "closed-deferred"
+    severity: "medium"
+    type: "design"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-014"
+  - id: "PORT-015"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/platform-ports-code-review.md#PORT-015"
+  - id: "PORT-016"
+    module: "platform-ports"
+    status: "open"
+    severity: "low"
+    type: "test"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-016"
+  - id: "PORT-017"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-017"
+  - id: "PORT-023"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-023"
+  - id: "PORT-024"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-024"
+  - id: "PORT-025"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-025"
+  - id: "PORT-026"
+    module: "platform-ports"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-026"
+  - id: "PORT-027"
+    module: "platform-ports"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-027"
+  - id: "PORT-028"
+    module: "platform-ports"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-028"
+  - id: "PORT-029"
+    module: "platform-ports"
+    status: "open"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-029"
+  - id: "PLATFORM-001"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-001"
+  - id: "PLATFORM-002"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-002"
+  - id: "PLATFORM-003"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-003"
+  - id: "PLATFORM-004"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-004"
+  - id: "PLATFORM-005"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-005"
+  - id: "PLATFORM-006"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-006"
+  - id: "PLATFORM-007"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-007"
+  - id: "PLATFORM-008"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-008"
+  - id: "PLATFORM-009"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-009"
+  - id: "PLATFORM-010"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-010"
+  - id: "PLATFORM-011"
+    module: "platform-ports"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-011"
+  - id: "PLATFORM-012"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-012"
+  - id: "PLATFORM-013"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
+  - id: "PORT-020"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/platform-ports-code-review.md#PORT-020"
+---
 # Platform Ports 代码审查报告
 
 **日期**: 2026-07-04
@@ -7,11 +232,13 @@
 
 ## 修复历史
 
+<a id="PLATFORM-012"></a>
 ### PLATFORM-012: Windows port `ns_platform_waitset_wait` 编译错误
 
 - **修复**: 当前工作树（未提交）—— `->primitive.handle` 补全
 - **日期**: 2026-07-04
 
+<a id="PLATFORM-013"></a>
 ### PLATFORM-013: Windows 平台 `CreateThread` 改用 `_beginthreadex`
 
 - **修复**: 当前工作树（未提交）—— `CreateThread` → `_beginthreadex` + `#include <process.h>` + 线程函数签名改为 `unsigned __stdcall`
@@ -21,6 +248,7 @@
 
 ## 现在打开的问题（2026-07-05 review；PORT-018…022、PORT-024…029 来自 2026-10-18 review）
 
+<a id="PORT-018"></a>
 ### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
 
 - **状态**: 打开
@@ -82,6 +310,7 @@ include/nanosig/nanosig_broker.h:147
 
 ---
 
+<a id="PORT-019"></a>
 ### PORT-019: Linux `waitset_wait` 在 timerfd 与 waitable 同批就绪时丢弃 completion
 
 - **状态**: 打开
@@ -132,6 +361,7 @@ platform/linux/port.c:532
 
 ---
 
+<a id="PORT-021"></a>
 ### PORT-021: 平台文档仍描述重构前的原语
 
 - **状态**: 打开
@@ -172,6 +402,7 @@ docs/ARCHITECTURE.md:271
 
 ---
 
+<a id="PORT-022"></a>
 ### PORT-022: Windows `ns_platform_waitset_deinit` 丢弃 `CloseHandle` 失败
 
 - **状态**: 打开
@@ -210,6 +441,7 @@ platform/macos/port.c:411
 
 ---
 
+<a id="PORT-014"></a>
 ### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
 
 - **状态**: 关闭-延期
@@ -232,6 +464,7 @@ include/nanosig/nanosig_port.h:432-451
 
 ---
 
+<a id="PORT-015"></a>
 ### PORT-015: Windows `ns_windows_timeout_ms` 在超大 timeout_us 下有 uint64 加法溢出
 
 - **状态**: 关闭-已拒绝
@@ -260,6 +493,7 @@ platform/linux/port.c:141
 
 ---
 
+<a id="PORT-016"></a>
 ### PORT-016: 测试 `test_waitset_events_zero` 未覆盖 Windows 路径
 
 - **状态**: 打开
@@ -280,6 +514,7 @@ test/unit/test_platform_backend.c:690-714
 
 ---
 
+<a id="PORT-017"></a>
 ### PORT-017: `ns_platform_event_*` 生命周期契约不完整（重复 init 泄漏 / 未初始化调用）
 
 - **状态**: 关闭-已修复
@@ -338,6 +573,7 @@ platform/windows/port.c:151-170
 
 ---
 
+<a id="PORT-023"></a>
 ### PORT-023: Linux `ns_linux_wakeup_drain` 失败时未消费 eventfd 计数，调用方陷入热自旋
 
 - **状态**: 打开
@@ -391,6 +627,7 @@ src/ns_broker.c:239
 
 ---
 
+<a id="PORT-024"></a>
 ### PORT-024: macOS `waitset_add` 在 kqueue 变更列表部分失败时泄漏 knote，且该 knote 无法回收
 
 - **状态**: 打开
@@ -474,6 +711,7 @@ src/ns_broker.c:336
 
 ---
 
+<a id="PORT-025"></a>
 ### PORT-025: macOS 允许两个 waitable 注册同一 fd，`remove` 其中一个会静默废掉另一个
 
 - **状态**: 打开
@@ -547,6 +785,7 @@ platform/README.md:41
 
 ---
 
+<a id="PORT-026"></a>
 ### PORT-026: Windows 后端完全忽略 `waitable->events`，恒报 `NS_WAITABLE_EVENT_IN`
 
 - **状态**: 打开
@@ -622,6 +861,7 @@ test/unit/test_broker_event.c:221
 
 ---
 
+<a id="PORT-027"></a>
 ### PORT-027: macOS `event_signal` 写已关闭的 pipe 读端会触发 SIGPIPE，进程直接终止
 
 - **状态**: 打开
@@ -692,6 +932,7 @@ platform/windows/port.c:152
 
 ---
 
+<a id="PORT-028"></a>
 ### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
 
 - **状态**: 打开
@@ -754,6 +995,7 @@ include/nanosig/nanosig_broker.h:55
 
 ---
 
+<a id="PORT-029"></a>
 ### PORT-029: platform/README.md 两处描述与实现不一致（句柄谓词、Windows completion 条数）
 
 - **状态**: 打开
@@ -800,6 +1042,7 @@ platform/windows/port.c:443
 
 ## 现在关闭的问题
 
+<a id="PLATFORM-001"></a>
 ### PLATFORM-001: Windows `waitset_wait` 不处理 `WAIT_ABANDONED` / `WAIT_FAILED`
 
 - **状态**: 关闭-已拒绝
@@ -813,6 +1056,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-002"></a>
 ### PLATFORM-002: 时钟失败路径无法区分 "未初始化" 和 "瞬时错误"
 
 - **状态**: 关闭-已拒绝
@@ -826,6 +1070,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-003"></a>
 ### PLATFORM-003: `ns_platform_waitset_destroy` 的 `count != 0` 检查有 TOCTOU
 
 - **状态**: 关闭-已拒绝
@@ -839,6 +1084,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-004"></a>
 ### PLATFORM-004: Linux `pthread_join` 不重试 `EINTR`
 
 - **状态**: 关闭-已拒绝
@@ -852,6 +1098,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-005"></a>
 ### PLATFORM-005: macOS kqueue-as-fd 注册到 kqueue 本身
 
 - **状态**: 关闭-已拒绝
@@ -865,6 +1112,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-006"></a>
 ### PLATFORM-006: Linux `wakeup_drain` 无上界循环
 
 - **状态**: 关闭-已拒绝
@@ -878,6 +1126,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-007"></a>
 ### PLATFORM-007: `waitset_add` 容量检查中 timer 占用 slot 的契约不明确
 
 - **状态**: 关闭-已拒绝
@@ -891,6 +1140,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-008"></a>
 ### PLATFORM-008: `wakeup_signal` 的 `EAGAIN → NS_E_QUEUE_FULL` 转换
 
 - **状态**: 关闭-已拒绝
@@ -904,6 +1154,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-009"></a>
 ### PLATFORM-009: Linux Waitset 残余 TimerFD 事件导致空转
 
 - **状态**: 关闭-已拒绝
@@ -917,6 +1168,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-010"></a>
 ### PLATFORM-010: Windows 平台 `SRWLOCK` 不区分普通/递归 mutex
 
 - **状态**: 关闭-已拒绝
@@ -930,6 +1182,7 @@ platform/windows/port.c:443
 
 ---
 
+<a id="PLATFORM-011"></a>
 ### PLATFORM-011: macOS `ns_macos_user_event_create` 使用原始 -1 而非标准错误码
 
 - **状态**: 关闭-已拒绝
@@ -953,6 +1206,7 @@ platform/windows/port.c:443
 - **关闭原因**: 替换为 `_beginthreadex` + 线程函数签名匹配 `unsigned __stdcall(void *)` + 添加 `#include <process.h>`，当前工作树（未提交）
 - **关闭日期**: 2026-07-04
 
+<a id="PORT-020"></a>
 ### PORT-020: Zephyr `ns_platform_alloc` 对所有内部分配强制内核栈对齐
 
 - **状态**: 关闭-已修复

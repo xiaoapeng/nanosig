@@ -1,3 +1,71 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "ZEPHYR-001"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-001"
+  - id: "ZEPHYR-002"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-002"
+  - id: "ZEPHYR-003"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "low"
+    type: "test"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-003"
+  - id: "ZEPHYR-004"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "test"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-004"
+  - id: "ZEPHYR-005"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "test"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-005"
+  - id: "ZEPHYR-006"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "low"
+    type: "test"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-006"
+  - id: "ZEPHYR-007"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "low"
+    type: "cleanup"
+    section: "fixed-history"
+    closed_date: "2026-10-11"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-007"
+  - id: "ZEPHYR-004-fix"
+    module: "zephyr"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "test"
+    section: "fixed-history"
+    closed_date: "2026-10-16"
+    location: "docs/review/zephyr-code-review.md#ZEPHYR-004-fix"
+---
 # Zephyr Backend 代码审查报告
 
 **日期**: 2026-10-11
@@ -11,6 +79,7 @@
 
 ## 修复历史
 
+<a id="ZEPHYR-001"></a>
 ### 2026-10-11 — ZEPHYR-001 闭环：空 waitset + 无限超时统一为有界封顶
 
 - **ZEPHYR-001**: 空 waitset + `NS_PLATFORM_WAIT_INFINITE_US` 的语义未定义（五个后端
@@ -23,6 +92,12 @@
 - **修复 commit**: `6cf940d`（PR #7，rebase 合并，无 merge 节点）
 - **修复日期**: 2026-10-11
 
+<a id="ZEPHYR-002"></a>
+<a id="ZEPHYR-003"></a>
+<a id="ZEPHYR-004"></a>
+<a id="ZEPHYR-005"></a>
+<a id="ZEPHYR-006"></a>
+<a id="ZEPHYR-007"></a>
 ### 2026-10-11 — ZEPHYR-002…007 闭环（无效句柄加固 + 覆盖缺口 + cleanup）
 
 作者指示"全部修复"，以下六条一并闭环。
@@ -57,6 +132,7 @@
 - **修复 commit**: `220dd1d`（代码与测试）
 - **修复日期**: 2026-10-11
 
+<a id="ZEPHYR-004-fix"></a>
 ### 2026-10-16 — ZEPHYR-004 用例修正（CI 首次真实运行暴露）
 
 ZEPHYR-004 新增的 `test_wait_truncates_completions` 在 native_sim CI（PR #9）首次
