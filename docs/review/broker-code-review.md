@@ -1,3 +1,218 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "BROKER-007"
+    module: "broker"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/broker-code-review.md#BROKER-007"
+  - id: "BROKER-011"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/broker-code-review.md#BROKER-011"
+  - id: "BROKER-036"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/broker-code-review.md#BROKER-036"
+  - id: "BROKER-033"
+    module: "broker"
+    status: "open"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/broker-code-review.md#BROKER-033"
+  - id: "BROKER-034"
+    module: "broker"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/broker-code-review.md#BROKER-034"
+  - id: "BROKER-035"
+    module: "broker"
+    status: "unknown"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/broker-code-review.md#BROKER-035"
+  - id: "BROKER-031"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-031"
+  - id: "BROKER-018"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "critical"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-018"
+  - id: "BROKER-019"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-019"
+  - id: "BROKER-021"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-021"
+  - id: "BROKER-023"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-023"
+  - id: "BROKER-029"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/broker-code-review.md#BROKER-029"
+  - id: "BROKER-025"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-025"
+  - id: "BROKER-028"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-028"
+  - id: "BROKER-017"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-017"
+  - id: "BROKER-030"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-030"
+  - id: "BROKER-020"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-020"
+  - id: "BROKER-022"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-022"
+  - id: "BROKER-024"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-024"
+  - id: "BROKER-026"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-026"
+  - id: "BROKER-027"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-027"
+  - id: "BROKER-009"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-009"
+  - id: "BROKER-010"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-010"
+  - id: "BROKER-014"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-014"
+  - id: "BROKER-016"
+    module: "broker"
+    status: "closed-not-applicable"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-016"
+  - id: "BROKER-001"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-001"
+  - id: "BROKER-003"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-003"
+  - id: "BROKER-004"
+    module: "broker"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-004"
+  - id: "BROKER-012"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/broker-code-review.md#BROKER-012"
+---
 # Event Broker 代码审查报告
 
 **日期**: 2026-07-05
@@ -90,6 +305,7 @@
 - **修复 commit**: pre-existing
 - **修复方式**: 在 `ns_broker_global_shutdown` 中将 `ns_timer_mgr_global_shutdown()` 移到 `g_broker = NULL` 之前。
 
+<a id="BROKER-007"></a>
 ### BROKER-007: `fire_expired` 后不立即重检 timer
 
 - **修复 commit**: pre-existing
@@ -99,6 +315,7 @@
 
 ## 现在打开的问题
 
+<a id="BROKER-011"></a>
 ### BROKER-011: 二次 `ns_watcher_init` 让已注册 watcher 的 waitset 槽位无法注销（回归，重开）
 
 - **状态**: 关闭-已拒绝
@@ -178,6 +395,7 @@ include/nanosig/nanosig_broker.h:80
 
 ---
 
+<a id="BROKER-036"></a>
 ### BROKER-036: `ns_watcher_init` 接受 `events == 0`，host 三后端注册成功后永不触发
 
 - **状态**: 关闭-已修复
@@ -241,6 +459,7 @@ platform/freertos/port.c:493
 
 ---
 
+<a id="BROKER-033"></a>
 ### BROKER-033: `ns_watcher_init` 的 `handle` 参数文档仍是联合体写法
 
 - **状态**: 打开
@@ -269,6 +488,7 @@ include/nanosig/nanosig_broker.h:88
 
 ---
 
+<a id="BROKER-034"></a>
 ### BROKER-034: 源码注释引用仅存在于 docs/ 的计划决策编号
 
 - **状态**: 打开
@@ -296,6 +516,7 @@ docs/plans/子计划-ns_watcher回调化.md:63
 
 ---
 
+<a id="BROKER-035"></a>
 ### BROKER-035: `ns_broker_dispatch_pending_events` 中的死转换 `(void)broker;`
 
 - **状态**: 关闭-已修复（由 PR #14 顺带处理）
@@ -322,6 +543,7 @@ src/ns_broker.c:390
 
 ---
 
+<a id="BROKER-031"></a>
 ### BROKER-031: `ns_broker_run` 在 `waitset_wait` 失败后将未初始化的 `completions`/`count` 传入 dispatch 路径
 
 - **状态**: 关闭-已拒绝
@@ -367,6 +589,7 @@ src/ns_broker.c:544-553
 
 ---
 
+<a id="BROKER-018"></a>
 ### BROKER-018: `ns_broker_drain_op_queue_shutdown` 丢弃 `wakeup_signal` 返回值 `bug`
 
 - **状态**: 关闭-已拒绝
@@ -402,6 +625,7 @@ src/ns_broker.c:544-553
 
 ---
 
+<a id="BROKER-019"></a>
 ### BROKER-019: `ns_broker_queue_op` 丢弃 `ns_platform_wakeup_signal(broker->wakeup)` 返回值 `bug`
 
 - **状态**: 关闭-已修复
@@ -434,6 +658,7 @@ src/ns_broker.c:224-235
 
 ---
 
+<a id="BROKER-021"></a>
 ### BROKER-021: `ns_broker_remove_all_watchers` 在 watcher_mutex 锁失败时静默返回，watcher 残留链表节点 `bug`
 
 - **状态**: 关闭-已拒绝
@@ -468,6 +693,7 @@ Lock 实现被信号中断后返回 `EINTR`（某些较旧的 POSIX 平台）→
 
 ---
 
+<a id="BROKER-023"></a>
 ### BROKER-023: macOS kqueue EVFILT_USER NOTE_TRIGGER 不能保证用户数据的内存序 `bug`
 
 - **状态**: 关闭-已修复
@@ -499,6 +725,7 @@ platform/macos/port.c:202（wait 侧 fence）
 
 ---
 
+<a id="BROKER-029"></a>
 ### BROKER-029: `ns_broker_drain_op_queue` 中 op_lock 锁失败时静默返回导致待处理 op 未被 signal `bug`
 
 - **状态**: 关闭-已拒绝
@@ -532,6 +759,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ## 现在关闭的问题
 
+<a id="BROKER-025"></a>
 ### BROKER-025: 文件注释声称 `consume_fn` "在持 watcher_mutex 下调用"，但 `dispatch_pending_events` 明确不取锁 `doc`
 
 - **状态**: 关闭-已修复
@@ -545,6 +773,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 无锁调用——文件头 `@section 生命周期` 与 `nanosig_broker.h` 的 `@warning` 已同步改写。
 不重开。
 
+<a id="BROKER-028"></a>
 ### BROKER-028: `ns_broker_drain_op_queue_shutdown` 死前向声明 `cleanup`
 
 - **状态**: 关闭-已修复
@@ -554,6 +783,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-017"></a>
 ### BROKER-017: `op_lock` 在 `g_broker = NULL` 之前被销毁，争用线程可能锁定已销毁互斥锁 `bug`
 
 - **状态**: 关闭-已拒绝
@@ -563,6 +793,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-030"></a>
 ### BROKER-030: BROKER-020 修复中第二次 `ns_broker_wait_op_completion` 返回值被丢弃 `bug`
 
 - **状态**: 关闭-已修复
@@ -572,6 +803,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-020"></a>
 ### BROKER-020: `ns_broker_wait_op_completion` 无限等待 + 无恢复路径 `bug`
 
 - **状态**: 关闭-已修复
@@ -581,6 +813,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-022"></a>
 ### BROKER-022: Shutdown 后 `ns_broker_remove_all_watchers` 的 `watcher_head` 遍历与用户线程 `ns_watcher_deinit` 竞态 `bug`
 
 - **状态**: 关闭-已拒绝
@@ -590,6 +823,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-024"></a>
 ### BROKER-024: Proxy 模型为每次 add/remove 分配/销毁 OS wakeup，热路径回归 `cleanup`
 
 - **状态**: 关闭-已拒绝
@@ -599,6 +833,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-026"></a>
 ### BROKER-026: `ns_broker_drain_op_queue` 和 `ns_broker_drain_op_queue_shutdown` 重复代码维护风险 `cleanup`
 
 - **状态**: 关闭-已拒绝
@@ -608,6 +843,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-027"></a>
 ### BROKER-027: 测试 Hook `g_ns_test_waitset_wait_result` 使用 `volatile int` 而非 `atomic_int` `test`
 
 - **状态**: 关闭-已拒绝
@@ -617,6 +853,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-009"></a>
 ### BROKER-009: `shutdown_started` 是 plain int，与 shutdown 写者竞争导致 UAF (HIGH) `bug`
 
 - **状态**: 关闭-已拒绝
@@ -632,6 +869,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-010"></a>
 ### BROKER-010: `g_broker` 是 plain pointer，与 shutdown 的 NULL+free 竞争 (HIGH) `bug`
 
 - **状态**: 关闭-已拒绝
@@ -646,6 +884,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-014"></a>
 ### BROKER-014: `ns_broker_global_init` 在并发 init 之间存在 TOCTOU (MEDIUM) `bug`
 
 - **状态**: 关闭-已拒绝
@@ -661,6 +900,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-016"></a>
 ### BROKER-016: shutdown 延迟无上界：long consume_fn 卡住 loop 退出 (LOW) `cleanup`
 
 - **状态**: 关闭-不适用
@@ -680,6 +920,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 
 ---
 
+<a id="BROKER-001"></a>
 ### BROKER-001: `ns_broker_add/remove` 中 `g_broker` 无同步读取，使用-后-释放
 
 - **状态**: 关闭-已修复
@@ -687,6 +928,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 - **关闭原因**: proxy 模型重构中实现 `shutdown_started` 标志（见 2026-07-04 修复历史）。新增的 `ns_broker_add` / `ns_broker_remove` 在函数入口检查 `shutdown_started`，若已置位直接返回 `NS_E_SHUTDOWN`，不再解引用 broker。这样 `g_broker` 即使在 shutdown 期间被另一线程置 NULL，新调用也安全返回，不需要原子指针或引用计数。`ns_shutdown` 内部序列化：先设置 `shutdown_started`、join loop 线程、最后才将 `g_broker = NULL`，确保顺序正确。
 - **关闭日期**: 2026-07-04
 
+<a id="BROKER-003"></a>
 ### BROKER-003: `ns_broker_emit_completion` 无互斥保护读 `user_data`，与 `remove` 竞态
 
 - **状态**: 关闭-已修复
@@ -698,6 +940,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
   - `shutdown_started` 标志确保 shutdown 后新 add/remove 直接返回错误而非永久阻塞。
 - **关闭日期**: 2026-07-04
 
+<a id="BROKER-004"></a>
 ### BROKER-004: `consume_fn` 同步约束与 level-triggered 忙循环
 
 - **状态**: 关闭-已修复
@@ -714,6 +957,7 @@ Broker 线程在 drain 循环中，第 386 行 op_lock 加锁因 EDEADLK 失败�
 `ns_signal_emit*` 明确允许。level-triggered 忙循环的缓解方式由"NULL 则 emit 的 pending_event
 门控"改为文档化契约：**handler 必须读净电平事件源**。不重开。
 
+<a id="BROKER-012"></a>
 ### BROKER-012: `consume_fn` → `ns_broker_add/remove` 死锁 — 无运行时防护
 
 - **状态**: 关闭-已拒绝

@@ -1,3 +1,225 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "FORMATIO-012"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-012"
+  - id: "FORMATIO-020"
+    module: "formatio"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-020"
+  - id: "FORMATIO-021"
+    module: "formatio"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-021"
+  - id: "FORMATIO-022"
+    module: "formatio"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-022"
+  - id: "FORMATIO-023"
+    module: "formatio"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-023"
+  - id: "FORMATIO-024"
+    module: "formatio"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-024"
+  - id: "FORMATIO-025"
+    module: "formatio"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-025"
+  - id: "FORMATIO-026"
+    module: "formatio"
+    status: "open"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-026"
+  - id: "FORMATIO-027"
+    module: "formatio"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-027"
+  - id: "FORMATIO-028"
+    module: "formatio"
+    status: "open"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-028"
+  - id: "FORMATIO-029"
+    module: "formatio"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/formatio-code-review.md#FORMATIO-029"
+  - id: "FORMATIO-007"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-08-09"
+    location: "docs/review/formatio-code-review.md#FORMATIO-007"
+  - id: "FORMATIO-001"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-001"
+  - id: "FORMATIO-002"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-002"
+  - id: "FORMATIO-003"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-003"
+  - id: "FORMATIO-004"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-004"
+  - id: "FORMATIO-005"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-005"
+  - id: "FORMATIO-006"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-006"
+  - id: "FORMATIO-008"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-008"
+  - id: "FORMATIO-009"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-009"
+  - id: "FORMATIO-010"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-010"
+  - id: "FORMATIO-011"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-011"
+  - id: "FORMATIO-013"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-013"
+  - id: "FORMATIO-014"
+    module: "formatio"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-014"
+  - id: "FORMATIO-015"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-015"
+  - id: "FORMATIO-016"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-07-11"
+    location: "docs/review/formatio-code-review.md#FORMATIO-016"
+  - id: "FORMATIO-017"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/formatio-code-review.md#FORMATIO-017"
+  - id: "FORMATIO-018"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/formatio-code-review.md#FORMATIO-018"
+  - id: "FORMATIO-019"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/formatio-code-review.md#FORMATIO-019"
+---
 # Formatio 模块 Code Review
 
 > 审查范围：`ns_formatio.h/c` + `ns_debug.h/c` + `CMakeLists.txt`（新增源文件注册）
@@ -42,6 +264,7 @@
 ---
 ## 现在打开的问题
 
+<a id="FORMATIO-012"></a>
 ### FORMATIO-012: `NS_MACRO_DEBUG_LEVEL` 仅检查首字符，多位数等级会错误
 
 - **状态**: 关闭-已拒绝
@@ -86,6 +309,7 @@
 
 ---
 
+<a id="FORMATIO-020"></a>
 ### FORMATIO-020: `ns_snprintf(NULL, 0, ...)` 把 buf 写空指针（无界哨兵与包 size==0 冲突）
 
 - **状态**: 打开
@@ -156,6 +380,7 @@ include/nanosig/ns_formatio.h:109-116
 
 ---
 
+<a id="FORMATIO-021"></a>
 ### FORMATIO-021: `%e`/`%E` 对 subnormal（0 < |x| < DBL_MIN）指数错误、数值丢失
 
 - **状态**: 打开
@@ -229,6 +454,7 @@ src/ns_formatio.c:705-711
 
 ---
 
+<a id="FORMATIO-022"></a>
 ### FORMATIO-022: `float_decentralized` 半途(tie)分支进位丢失，`%.1f` 0.95 输出 "0.10"
 
 - **状态**: 打开
@@ -291,6 +517,7 @@ src/ns_formatio.c:410-415
 
 ---
 
+<a id="FORMATIO-023"></a>
 ### FORMATIO-023: `%.0e` 半途(tie)分支把进位清零，1.5 → "1e+00"、3.5 → "3e+00"
 
 - **状态**: 打开
@@ -362,6 +589,7 @@ src/ns_formatio.c:421-426
 
 ---
 
+<a id="FORMATIO-024"></a>
 ### FORMATIO-024: `%q`/`%Q` 字段宽度在 precision 小于单个元素时下溢，宽度反而变大
 
 - **状态**: 打开
@@ -426,6 +654,7 @@ src/ns_formatio.c:781-803
 
 ---
 
+<a id="FORMATIO-025"></a>
 ### FORMATIO-025: 调试层互斥锁不可重入，输出 sink 回灌调试宏即自死锁
 
 - **状态**: 打开
@@ -488,6 +717,7 @@ src/ns_formatio.c:214-248
 
 ---
 
+<a id="FORMATIO-026"></a>
 ### FORMATIO-026: doc 推荐的 `NS_DBG_MODULE_LEVEL_DEFAULT` 从未定义，门控恒为 30
 
 - **状态**: 打开
@@ -572,6 +802,7 @@ include/nanosig/ns_debug.h:97
 
 ---
 
+<a id="FORMATIO-027"></a>
 ### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
 
 - **状态**: 打开
@@ -641,6 +872,7 @@ src/ns_formatio.c:969-976
 
 ---
 
+<a id="FORMATIO-028"></a>
 ### FORMATIO-028: `%g` 等多处 C99 语义差异未在公共头文档化
 
 - **状态**: 打开
@@ -699,6 +931,7 @@ src/ns_formatio.c:864-875
 
 ---
 
+<a id="FORMATIO-029"></a>
 ### FORMATIO-029: `ns_stream_puts` 对 NULL 字符串不设防，与同族 API 的 NULL 容忍不一致
 
 - **状态**: 打开
@@ -742,6 +975,7 @@ src/ns_formatio.c:1245-1263
 
 ## 现在关闭的问题
 
+<a id="FORMATIO-007"></a>
 ### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出
 
 - **状态**: 关闭-已拒绝
@@ -781,6 +1015,7 @@ src/ns_formatio.c:1249-1253
 ---
 
 
+<a id="FORMATIO-001"></a>
 ### FORMATIO-001: `streamout_in_byte` 缓存满时输入字符静默丢弃
 
 - **状态**: 关闭-已拒绝
@@ -811,6 +1046,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-002"></a>
 ### FORMATIO-002: `ns_dbg_vprintf` 无条件单调时钟系统调用
 
 - **状态**: 关闭-已修复
@@ -841,6 +1077,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-003"></a>
 ### FORMATIO-003: `%zd` 格式化 `va_arg` 类型不匹配
 
 - **状态**: 关闭-已修复
@@ -871,6 +1108,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-004"></a>
 ### FORMATIO-004: `ns_sprintf`/`ns_vsprintf` 指针相减未定义行为
 
 - **状态**: 关闭-已修复
@@ -902,6 +1140,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-005"></a>
 ### FORMATIO-005: printf 热路径堆分配
 
 - **状态**: 关闭-已拒绝
@@ -933,6 +1172,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-006"></a>
 ### FORMATIO-006: 头文件包含守卫不符合项目约定
 
 - **状态**: 关闭-已修复
@@ -964,6 +1204,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-008"></a>
 ### FORMATIO-008: 未使用的 `#include <stdio.h>`
 
 - **状态**: 关闭-已修复
@@ -995,6 +1236,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-009"></a>
 ### FORMATIO-009: `bastardized_floor` 将超范围 double 转为 int 是未定义行为
 
 - **状态**: 关闭-已拒绝
@@ -1025,6 +1267,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-010"></a>
 ### FORMATIO-010: `float_decentralized` 中大 double 转 uint64_t 可能 UB
 
 - **状态**: 关闭-已拒绝
@@ -1055,6 +1298,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-011"></a>
 ### FORMATIO-011: `ns_double_union` 位域布局隐含 IEEE 754 字节序假设
 
 - **状态**: 关闭-已修复
@@ -1085,6 +1329,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-013"></a>
 ### FORMATIO-013: `vprintf_number` 中 `LLONG_MIN` 取负后的无符号环绕
 
 - **状态**: 关闭-已修复
@@ -1115,6 +1360,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-014"></a>
 ### FORMATIO-014: `vprintf_array` 中 `item_size` 类型为 `char` 导致窄化转换
 
 - **状态**: 关闭-已拒绝
@@ -1145,6 +1391,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-015"></a>
 ### FORMATIO-015: `vprintf_float_decimalism_or_normalized` 缺少 `ns_platform_alloc` NULL 检查
 
 - **状态**: 关闭-已修复
@@ -1175,6 +1422,7 @@ src/ns_formatio.c:1249-1253
 
 ---
 
+<a id="FORMATIO-016"></a>
 ### FORMATIO-016: `%p` 在 LLP64 Windows 上截断指针
 
 - **状态**: 关闭-已修复
@@ -1203,6 +1451,7 @@ src/ns_formatio.c:1249-1253
 
 `src/ns_formatio.c:1030-1032` → 已确认
 
+<a id="FORMATIO-017"></a>
 ### FORMATIO-017: `%e`/`%.0e` 对精确 0.0/-0.0 输出垃圾值（NaN→uint64_t 转换 UB）
 
 - **状态**: 关闭-已修复
@@ -1250,6 +1499,7 @@ src/ns_formatio.c:634-647
 
 ---
 
+<a id="FORMATIO-018"></a>
 ### FORMATIO-018: `ns_snprintf(buf, 0, ...)` 在 size=0 时 `streamout_finish` 写 `buf[-1]` 下溢
 
 - **状态**: 关闭-已修复
@@ -1295,6 +1545,7 @@ src/ns_formatio.c:265-273
 
 ---
 
+<a id="FORMATIO-019"></a>
 ### FORMATIO-019: `ns_vsprintf`/`ns_sprintf` 经 `buf + size` 指针越界（FORMATIO-004 修复不完整，UBSAN 可见）
 
 - **状态**: 关闭-已修复

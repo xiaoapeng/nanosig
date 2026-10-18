@@ -1,3 +1,45 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "LIST-003"
+    module: "list"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/list-code-review.md#LIST-003"
+  - id: "LIST-004"
+    module: "list"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "design"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/list-code-review.md#LIST-004"
+  - id: "LIST-005"
+    module: "list"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/list-code-review.md#LIST-005"
+  - id: "LIST-001"
+    module: "list"
+    status: "closed-rejected"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/list-code-review.md#LIST-001"
+  - id: "LIST-002"
+    module: "list"
+    status: "closed-rejected"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/list-code-review.md#LIST-002"
+---
+
 # List (双向链表) 代码审查报告
 
 **日期**: 2026-07-05
@@ -13,6 +55,7 @@
 
 ## 现在打开的问题
 
+<a id="LIST-003"></a>
 ### LIST-003: `ns_list_insert_between` 缺少 Doxygen 文档注释
 
 - **状态**: 关闭-已修复
@@ -40,6 +83,7 @@ include/nanosig/nanosig_list.h:60-69
 
 ---
 
+<a id="LIST-004"></a>
 ### LIST-004: 缺少 `ns_list_entry_safe`（NULL 安全版反查宏）
 
 - **状态**: 关闭-已修复
@@ -70,6 +114,7 @@ include/nanosig/nanosig_list.h:214-216
 
 ---
 
+<a id="LIST-005"></a>
 ### LIST-005: 遍历宏族裸用 `typeof`，与 RBTREE-018 同一根因（严格 `-std=c11` 下八个 entry 遍历宏全部无法编译）
 
 - **状态**: 打开
@@ -142,6 +187,7 @@ docs/review/rbtree-code-review.md:371
 
 ## 现在关闭的问题
 
+<a id="LIST-001"></a>
 ### LIST-001: `ns_list_for_each_entry_continue_safe` 初始化 `n` 与 `pos` 指向同一节点，遍历中移除当前节点导致无限循环或 NULL 解引用
 
 - **状态**: 关闭-已拒绝
@@ -151,6 +197,7 @@ docs/review/rbtree-code-review.md:371
 
 ---
 
+<a id="LIST-002"></a>
 ### LIST-002: `ns_list_for_each_prev_entry_continue_safe` 同样存在 `n` 未独立预取的 bug
 
 - **状态**: 关闭-已拒绝

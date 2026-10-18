@@ -1,3 +1,113 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "MPSC-001"
+    module: "mpsc-record-ring"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-001"
+  - id: "MPSC-004"
+    module: "mpsc-record-ring"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-004"
+  - id: "MPSC-002"
+    module: "mpsc-record-ring"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-002"
+  - id: "MPSC-011"
+    module: "mpsc-record-ring"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-011"
+  - id: "MPSC-012"
+    module: "mpsc-record-ring"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-012"
+  - id: "MPSC-013"
+    module: "mpsc-record-ring"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-013"
+  - id: "MPSC-014"
+    module: "mpsc-record-ring"
+    status: "open"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-014"
+  - id: "MPSC-003"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-003"
+  - id: "MPSC-005"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-005"
+  - id: "MPSC-006"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-006"
+  - id: "MPSC-007"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-007"
+  - id: "MPSC-008"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-008"
+  - id: "MPSC-009"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-009"
+  - id: "MPSC-010"
+    module: "mpsc-record-ring"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-010"
+  - id: "MPSC-004"
+    module: "mpsc-record-ring"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-004"
+---
 # MPSC Record Ring 代码审查报告
 
 **日期**: 2026-07-04
@@ -7,17 +117,20 @@
 
 ## 修复历史
 
+<a id="MPSC-001"></a>
 ### MPSC-001: MSVC meta 位布局不兼容
 
 - **修复 commit**: 当前 diff（`__SIZEOF_SIZE_T__ == 8u` → `SIZE_MAX > UINT32_MAX`）
 - **修复说明**: MSVC 不定义 `__SIZEOF_SIZE_T__`，64 位 MSVC 选错 32 位布局。改用标准 `SIZE_MAX` 宏，兼容 GCC/Clang/MSVC。
 - **来源**: 深度代码审查 3.1
 
+<a id="MPSC-004"></a>
 ### MPSC-004: 文档与实现不一致：`part_count == 0`
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 头文件 `@param part_count` 从"必须大于 0"改为"允许为 0（推送零大小记录）"；`@retval NS_E_INVAL` 删除 `part_count 为 0` 的表述。文档与实现统一：`part_count == 0` 允许，行为等价于 `ns_mpsc_record_ring_try_push(ring, NULL, 0u)`。
 
+<a id="MPSC-002"></a>
 ### MPSC-002: 注释语法问题 "perform 3 step"
 
 - **修复 commit**: 当前 diff（注释重写为"下面的顺序是高性能铁律，不能动"）
@@ -28,6 +141,7 @@
 
 ## 现在打开的问题
 
+<a id="MPSC-011"></a>
 ### MPSC-011: `MPSC_MEMORY_ORDER.md` 描述已删除的固定容量 MPSC 队列，未文档化 record ring 的内存序协议
 
 - **状态**: 关闭-已修复
@@ -53,6 +167,7 @@
 #### 定位
 docs/MPSC_MEMORY_ORDER.md（全文）
 
+<a id="MPSC-012"></a>
 ### MPSC-012: 生产者死在 reserve 与 commit 之间会永久卡死整个环
 
 - **状态**: 打开
@@ -99,6 +214,7 @@ docs/MPSC_MEMORY_ORDER.md:107
 
 ---
 
+<a id="MPSC-013"></a>
 ### MPSC-013: 32 位构建下 meta 的 16 位 stride 字段会静默截断大记录
 
 - **状态**: 打开
@@ -137,6 +253,7 @@ include/nanosig/nanosig_mpsc_record_ring.h:120
 
 ---
 
+<a id="MPSC-014"></a>
 ### MPSC-014: MPSC_MEMORY_ORDER.md 的 reserve 阶段伪码与实现不是同一个算法
 
 - **状态**: 打开
@@ -174,6 +291,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ## 现在关闭的问题
 
+<a id="MPSC-003"></a>
 ### MPSC-003: `try_pushv` CAS 重试循环未刷新 `read_pos`
 
 - **状态**: 关闭-已拒绝
@@ -187,6 +305,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-005"></a>
 ### MPSC-005: init 循环用原子 release-store 逐槽清零
 
 - **状态**: 关闭-已拒绝
@@ -200,6 +319,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-006"></a>
 ### MPSC-006: `release()` 上界检查使用 `>` 而非 `>=`
 
 - **状态**: 关闭-已拒绝
@@ -213,6 +333,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-007"></a>
 ### MPSC-007: `ns_capacity_t` 枚举限制容量范围
 
 - **状态**: 关闭-已拒绝
@@ -226,6 +347,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-008"></a>
 ### MPSC-008: `plan_push` 从 `const` 参数强制转换 `ring`
 
 - **状态**: 关闭-已拒绝
@@ -239,6 +361,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-009"></a>
 ### MPSC-009: 注释使用非正式指令语气
 
 - **状态**: 关闭-已拒绝
@@ -252,6 +375,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 ---
 
+<a id="MPSC-010"></a>
 ### MPSC-010: `free_capacity` 通过双重强制转换丢弃 `const`
 
 - **状态**: 关闭-已拒绝

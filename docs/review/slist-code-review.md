@@ -1,3 +1,74 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "SLIST-001"
+    module: "slist"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/slist-code-review.md#SLIST-001"
+  - id: "SLIST-003"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "cleanup"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/slist-code-review.md#SLIST-003"
+  - id: "SLIST-004"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/slist-code-review.md#SLIST-004"
+  - id: "SLIST-005"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/slist-code-review.md#SLIST-005"
+  - id: "SLIST-006"
+    module: "slist"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/slist-code-review.md#SLIST-006"
+  - id: "SLIST-007"
+    module: "slist"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/slist-code-review.md#SLIST-007"
+  - id: "SLIST-008"
+    module: "slist"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/slist-code-review.md#SLIST-008"
+  - id: "SLIST-002"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/slist-code-review.md#SLIST-002"
+  - id: "SLIST-001"
+    module: "slist"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/slist-code-review.md#SLIST-001"
+---
 # Slist 代码审查报告
 
 **日期**: 2026-07-04
@@ -7,6 +78,7 @@
 
 ## 修复历史
 
+<a id="SLIST-001"></a>
 ### SLIST-001: `ns_slist_for_each` 宏在 C++ 下无法编译 (CRITICAL) `bug`
 
 - **修复 commit**: 当前 diff
@@ -16,6 +88,7 @@
 
 ## 现在打开的问题
 
+<a id="SLIST-003"></a>
 ### SLIST-003: `ns_slist_del_node_in_for_each_safe` 不重置被删除节点的 `next` 指针
 
 - **状态**: 关闭-已拒绝
@@ -43,6 +116,7 @@ include/nanosig/nanosig_slist.h:276-285
 
 ---
 
+<a id="SLIST-004"></a>
 ### SLIST-004: `ns_slist_for_each` 宏双重求值 `head` 参数
 
 - **状态**: 关闭-已拒绝
@@ -70,6 +144,7 @@ include/nanosig/nanosig_slist.h:367
 
 ---
 
+<a id="SLIST-005"></a>
 ### SLIST-005: `ns_slist_for_each` 文档描述与实际遍历起始位置不符
 
 - **状态**: 关闭-已修复
@@ -97,6 +172,7 @@ include/nanosig/nanosig_slist.h:358-359
 
 ---
 
+<a id="SLIST-006"></a>
 ### SLIST-006: `ns_slist_append_list` 自拼接导致数据损坏
 
 - **状态**: 关闭-已拒绝
@@ -130,6 +206,7 @@ include/nanosig/nanosig_slist.h:290-303
 
 ---
 
+<a id="SLIST-007"></a>
 ### SLIST-007: `ns_slist_del_node_in_for_each_safe` 删除头节点后留下悬垂 `list->last`，后续复用该链表会把新节点写进头字段
 
 - **状态**: 打开
@@ -205,6 +282,7 @@ include/nanosig/nanosig_slist.h:32-38
 
 ---
 
+<a id="SLIST-008"></a>
 ### SLIST-008: 遍历宏族裸用 `typeof`，与同仓库 rbtree 的 RBTREE-018 同一根因（严格 `-std=c11` 下两个 entry 遍历宏无法编译）
 
 - **状态**: 打开
@@ -275,6 +353,7 @@ docs/review/rbtree-code-review.md:371
 
 ## 现在关闭的问题
 
+<a id="SLIST-002"></a>
 ### SLIST-002: `ns_slist_for_each_entry_safe` 在非空链表末尾迭代时解引用空指针 (UB/crash)
 
 - **状态**: 关闭-已修复

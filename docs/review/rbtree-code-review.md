@@ -1,3 +1,135 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "RBTREE-009"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/rbtree-code-review.md#RBTREE-009"
+  - id: "RBTREE-010"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-010"
+  - id: "RBTREE-012"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-012"
+  - id: "RBTREE-014"
+    module: "rbtree"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-014"
+  - id: "RBTREE-015"
+    module: "rbtree"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-015"
+  - id: "RBTREE-016"
+    module: "rbtree"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-016"
+  - id: "RBTREE-013"
+    module: "rbtree"
+    status: "open"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-013"
+  - id: "RBTREE-017"
+    module: "rbtree"
+    status: "open"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-017"
+  - id: "RBTREE-018"
+    module: "rbtree"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md#RBTREE-018"
+  - id: "RBTREE-011"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "design"
+    section: "closed"
+    closed_date: "2026-08-09"
+    location: "docs/review/rbtree-code-review.md#RBTREE-011"
+  - id: "RBTREE-001"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-001"
+  - id: "RBTREE-002"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-002"
+  - id: "RBTREE-003"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-003"
+  - id: "RBTREE-004"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-004"
+  - id: "RBTREE-005"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-005"
+  - id: "RBTREE-006"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-006"
+  - id: "RBTREE-007"
+    module: "rbtree"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-007"
+  - id: "RBTREE-008"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/rbtree-code-review.md#RBTREE-008"
+---
 # Rbtree 代码审查报告
 
 **日期**: 2026-07-04
@@ -35,6 +167,7 @@
 
 ## 现在打开的问题
 
+<a id="RBTREE-009"></a>
 ### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
 
 - **状态**: 关闭-已拒绝
@@ -66,6 +199,7 @@ reviewer 误读代码。`ns_rbtree_add` 的返回值为 `leftmost ? node : NULL`
 
 ---
 
+<a id="RBTREE-010"></a>
 ### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
 
 - **状态**: 关闭-已修复
@@ -97,6 +231,7 @@ src/ds/ns_rbtree.c:572-579
 
 ---
 
+<a id="RBTREE-012"></a>
 ### RBTREE-012: `ns_rbtree_root.cmp` 字段类型未 const-correct
 
 - **状态**: 关闭-已修复
@@ -150,6 +285,7 @@ src/ds/ns_rbtree.c:641
 
 ---
 
+<a id="RBTREE-014"></a>
 ### RBTREE-014: `ns_rb_replace_node` 替换 leftmost 节点后 `rb_leftmost` 悬垂
 
 - **状态**: 打开
@@ -201,6 +337,7 @@ test/unit/test_ds_rbtree.c:598
 
 ---
 
+<a id="RBTREE-015"></a>
 ### RBTREE-015: `ns_rb_replace_node` 未把 victim 置回空节点状态，残留链接导致后续删除丢失真实节点
 
 - **状态**: 打开
@@ -244,6 +381,7 @@ src/ds/ns_rbtree.c:515
 
 ---
 
+<a id="RBTREE-016"></a>
 ### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
 
 - **状态**: 打开
@@ -297,6 +435,7 @@ include/nanosig/nanosig_rbtree.h:103
 include/nanosig/nanosig_rbtree.h:111
 include/nanosig/nanosig_rbtree.h:119
 
+<a id="RBTREE-013"></a>
 ### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
 
 - **状态**: 打开
@@ -331,6 +470,7 @@ include/nanosig/nanosig_rbtree.h
 
 ---
 
+<a id="RBTREE-017"></a>
 ### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
 
 - **状态**: 打开
@@ -368,6 +508,7 @@ src/ds/ns_rbtree.c:659
 
 ---
 
+<a id="RBTREE-018"></a>
 ### RBTREE-018: 遍历宏裸用 `typeof`，严格 `-std=c11` 下无法编译
 
 - **状态**: 打开
@@ -419,6 +560,7 @@ cmake/ApiCompileChecks.cmake:38
 
 ## 现在关闭的问题
 
+<a id="RBTREE-011"></a>
 ### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
 
 - **状态**: 关闭-已拒绝
@@ -469,6 +611,7 @@ src/ds/ns_rbtree.c:590
 ---
 
 
+<a id="RBTREE-001"></a>
 ### RBTREE-001: `ns_rbtree_remove` 中 `size` 下溢防护静默掩盖错误
 
 - **状态**: 关闭-已拒绝
@@ -477,6 +620,7 @@ src/ds/ns_rbtree.c:590
   已能阻止重复移除，size 下溢在正确使用时不会触发。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-002"></a>
 ### RBTREE-002: `ns_rbtree_node_init` 自指针哨兵依赖指针 ≥2 字节对齐
 
 - **状态**: 关闭-已修复
@@ -486,6 +630,7 @@ src/ds/ns_rbtree.c:590
   头文件文档说明 packed 嵌入约束。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-003"></a>
 ### RBTREE-003: `ns_rbtree_find_new_add` 中 `match` 与 `cmp` 不一致会损坏 leftmost 缓存
 
 - **状态**: 关闭-已修复
@@ -495,6 +640,7 @@ src/ds/ns_rbtree.c:590
   与典型做法（直接传递 cmp 的包装作为 match）。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-004"></a>
 ### RBTREE-004: `ns_rb_delete_fixup` 中冗余的 NULL 三元表达式与可读性问题
 
 - **状态**: 关闭-已修复
@@ -504,6 +650,7 @@ src/ds/ns_rbtree.c:590
   改为 `ns_rb_sibling_left(sibling)` 调用。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-005"></a>
 ### RBTREE-005: `ns_rbtree_node_is_empty` 中 RED/BLACK 编码不直观
 
 - **状态**: 关闭-已修复
@@ -513,6 +660,7 @@ src/ds/ns_rbtree.c:590
   因此 sentinel 自然编码为 RED，并说明这与"空 = BLACK"的直觉相反但安全。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-006"></a>
 ### RBTREE-006: 两子节点删除分支中 `child` 的 parent 更新路径有微妙差异
 
 - **状态**: 关闭-已拒绝
@@ -520,6 +668,7 @@ src/ds/ns_rbtree.c:590
 - **关闭原因**: 作者决定保持现状，与 Linux 内核 rbtree 实现对齐。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-007"></a>
 ### RBTREE-007: `ns_rb_set_color` 与 `original_color` 的关系需要 inline 注释
 
 - **状态**: 关闭-已修复
@@ -529,6 +678,7 @@ src/ds/ns_rbtree.c:590
   node 颜色的不变量含义。
 - **关闭日期**: 2026-07-04
 
+<a id="RBTREE-008"></a>
 ### RBTREE-008: 删除修复中兄弟节点 `sibling` 的访问模式可读性差
 
 - **状态**: 关闭-已拒绝

@@ -13,6 +13,48 @@
 - 已废弃的 review 文档可加时间戳保留（例：`depth-code-review-2026-07-03.md`）
 - **归档目录**：`docs/review/history/`，用于存放已归档的关闭问题
 
+### 1.0 机器可读元数据（YAML frontmatter）
+
+每个 review `.md` 文件**应**在文件最开头（`# 标题` 之前）加入 YAML frontmatter `---` 块，把该文件中所有条目的结构化元数据聚合为 `entries` 数组，供 agent 直接解析，无需正则扒正文。正文和现有三大分区规范完全不动。
+
+字段定义：
+- `review_schema`: 固定值 `"nanosig-review-v1"`
+- `entries`: 数组，每个元素对应一个 review 条目
+  - `id`: 问题 ID，如 `"RBTREE-016"`（必填）
+  - `module`: 模块名，如 `"rbtree"`（必填）
+  - `status`: `open` / `closed-fixed` / `closed-rejected` / `closed-not-applicable` / `closed-deferred`（必填）
+  - `severity`: `critical` / `high` / `medium` / `low`（必填，对应 emoji 🔴/🟠/🟡/🟢）
+  - `type`: `bug` / `doc` / `cleanup` / `design` / `test`（必填）
+  - `section`: `open` / `closed` / `fixed-history`（条目所在分区，必填）
+  - `opened_date`: 首次出现日期 `yyyy-mm-dd`（可选）
+  - `closed_date`: 关闭日期 `yyyy-mm-dd`（已关闭时必填）
+  - `location`: 条目所在 `file_path:line`（必填）
+
+示例：
+```yaml
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "RBTREE-016"
+    module: "rbtree"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-10-19"
+    location: "docs/review/rbtree-code-review.md:447"
+  - id: "RBTREE-015"
+    module: "rbtree"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/rbtree-code-review.md:153"
+---
+```
+
+新条目由 review agent 创建时直接在 frontmatter 中填写；现有条目由 review agent 渐进式补齐（每次修改该文档时顺手加，或批量补齐）。
+
 ### 1.1 Review 内容边界
 
 **所有 review 相关内容必须写在 `docs/review/` 下。**

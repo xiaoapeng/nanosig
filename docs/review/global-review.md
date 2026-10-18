@@ -1,3 +1,37 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "GLOBAL-001"
+    module: "global-review.md"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/global-review.md#GLOBAL-001"
+  - id: "GLOBAL-003"
+    module: "global-review.md"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/global-review.md#GLOBAL-003"
+  - id: "GLOBAL-006"
+    module: "global-review.md"
+    status: "open"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    location: "docs/review/global-review.md#GLOBAL-006"
+  - id: "GLOBAL-007"
+    module: "global-review.md"
+    status: "open"
+    severity: "low"
+    type: "design"
+    section: "open"
+    closed_date: "2026-10-18"
+    location: "docs/review/global-review.md#GLOBAL-007"
+---
 # 全局视角 Review（跨模块问题）
 
 **日期**: 2026-07-05
@@ -51,6 +85,7 @@
 
 ## 现在打开的问题
 
+<a id="GLOBAL-001"></a>
 ### GLOBAL-001: `ns_rbtree_insert` 头文件文档与实现不一致，影响 timer 模块正确性假设
 
 - **状态**: 关闭-已拒绝
@@ -84,6 +119,7 @@
 
 ---
 
+<a id="GLOBAL-003"></a>
 ### GLOBAL-003: `共识计划.md` 仍引用已删除的 `ns_platform_wakeup_get_waitable`
 
 - **状态**: 关闭-已修复
@@ -120,6 +156,7 @@ docs/plans/共识计划.md:122
 
 ---
 
+<a id="GLOBAL-006"></a>
 ### GLOBAL-006: `docs/ARCHITECTURE.md` 平台表格仍写 `CreateThread`（实现是 `_beginthreadex`）
 
 - **状态**: 打开
@@ -151,6 +188,7 @@ platform/windows/port.c:256
 
 ---
 
+<a id="GLOBAL-007"></a>
 ### GLOBAL-007: `nanosig_port.h` 在 `extern "C"` 块内 include 平台 SDK 头
 
 - **状态**: 打开

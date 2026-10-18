@@ -1,3 +1,219 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "RINGBUF-001"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-001"
+  - id: "RINGBUF-004"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-004"
+  - id: "RINGBUF-005"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-005"
+  - id: "RINGBUF-006"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-006"
+  - id: "RINGBUF-007"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-007"
+  - id: "RINGBUF-008"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-008"
+  - id: "RINGBUF-009"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-009"
+  - id: "RINGBUF-010"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-010"
+  - id: "RINGBUF-014"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-014"
+  - id: "RINGBUF-017"
+    module: "ringbuf"
+    status: "unknown"
+    severity: "unknown"
+    type: "bug"
+    section: "fixed-history"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-017"
+  - id: "RINGBUF-023"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "design"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-023"
+  - id: "RINGBUF-024"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "test"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-024"
+  - id: "RINGBUF-025"
+    module: "ringbuf"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-025"
+  - id: "RINGBUF-026"
+    module: "ringbuf"
+    status: "open"
+    severity: "medium"
+    type: "test"
+    section: "open"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-026"
+  - id: "RINGBUF-011"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-011"
+  - id: "RINGBUF-017"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-017"
+  - id: "RINGBUF-018"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-018"
+  - id: "RINGBUF-019"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-019"
+  - id: "RINGBUF-020"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-020"
+  - id: "RINGBUF-021"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-021"
+  - id: "RINGBUF-022"
+    module: "ringbuf"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-022"
+  - id: "RINGBUF-002"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-002"
+  - id: "RINGBUF-003"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "critical"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-003"
+  - id: "RINGBUF-004"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-004"
+  - id: "RINGBUF-006"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-006"
+  - id: "RINGBUF-007"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-007"
+  - id: "RINGBUF-008"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-008"
+  - id: "RINGBUF-009"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-009"
+  - id: "RINGBUF-010"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-010"
+  - id: "RINGBUF-014"
+    module: "ringbuf"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/ringbuf-code-review.md#RINGBUF-014"
+---
 # Ringbuf 代码审查报告
 
 **日期**: 2026-07-04
@@ -7,6 +223,7 @@
 
 ## 修复历史
 
+<a id="RINGBUF-001"></a>
 ### RINGBUF-001: `ns_ringbuf_fix` 有符号整数溢出 UB
 
 - **修复 commit**: 当前 diff
@@ -21,12 +238,14 @@
   在此上限下 `w + inc < 3*size ≤ UINT32_MAX`，天然消除所有中间 uint32_t 加法溢出。
   同时修复 RINGBUF-003（`w/r + offset` 溢出）的同一根因。
 
+<a id="RINGBUF-004"></a>
 ### RINGBUF-004: 文档说 len 是 int32_t 但代码已是 uint32_t
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 头文件 `@note` 更新为"写入/读取函数的 `len` 参数为 uint32_t，单次操作上限由 `size` 决定"。
   size 上限同步更新为 `UINT32_MAX/3`。
 
+<a id="RINGBUF-005"></a>
 ### RINGBUF-005: ns_ringbuf_data_size 注释含内部开发笔记
 
 - **修复 commit**: 当前 diff
@@ -37,36 +256,43 @@
 - **修复 commit**: 当前 diff
 - **修复说明**: 在 `ns_ringbuf_write` / `write_skip` / `read` / `read_skip` / `clear` 发布 w/r 之前各加一处 `ns_memory_order_release_barrier()`，方向与 `eh_ringbuf.c` 对齐——保证 w/r 之前的所有数据 memcpy 与旁路写对读者线程可见，并约束 loadstore / storestore 重排。`draft_write` / `peek` / `peek_copy` 不修改 w/r，沿用 eventhub 不加屏障的处理。`reset` / 查值函数同样不加（eventhub 同样不加）。
 
+<a id="RINGBUF-006"></a>
 ### RINGBUF-006: `ns_ringbuf_clear` 的非原子访问
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 文档标注 "**必须由读者线程调用**"，写者线程调用会破坏单读单写安全假设。
 
+<a id="RINGBUF-007"></a>
 ### RINGBUF-007: peek 的 *len 是 int32_t* 而其余是 uint32_t
 
 - **修复 commit**: 当前 diff
 - **修复说明**: `ns_ringbuf_peek` 的 `len` 参数改为 `uint32_t*`，消除内部 4 处强制类型转换。
 
+<a id="RINGBUF-008"></a>
 ### RINGBUF-008: draft_write 返回 -1 与其他函数不一致
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 改用新增状态码 `NS_E_RANGE` 作为 offset 越界返回值。同时 `nanosig_status.h` 新增 `NS_E_PARAM`、`NS_E_RANGE`，`ringbuf.h` 文档同步更新。
 
+<a id="RINGBUF-009"></a>
 ### RINGBUF-009: (int32_t)wl 返回值强制转换依赖 size ≤ INT32_MAX
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 在 `src/ds/ns_ringbuf.c` 顶端加 `_Static_assert((UINT32_MAX / 3u) <= (uint32_t)INT32_MAX, ...)`，把"(int32_t)wl 不截断"这一不变量固化在编译期。任何放宽 size 上限到 INT32_MAX 以上的企图都会触发编译错误。同步在 `include/nanosig/nanosig_ringbuf.h` 的结构体 @note 写明第三条："由于 UINT32_MAX/3 < INT32_MAX，int32_t 返回值不会因 size 截断为负"。
 
+<a id="RINGBUF-010"></a>
 ### RINGBUF-010: w/r 冗余重载
 
 - **修复 commit**: 当前 diff
 - **修复说明**: 在 `ns_ringbuf_write` / `write_skip` / `read` / `read_skip` / `draft_write` / `peek` / `peek_copy` 七个函数内统一把 `ringbuf->w` 和 `ringbuf->r` 预加载到局部变量，再把这些值（而非 `ringbuf->*` 字段本身）传给 `ns_ringbuf_data_size`、`% size`、读指针算术等后续运算。消除"调用 free/size 内部重复加载 + 自己再独立 % size"的双重内存读取。查值函数 `ns_ringbuf_size` / `free_size` 不动。
 
+<a id="RINGBUF-014"></a>
 ### RINGBUF-014: NULL→0 契约变更破坏 backward compatibility
 
 - **修复 commit**: 当前 diff
 - **修复说明**: `ns_ringbuf_size` / `ns_ringbuf_free_size` / `ns_ringbuf_total_size` 三个查询函数从 `uint32_t` 统一为 `int32_t` 返回。NULL 输入时返回 -1，正常时返回非负字节数。头文件 `@note` 与函数 `@return` 同步更新，文档化 NULL 行为；`_Static_assert` 注释扩展到覆盖 size 族返回值。
 
+<a id="RINGBUF-017"></a>
 ### RINGBUF-017: `ns_ringbuf_data_size` 过度耦合
 
 - **修复 commit**: 当前 diff
@@ -76,6 +302,7 @@
 
 ## 现在打开的问题
 
+<a id="RINGBUF-023"></a>
 ### RINGBUF-023: `ns_ringbuf_peek` 不拒绝 `*len == 0`，与其他函数不一致
 
 - **状态**: 关闭-已拒绝
@@ -111,6 +338,7 @@ src/ds/ns_ringbuf.c:223-224
 
 ---
 
+<a id="RINGBUF-024"></a>
 ### RINGBUF-024: `peek`/`peek_copy` 绕回路径及 `draft_write` 非零 offset 路径无测试覆盖
 
 - **状态**: 关闭-已修复
@@ -150,6 +378,7 @@ src/ds/ns_ringbuf.c:128
 
 ---
 
+<a id="RINGBUF-025"></a>
 ### RINGBUF-025: `draft_write` 在"缓冲区已满"与"offset == 空闲空间"时返回 `NS_E_RANGE`，与头文件承诺的 `0` / "超过空闲空间" 语义不符
 
 - **状态**: 打开
@@ -206,6 +435,7 @@ include/nanosig/nanosig_ringbuf.h:115
 
 ---
 
+<a id="RINGBUF-026"></a>
 ### RINGBUF-026: `ns_ringbuf_init` 的 size 上限拒绝路径（`NS_E_PARAM`）无测试，而它是镜像法溢出安全论证的唯一防线
 
 - **状态**: 打开
@@ -259,6 +489,7 @@ test/unit/test_ds_ringbuf.c:84-104
 
 ## 现在关闭的问题
 
+<a id="RINGBUF-011"></a>
 ### RINGBUF-011: SPSC 内存序——release fence + plain store 不构成发布语义 (HIGH)
 
 - **状态**: 关闭-已拒绝
@@ -286,6 +517,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 签名改为 `(uint32_t size, uint32_t w, uint32_t r)`，返回值改为 `int32_t`，消除结构体耦合。详见修复历史。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-018"></a>
 ### RINGBUF-018: `draft_write` 缺少 barrier 注释 (LOW) `cleanup`
 
 - **状态**: 关闭-已拒绝
@@ -294,6 +526,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 注释风格问题。review agent 不再提同类 cleanup。作者确认不修。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-019"></a>
 ### RINGBUF-019: `_Static_assert` 耦合两个不变量 (LOW) `design`
 
 - **状态**: 关闭-已拒绝
@@ -302,6 +535,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 设计层面偏好，当前实现无正确性问题。review agent 不再提同类建议。作者确认不修。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-020"></a>
 ### RINGBUF-020: memcpy wrap/nowrap 分支重复 5 次 (LOW) `cleanup`
 
 - **状态**: 关闭-已拒绝
@@ -310,6 +544,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 代码组织优化，不影响功能。review agent 不再提同类 cleanup。作者确认不修。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-021"></a>
 ### RINGBUF-021: `ns_ringbuf_size`/`free_size` 应 inline (LOW) `cleanup`
 
 - **状态**: 关闭-已拒绝
@@ -318,6 +553,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 性能微优化，不影响正确性。review agent 不再提同类 cleanup。作者确认不修。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-022"></a>
 ### RINGBUF-022: header @note 溢出实现细节 (LOW) `doc`
 
 - **状态**: 关闭-已拒绝
@@ -326,6 +562,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: 文档风格偏好，当前 doc 不影响使用者理解。review agent 不再提同类 doc 问题。作者确认不修。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-002"></a>
 ### RINGBUF-002: `ns_ringbuf_fix` 宏加法溢出（size > 1.43 GiB）
 
 - **状态**: 关闭-已修复
@@ -333,6 +570,7 @@ test/unit/test_ds_ringbuf.c:84-104
 - **关闭原因**: init 已增加 `size ≤ UINT32_MAX/3` 上限检查，`w + wl < 3*size ≤ UINT32_MAX` 不再溢出。
 - **关闭日期**: 2026-07-04
 
+<a id="RINGBUF-003"></a>
 ### RINGBUF-003: 读写位置 + offset 溢出（peek/peek_copy/draft_write）
 
 - **状态**: 关闭-已修复

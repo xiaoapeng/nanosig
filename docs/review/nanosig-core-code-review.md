@@ -1,3 +1,131 @@
+---
+review_schema: "nanosig-review-v1"
+entries:
+  - id: "CORE-010"
+    module: "nanosig-core"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-07-18"
+    location: "docs/review/nanosig-core-code-review.md#CORE-010"
+  - id: "CORE-011"
+    module: "nanosig-core"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "open"
+    closed_date: "2026-08-02"
+    location: "docs/review/nanosig-core-code-review.md#CORE-011"
+  - id: "CORE-012"
+    module: "nanosig-core"
+    status: "unknown"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    closed_date: "2026-08-08"
+    location: "docs/review/nanosig-core-code-review.md#CORE-012"
+  - id: "CORE-015"
+    module: "nanosig-core"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/nanosig-core-code-review.md#CORE-015"
+  - id: "CORE-016"
+    module: "nanosig-core"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/nanosig-core-code-review.md#CORE-016"
+  - id: "CORE-017"
+    module: "nanosig-core"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/nanosig-core-code-review.md#CORE-017"
+  - id: "CORE-001"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-001"
+  - id: "CORE-002"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-002"
+  - id: "CORE-003"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-003"
+  - id: "CORE-004"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-004"
+  - id: "CORE-005"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-005"
+  - id: "CORE-006"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-006"
+  - id: "CORE-007"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-007"
+  - id: "CORE-008"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-008"
+  - id: "CORE-009"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    location: "docs/review/nanosig-core-code-review.md#CORE-009"
+  - id: "CORE-013"
+    module: "nanosig-core"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-10-19"
+    location: "docs/review/nanosig-core-code-review.md#CORE-013"
+  - id: "CORE-014"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-10-18"
+    location: "docs/review/nanosig-core-code-review.md#CORE-014"
+---
 # Nanosig Core 代码审查报告
 
 **日期**: 2026-07-04
@@ -13,6 +141,7 @@
 
 ## 现在打开的问题
 
+<a id="CORE-010"></a>
 ### CORE-010: `ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 失败时泄漏 loop 内存
 
 - **状态**: 关闭-已修复
@@ -50,6 +179,7 @@ src/nanosig.c:161-165
 
 ---
 
+<a id="CORE-011"></a>
 ### CORE-011: `ns_signal_connect` 缺少"禁止重复连接"前置条件文档
 
 - **状态**: 关闭-已修复
@@ -83,6 +213,7 @@ include/nanosig/nanosig_signal.h:290-313（docstring）
 
 ---
 
+<a id="CORE-012"></a>
 ### CORE-012: `ns_loop_quit` 在 loop 被 `ns_loop_deinit` 释放后写入 → heap-use-after-free `bug`
 
 - **状态**: 关闭-已修复（测试问题，非库缺陷）
@@ -144,6 +275,7 @@ test/unit/test_broker_consume_fn.c:67
 `test/unit/test_broker_handler.c`（`ns_watcher_consume_fn` → `ns_watcher_handler_fn`）。
 引用行号与文件名属历史快照，不再对应现行树；原结论（测试时序问题、非库缺陷）不变。不重开。
 
+<a id="CORE-015"></a>
 ### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
 
 - **状态**: 打开
@@ -197,6 +329,7 @@ include/nanosig/nanosig_signal.h:258
 
 ---
 
+<a id="CORE-016"></a>
 ### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
 
 - **状态**: 打开
@@ -249,6 +382,7 @@ include/nanosig/nanosig_signal.h:363
 
 ---
 
+<a id="CORE-017"></a>
 ### CORE-017: `ns_loop_init(out_loop == NULL)` 被文档允许，但会静默泄漏 loop 与 wakeup 句柄
 
 - **状态**: 打开
@@ -288,6 +422,7 @@ include/nanosig/nanosig_loop.h:74
 
 ## 现在关闭的问题
 
+<a id="CORE-001"></a>
 ### CORE-001: `ns_loop_deinit` 与同步 `ns_loop_run` 并发可造成 UAF
 
 - **状态**: 关闭-已拒绝
@@ -301,6 +436,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-002"></a>
 ### CORE-002: `ns_signal_disconnect` 在 signal 销毁后可解引用悬空 mutex
 
 - **状态**: 关闭-已拒绝
@@ -314,6 +450,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-003"></a>
 ### CORE-003: `ns_signal_emit_raw` 在持锁时执行阻塞性 `wakeup_signal`
 
 - **状态**: 关闭-已拒绝
@@ -327,6 +464,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-004"></a>
 ### CORE-004: Partial-broadcast 没有原子语义保证
 
 - **状态**: 关闭-已拒绝
@@ -340,6 +478,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-005"></a>
 ### CORE-005: `quit_requested` 重置时的 wakeup_signal 可能在边沿触发下丢失
 
 - **状态**: 关闭-已拒绝
@@ -353,6 +492,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-006"></a>
 ### CORE-006: `ns_loop_stop` 后未 drain in-flight slot 调用
 
 - **状态**: 关闭-已拒绝
@@ -366,6 +506,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-007"></a>
 ### CORE-007: `ns_signal_disconnect_all` 唤醒释放的 connections
 
 - **状态**: 关闭-已拒绝
@@ -379,6 +520,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-008"></a>
 ### CORE-008: `ns_signal_emit_raw` 跨多个目标循环的部分广播无法 rollback
 
 - **状态**: 关闭-已拒绝
@@ -392,6 +534,7 @@ include/nanosig/nanosig_loop.h:74
 
 ---
 
+<a id="CORE-009"></a>
 ### CORE-009: `ns_loop_quit` 在非运行状态下仍可调用
 
 - **状态**: 关闭-已拒绝
@@ -403,6 +546,7 @@ include/nanosig/nanosig_loop.h:74
 #### 关闭日期
 2026-07-04
 
+<a id="CORE-013"></a>
 ### CORE-013: `ns_loop_stop` 在 join 失败时仍清除 `async_started`，旧 worker 与 loop 生命周期脱钩
 
 - **状态**: 关闭-已修复
@@ -446,6 +590,7 @@ src/nanosig.c:281
 include/nanosig/nanosig_loop.h:140
 test/unit/test_loop.c:397
 
+<a id="CORE-014"></a>
 ### CORE-014: slot 内重入 emit 使 loop 永远观察不到 `quit_requested`，`ns_loop_run` / `ns_loop_stop` 永久阻塞
 
 - **状态**: 关闭-已拒绝
