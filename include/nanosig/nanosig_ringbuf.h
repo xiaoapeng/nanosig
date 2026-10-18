@@ -109,10 +109,11 @@ extern int32_t ns_ringbuf_write(ns_ringbuf_t *ringbuf, const uint8_t *buf, uint3
  *
  * @param ringbuf ringbuf 对象。
  * @param offset  从当前写位置开始的偏移。
- *                offset 越界（超过当前空闲空间）时返回 `NS_E_RANGE`。
+ *                `offset >= 当前空闲空间` 时返回 `NS_E_RANGE`。
  * @param buf     数据源。
  * @param len     写入字节数。
- * @return 实际写入字节数（≥ 0）；参数错误或无空间返回 0；offset 越界返回 `NS_E_RANGE`。
+ * @return 实际写入字节数（≥ 0）；`free_size == 0` 或 `offset >= free_size`
+ *         均返回 `NS_E_RANGE`（“无空间”不再单独返回 0）。
  */
 extern int32_t ns_ringbuf_draft_write(ns_ringbuf_t *ringbuf, uint32_t offset, const uint8_t *buf, uint32_t len);
 

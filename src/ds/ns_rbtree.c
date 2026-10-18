@@ -5,6 +5,11 @@
  *
  * 移植自 eventhub_os eh_rbtree.c，仅修改 API 前缀 (eh_ → ns_)，逻辑未变。
  *
+ * @section match_vs_cmp cmp 与 match 偏序必须一致
+ * 所有插入/查找函数（ns_rbtree_add / ns_rbtree_find_add / ns_rbtree_find_new_add）
+ * 的 cmp（或 match）必须对同一棵树保持一致的偏序关系。若 cmp 与 match 
+ * 不一致，leftmost 缓存可能错误，BST 序会被破坏。
+ *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
@@ -587,6 +592,8 @@ ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node)
     return parent;
 }
 
+/* 内部实现函数，不是公共 API。公共头 nanosig_rbtree.h 不声明它，
+   外部不应直接调用；测试文件仅通过手工 extern 临时引用。 */
 void ns_rb_replace_node(ns_rbtree_node_t *victim, ns_rbtree_node_t *new,
              ns_rbtree_t *root)
 {

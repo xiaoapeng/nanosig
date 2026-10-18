@@ -65,6 +65,19 @@ extern struct ns_stream_function _ns_stdout;
 /*  printf 族声明                                                        */
 /* ================================================================== */
 
+/**
+ * @brief nanosig printf 族格式化输出。
+ *
+ * 支持 C99 printf 的常见转换（%d/%u/%x/%f/%s/%c/%p/%% 等），以及 nanosig 扩展
+ * %q/%Q（数组）与 %b（二进制）。与 C99 `snprintf` 存在以下文档化差异：
+ * - `%g`/`%G` 等价于 `%f`，不剥除尾随零、不按指数范围切换到 `%e`；
+ * * 宽度/`*` 负精度被钳为 0（C99 规定"视同未指定"）；
+ * - `%.0d`/`%.0x` 零值输出 `"0"`（C99 输出空字符串）；
+ * - `%#x`/`%#o` 零值仍加前缀（C99 零值不加前缀）；
+ * - 格式串宽度/精度由调用方保证在合理范围内，超大值可能触发有符号溢出 UB。
+ *
+ * 调用方应按上述差异使用，或按需避免受影响的转换。
+ */
 extern int ns_vprintf(const char *fmt, va_list args);
 extern int ns_printf(const char *fmt, ...);
 
@@ -78,6 +91,16 @@ extern int ns_sprintf(char *buf, const char *fmt, ...);
 extern int ns_stream_vprintf(struct ns_stream_base *stream, const char *fmt, va_list args);
 extern int ns_stream_printf(struct ns_stream_base *stream, const char *fmt, ...);
 extern void ns_stream_putc(struct ns_stream_base *stream, int c);
+
+/**
+ * @brief 向流写入以 NUL 结尾的字符串。
+ *
+ * 若 `s` 为 NULL，行为未定义（调用方应保证 `s` 非 NULL）。与 `vprintf_string`
+ * 将 NULL 替换为 `"(null)"` 不同，本函数不做 NULL 替换，直接解引用 `s`。
+ *
+ * @param stream 输出流，不可为 NULL。
+ * @param s 待写入的 NUL 结尾字符串，不可为 NULL。
+ */
 extern int ns_stream_puts(struct ns_stream_base *stream, const char *s);
 extern void ns_stream_finish(struct ns_stream_base *stream);
 

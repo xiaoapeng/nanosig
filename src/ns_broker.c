@@ -166,7 +166,7 @@ int ns_watcher_deinit(ns_watcher_t *watcher)
     if(ns_watcher_is_registered(watcher)) return NS_E_EXISTS;
 
     /* 完整重置 waitable / handler：使 ns_watcher_handle 在已 deinit 的
-       watcher 上返回无效哨兵而非陈旧句柄（D14）。 */
+       watcher 上返回无效哨兵而非陈旧句柄。 */
     ns_watcher_reset_empty(watcher);
     return NS_OK;
 }

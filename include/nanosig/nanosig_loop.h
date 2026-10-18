@@ -39,7 +39,11 @@ typedef struct ns_loop ns_loop_t;
  * 调用方通常从 `NS_LOOP_CONFIG_DEFAULT()` 开始，再覆盖需要调整的字段。
  */
 typedef struct ns_loop_config {
-    /** MPSC record ring 字节容量，决定跨线程 emit 可排队的总字节数。须为 2 的幂。 */
+    /** MPSC record ring 字节容量，决定跨线程 emit 可排队的总字节数。须为 2 的幂。
+     * 单条 emit 的有效载荷上限 = `queue_byte_capacity / 2` 扣除记录头与
+     * `sizeof(ns_slot_call_t)` 后的余量；超出该上限的 emit 恒返回
+     * `NS_E_INVAL`（非 `NS_E_QUEUE_FULL`，重试无效）。默认 1024 字节下
+     * payload 实际上限约为 480 字节。 */
     ns_capacity_t queue_byte_capacity;
     /** 预留标志位，当前必须为 0。 */
     uint32_t flags;
@@ -71,7 +75,7 @@ typedef struct ns_loop_config {
  *
  * @pre 本函数不得与 `ns_loop_deinit()` 或自身并发调用。
  *
- * @param out_loop 输出创建得到的 loop 句柄；可为 `NULL`，此时不向外传值。
+ * @param out_loop 输出创建得到的 loop 句柄；不得为 `NULL`。
  * @param config loop 配置；可为 `NULL`。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */

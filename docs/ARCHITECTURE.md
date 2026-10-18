@@ -267,7 +267,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | 能力 | Linux | macOS | Windows | FreeRTOS | Zephyr |
 |------|-------|-------|---------|----------|--------|
 | mutex | pthread_mutex_t | pthread_mutex_t | SRWLOCK | xSemaphoreCreateMutex | k_mutex |
-| 线程 | pthread_create / join | pthread_create / join | CreateThread / WaitForSingleObject | xTaskCreate / join 信号量 | k_thread_create / k_thread_join（内嵌 K_KERNEL_STACK_MEMBER 栈） |
+| 线程 | pthread_create / join | pthread_create / join | _beginthreadex / WaitForSingleObject | xTaskCreate / join 信号量 | k_thread_create / k_thread_join（内嵌 K_KERNEL_STACK_MEMBER 栈） |
 | wakeup | eventfd / pipe | kqueue EVFILT_USER | auto-reset event | 每对象独立二值信号量 | 每对象独立 k_sem（上限 1） |
 | 单调时间 | clock_gettime(CLOCK_MONOTONIC) | clock_gettime(CLOCK_MONOTONIC) | QueryPerformanceCounter | xTaskGetTickCount | k_uptime_ticks |
 | waitset | epoll_create1 / epoll_ctl / epoll_wait | kqueue / kevent | WaitForMultipleObjects | queue set（xQueueCreateSet / xQueueSelectFromSet） | k_poll（K_POLL_TYPE_SIGNAL + K_POLL_MODE_NOTIFY_ONLY） |

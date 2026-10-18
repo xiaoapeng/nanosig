@@ -206,97 +206,29 @@ include/nanosig/nanosig_loop.h:138
 
 ---
 
-### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`ns_signal_emit_raw`（src/nanosig.c:415-453）只校验 `payload_size == signal->payload_size`（src/nanosig.c:423）与 payload 非空，随后把记录交给 `ns_mpsc_record_ring_try_pushv`。record ring 的单条记录上限是 `capacity / 2`，超限时 `try_pushv` 返回 `NS_E_INVAL`，emit 原样透传（src/nanosig.c:442-446）。对调用方而言这是"合法入参被判为非法"：
-
-- 默认配置 `NS_LOOP_CONFIG_DEFAULT()` 的 ring 为 1024 字节，单条记录上限 512，减去 `sizeof(ns_slot_call_t)`（24）后 **payload 实际上限只有 480 字节**。payload 从 484 字节起，每次 emit 恒返回 `NS_E_INVAL`——与队列是否为空无关，也不是文档化的 `NS_E_QUEUE_FULL`。
-- 同一根因还有一个更极端的形态：`ns_loop_config_validate`（src/nanosig.c:65-72）只要求容量为 2 的幂，`queue_byte_capacity = 32` 时 `ns_loop_init` 返回 `NS_OK`，但该 loop 上任何 emit 都无法成功（连"无 payload"记录的 8 + 24 字节都超过上限），loop 永远执行不了一次 slot 调用。
-
-公开头文件都未说明这个约束：include/nanosig/nanosig_loop.h:42 只说 `queue_byte_capacity` 决定"跨线程 emit 可排队的总字节数"，include/nanosig/nanosig_signal.h:350-363 只说 payload_size 必须与 signal 一致、emit 路径不允许分配内存。调用方只能读 MPSC 实现或跑起来试错才能得到该限制。
-
-#### review 建议
-1. 把"单条记录超过 `capacity/2`"（配置/契约问题，重试无用）与"队列暂时放不下"（瞬时容量问题，可重试）区分表达，不要复用 `NS_E_INVAL`；或
-2. 在 `nanosig_loop.h` / `nanosig_signal.h` 明确写出"单条 emit 的有效载荷上限 = `queue_byte_capacity / 2 - 记录头 - sizeof(ns_slot_call_t)`，超出返回 `NS_E_INVAL`"；并
-3. 给 `ns_loop_config_validate` 加容量下限（至少能容纳一条最小 slot 调用记录），使 `queue_byte_capacity = 32` 这类永远无法工作的配置在 `ns_loop_init` 阶段就返回 `NS_E_INVAL`。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-typedef struct p500 { unsigned char b[500]; } p500_t;   /* payload_size = 500 */
-ns_loop_init(&loop, NULL);                              /* 默认 1024 字节 ring */
-ns_signal_init(&sig, p500_t);
-ns_signal_connect_typed(sig, slot, p500_t, loop, NULL, &conn);
-rc = ns_signal_emit_raw(&sig, &pl, sizeof(pl));         /* 队列为空 */
-```
-实测：`rc = -3 (NS_E_INVAL)`。同环境逐点扫描（队列始终为空）：
-```
-payload= 480 -> rc= 0 NS_OK
-payload= 484 -> rc=-3 NS_E_INVAL
-```
-容量下限的实测：
-```
-capacity=32     loop_init OK, emit(no payload) rc=-3   <-- 该 loop 永远无法执行任何 slot
-capacity=64     loop_init OK, emit(no payload) rc=0
-capacity=1/16   loop_init rc=-3
-```
-
-#### 定位
-src/nanosig.c:65
-src/nanosig.c:423
-src/nanosig.c:442
-src/nanosig.c:444
-include/nanosig/nanosig_loop.h:42
-include/nanosig/nanosig_signal.h:363
-
----
-
-### CORE-017: `ns_loop_init(out_loop == NULL)` 被文档允许，但会静默泄漏 loop 与 wakeup 句柄
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`ns_loop_init`（src/nanosig.c:122-165）在 `out_loop == NULL` 时于第 130 行只把入参置空便继续执行，完成 `ns_platform_alloc`（src/nanosig.c:140）与 `ns_platform_wakeup_init`（src/nanosig.c:156）后，在第 159 行跳过回传，返回 `NS_OK`。调用方拿不到任何句柄，**没有任何路径可以释放**这块内存与 wakeup 句柄（`ns_loop_deinit` 需要 loop 指针）。每次这样的调用泄漏一份 loop 结构体 + 内嵌 MPSC ring 存储 + 一个 OS 句柄（Linux eventfd / macOS kqueue / Windows Event）。
-
-include/nanosig/nanosig_loop.h:74 明确文档化"输出创建得到的 loop 句柄；可为 `NULL`，此时不向外传值"，因此这是被公开文档允许的调用，不是调用方违约（不属于合同前提保护）。
-
-#### review 建议
-在入口把 `out_loop == NULL` 当作参数错误拒绝（返回 `NS_E_INVAL`，与 `ns_loop_run` / `ns_loop_deinit` 等直接返回 `NS_E_INVAL` 的校验风格一致），或删除该参数"可为 NULL"的契约描述。不应保留一条会分配资源却无法回收的路径。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-ns_init();
-for(i = 0; i < 20; i++) rc = ns_loop_init(NULL, NULL);   /* 每次 rc == NS_OK */
-```
-实测（macOS，统计 /dev/fd 条目数）：
-```
-fds before=7 after=27 delta=20 (20 calls with out_loop=NULL)
-```
-即 20 次调用泄漏 20 个 OS 句柄，另有 20 块已分配内存无从释放。
-
-#### 定位
-src/nanosig.c:130
-src/nanosig.c:140
-src/nanosig.c:156
-src/nanosig.c:159
-include/nanosig/nanosig_loop.h:74
-
----
 
 ## 现在关闭的问题
 
+### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 合同前提保护：单条 emit 的有效载荷上限已在 `include/nanosig/nanosig_loop.h:42` 的 `queue_byte_capacity` `@param` 中文档化（`capacity / 2` 扣除记录头与 `sizeof(ns_slot_call_t)` 后的余量，超出返回 `NS_E_INVAL`，重试无效）。调用方按文档约束使用即可，不属库缺陷。
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已拒绝
+
+---
+### CORE-017: `ns_loop_init(out_loop == NULL)` 被文档允许，但会静默泄漏 loop 与 wakeup 句柄
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`include/nanosig/nanosig_loop.h:74` 的 `@param out_loop` 已改为"不得为 `NULL`"，传 `NULL` 属调用方违反文档化前置条件，行为未定义。不属库缺陷。
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已拒绝
+
+---
 ### CORE-001: `ns_loop_deinit` 与同步 `ns_loop_run` 并发可造成 UAF
 
 - **状态**: 关闭-已拒绝

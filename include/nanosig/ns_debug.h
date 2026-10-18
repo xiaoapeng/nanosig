@@ -53,6 +53,9 @@ enum ns_dbg_level {
 #define NS_DBG_SYS                      3
 #define NS_DBG_INFO                     4
 #define NS_DBG_DEBUG                    5
+#ifndef NS_DBG_MODULE_LEVEL_DEFAULT
+#define NS_DBG_MODULE_LEVEL_DEFAULT     NS_DBG_SYS
+#endif
     _NS_DBG_SUPPRESS = NS_DBG_SUPPRESS,
     _NS_DBG_ERR       = NS_DBG_ERR,
     _NS_DBG_WARNING   = NS_DBG_WARNING,
@@ -141,6 +144,11 @@ static inline int _ns_dbg_feign_return(int n) { return n; }
  *
  * 创建内部互斥锁保护调试输出。由 `ns_init()` 在平台层初始化后自动调用，
  * 通常无需手动调。
+ *
+ * @warning 输出 sink（`platform_stdout_write` 的实现）内**禁止**调用任何
+ * `ns_dbg_*` / `ns_errln` / `ns_m*ln` 调试宏。调试层在持锁期间完成整条
+ * 输出，sink 内再次调用会在同一线程重复加锁，导致自死锁。锁为非递归
+ * pthread 互斥量。
  *
  * @return `NS_OK` 成功，`NS_E_EXISTS` 已初始化，`NS_E_NOMEM` 分配失败。
  */

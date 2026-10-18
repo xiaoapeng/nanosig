@@ -5,6 +5,9 @@
  *
  * 移植自 eventhub_os eh_rbtree.h，仅修改 API 前缀 (eh_ → ns_)，逻辑未变。
  *
+ * @warning 本数据结构不是线程安全的。同一棵树上的并发操作需要外部同步；
+ *          遍历宏对裸节点指针的操作非原子，读写不得与并发修改交错。
+ *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
@@ -105,6 +108,8 @@ extern ns_rbtree_node_t * ns_rbtree_del(ns_rbtree_node_t *, ns_rbtree_t *);
  * @param  node             要添加的节点
  * @param  tree             rb树对象
  * @return                     正常返回NULL, 返回 node 说明 插入最左的节点(为定时器而考虑的逻辑)
+ * @pre   node 必须尚未链接到任何红黑树（`ns_rbtree_node_is_empty(node)` 为真）。
+ *        对同一节点重复 `ns_rbtree_add` 会形成自环，导致遍历死循环，属调用方责任。
  */
 extern ns_rbtree_node_t * ns_rbtree_add(ns_rbtree_node_t *node, ns_rbtree_t *tree);
 
@@ -113,6 +118,8 @@ extern ns_rbtree_node_t * ns_rbtree_add(ns_rbtree_node_t *node, ns_rbtree_t *tre
  * @param  node             要添加的节点
  * @param  tree             rb树对象
  * @return                  返回找到的节点, 如果没有找到返回插入的节点
+ * @pre   node 必须尚未链接到任何红黑树（`ns_rbtree_node_is_empty(node)` 为真）。
+ *        传入已链接节点会破坏 BST 序与 leftmost 缓存，属调用方责任。
  */
 extern ns_rbtree_node_t * ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t *tree);
 
