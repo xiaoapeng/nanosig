@@ -137,6 +137,9 @@ extern int ns_loop_start(ns_loop_t *loop);
  *
  * @pre 本函数必须与 `ns_loop_start()` 串行化调用，不得并发。二次 stop
  *      返回 `NS_E_INVAL`。
+ * @pre 不得在 loop 自身线程（含 slot 回调）内调用：join 自身必然失败，
+ *      此时返回错误且 loop 保持"已启动"状态，须由其他线程再次调用本函数
+ *      完成 join。
  *
  * @param loop 目标 loop 句柄。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

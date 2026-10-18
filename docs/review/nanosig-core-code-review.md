@@ -144,68 +144,6 @@ test/unit/test_broker_consume_fn.c:67
 `test/unit/test_broker_handler.c`（`ns_watcher_consume_fn` → `ns_watcher_handler_fn`）。
 引用行号与文件名属历史快照，不再对应现行树；原结论（测试时序问题、非库缺陷）不变。不重开。
 
-### CORE-013: `ns_loop_stop` 在 join 失败时仍清除 `async_started`，旧 worker 与 loop 生命周期脱钩
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_loop_stop`（src/nanosig.c:296-308）先 `ns_loop_quit`，再 `ns_platform_thread_join`，然后**无条件**把 `loop->async_started` 清零（src/nanosig.c:305）。平台层 `ns_platform_thread_join` 在 `pthread_join` 返回非 0 时一律返回 `NS_E_INVAL`（platform/macos/port.c:370、platform/linux/port.c:325），最典型的触发场景就是**在 loop 自身线程（slot 回调内）调用 stop**——`pthread_join` 自 join 返回 `EDEADLK`。
-
-此时 `ns_loop_stop` 返回错误，但 `async_started` 已经被清掉，两个守卫同时失效：
-- `ns_loop_start`（src/nanosig.c:281）的 `NS_E_BUSY` 守卫失效 → 旧 worker 线程仍存活时可以再次 start，同一 loop 上出现两个线程并发执行 `ns_loop_run_impl`（src/nanosig.c:206）的消费侧逻辑，共享同一个 MPSC ring 的单一消费者位置。
-- `ns_loop_deinit`（src/nanosig.c:172）的 `NS_E_BUSY` 守卫同样失效 → 只要 `running` 在旧 worker 处于 slot 内部时读到 0，deinit 就会 `ns_platform_free(loop)` 并关闭 wakeup 句柄（src/nanosig.c:175-180），而旧 worker 线程仍在运行并会继续访问 `loop->queue` / `loop->wakeup`。
-
-`nanosig_loop.h` 只声明了 start/stop 必须串行化（include/nanosig/nanosig_loop.h:8、include/nanosig/nanosig_loop.h:138），未声明"禁止在 loop 线程或 slot 回调内调用 `ns_loop_stop`"；slot 内自停是自然写法，属未文档化约束下的可达路径。
-
-#### review 建议
-只在 join 成功时清除 `async_started`，失败时保留，使 `NS_E_BUSY` 守卫继续成立：
-```c
-rc = ns_platform_thread_join(&loop->async_thread);
-if(rc == NS_OK) loop->async_started = 0;
-return rc != NS_OK ? rc : loop->async_rc;
-```
-另建议在 `nanosig_loop.h` 的 `ns_loop_stop` 文档中写明"不得在 loop 自身线程（含 slot 回调）内调用"。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-场景 1 —— 自停后再次 start 成功，两个消费者并存：
-```c
-static ns_loop_t *g_loop;
-static volatile int g_slot_rc, g_release;
-static void slot_stop(void *ud, const ns_no_payload_t *p){
-    (void)ud; (void)p;
-    g_slot_rc = ns_loop_stop(g_loop);   /* 在 loop 自身线程调用 */
-    while(!g_release) nanosleep(&(struct timespec){0, 2000000}, NULL);
-}
-ns_loop_start(g_loop);
-ns_signal_emit(sig, NS_NO_PAYLOAD);
-while(!g_slot_rc) { }                   /* 等 slot 开始执行 */
-rc = ns_loop_start(g_loop);             /* 旧 worker 仍存活 */
-```
-实测输出（macOS release）：
-```
-1) ns_loop_stop() called from the loop's own thread -> rc=-3 (NS_E_INVAL=-3)
-2) worker thread is still alive & inside the slot: 1
-3) ns_loop_start() while the old worker is still alive -> rc=0 (NS_OK=0)
-```
-场景 2 —— join 失败后 deinit 成功释放仍被 worker 使用的 loop：
-同一场景下，主线程在旧 worker 仍处于 slot 内部时（用标志位确认）调用 `ns_loop_deinit(g_loop)` 返回 `0 (NS_OK)`，loop 内存与 wakeup 句柄均已释放。
-
-#### 定位
-src/nanosig.c:296
-src/nanosig.c:303
-src/nanosig.c:304
-src/nanosig.c:305
-src/nanosig.c:281
-src/nanosig.c:172
-include/nanosig/nanosig_loop.h:138
-
----
-
 ### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
 
 - **状态**: 打开
@@ -464,6 +402,49 @@ include/nanosig/nanosig_loop.h:74
 
 #### 关闭日期
 2026-07-04
+
+### CORE-013: `ns_loop_stop` 在 join 失败时仍清除 `async_started`，旧 worker 与 loop 生命周期脱钩
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+`ns_loop_stop`（src/nanosig.c:296-308）先 `ns_loop_quit`，再 `ns_platform_thread_join`，然后**无条件**把 `loop->async_started` 清零（src/nanosig.c:305）。平台层 `ns_platform_thread_join` 在 `pthread_join` 返回非 0 时一律返回 `NS_E_INVAL`（platform/macos/port.c:370、platform/linux/port.c:325），最典型的触发场景就是**在 loop 自身线程（slot 回调内）调用 stop**——`pthread_join` 自 join 返回 `EDEADLK`。
+
+此时 `ns_loop_stop` 返回错误，但 `async_started` 已经被清掉，两个守卫同时失效：
+- `ns_loop_start`（src/nanosig.c:281）的 `NS_E_BUSY` 守卫失效 → 旧 worker 线程仍存活时可以再次 start，同一 loop 上出现两个线程并发执行 `ns_loop_run_impl`（src/nanosig.c:206）的消费侧逻辑，共享同一个 MPSC ring 的单一消费者位置。
+- `ns_loop_deinit`（src/nanosig.c:172）的 `NS_E_BUSY` 守卫同样失效 → 只要 `running` 在旧 worker 处于 slot 内部时读到 0，deinit 就会 `ns_platform_free(loop)` 并关闭 wakeup 句柄（src/nanosig.c:175-180），而旧 worker 线程仍在运行并会继续访问 `loop->queue` / `loop->wakeup`。
+
+`nanosig_loop.h` 只声明了 start/stop 必须串行化（include/nanosig/nanosig_loop.h:8、include/nanosig/nanosig_loop.h:138），未声明"禁止在 loop 线程或 slot 回调内调用 `ns_loop_stop`"；slot 内自停是自然写法，属未文档化约束下的可达路径。
+
+#### 作者建议
+按 review 建议修复：只在 join 成功时清 `async_started`；并在 `ns_loop_stop` 的 docstring 补 `@pre`（不得在 loop 自身线程调用；失败时须由其他线程再次 stop），把该约束从"未文档化"变为文档化契约。
+→ 关闭-已修复
+
+#### 关闭原因
+`src/nanosig.c:307` 改为 `if(rc == NS_OK) loop->async_started = 0;`；`include/nanosig/nanosig_loop.h:140` 补 `@pre`。
+新增回归用例 `test/unit/test_loop.c:397`（`test_async_stop_in_slot`，`#if !defined(_WIN32)` 守卫：Windows 的 join 是 `WaitForSingleObject` 自身句柄，自 join 会永久阻塞而非返回错误）：slot 内自停返回错误后，断言 `ns_loop_start` / `ns_loop_deinit` 均返回 `NS_E_BUSY`，再由主线程 stop 得到 `NS_OK`。去掉守卫后该用例在 `ns_loop_start(loop) == NS_E_BUSY` 处失败。
+
+复现口径修正：实测（macOS release）确认的是 start 守卫失效（自停 rc=-3，随后 `ns_loop_start` 返回 0）；场景 2 的 deinit 在"worker 仍处于 slot 内"时被 `running` 守卫拦下（rc=-3），该路径未被本次复现观测到。两条路径同根因，修复后均不再成立。
+
+- 关闭日期: 2026-10-19
+- 状态: 关闭-已修复
+
+#### 可重现的失败场景
+slot 内调用 `ns_loop_stop`（返回错误），随后主线程 `ns_loop_start` 返回 `NS_OK` 而旧 worker 仍存活。实测输出（macOS release）：
+```
+1) ns_loop_stop() called from the loop's own thread -> rc=-3 (NS_E_INVAL=-3)
+2) worker thread is still alive & inside the slot: 1
+3) ns_loop_start() while the old worker is still alive -> rc=0 (NS_OK=0)
+```
+
+#### 定位
+src/nanosig.c:296
+src/nanosig.c:307
+src/nanosig.c:281
+include/nanosig/nanosig_loop.h:140
+test/unit/test_loop.c:397
 
 ### CORE-014: slot 内重入 emit 使 loop 永远观察不到 `quit_requested`，`ns_loop_run` / `ns_loop_stop` 永久阻塞
 
