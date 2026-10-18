@@ -1,6 +1,10 @@
 # 分配审计（P9.1）
 
 > nanosig v1 / 2026-06-20 审计快照
+>
+> **加注（2026-10-18，Iter 39）**：本快照表中 broker 相关行的"watchers 先清理"描述已失效——
+> `ns_shutdown` 不再兜底清理残留 watcher（`ns_broker_remove_all_watchers` 已删除）。
+> 行号亦随实现改动漂移。其余结论不变。
 
 ## 摘要
 

@@ -75,14 +75,13 @@ typedef void (*ns_watcher_handler_fn)(ns_watcher_t *watcher, uint32_t triggered_
 
 typedef struct ns_watcher {
     ns_platform_waitable_t   waitable;     /* 内嵌 waitable，第一个字段 */
-    ns_list_node_t           broker_node;  /* broker 内部链表节点 */
     ns_watcher_handler_fn    handler;      /* 就绪回调，必填；同时是生命周期 marker */
 } ns_watcher_t;
 ```
 
 - 调用方自持存储（栈变量、堆分配、嵌入结构体均可）。
-- `waitable` 必须是第一个字段。
-- `broker_node` 由 broker 内部使用，调用方不得访问。
+- `waitable` 必须是第一个字段。是否已注册由平台层在其 `registered_waitset`
+  成员上维护（`add` 成功后写入、`remove` 成功后清除），broker 不自建平行标记。
 - `handler` 必填，`ns_watcher_init` 对 NULL handler 返回 `NS_E_INVAL`。handler 是
   watcher 唯一的就绪出口：broker 线程在 waitable 就绪时调用
   `handler(watcher, triggered_events)`，不再为 watcher 内嵌或 emit signal。
@@ -113,16 +112,16 @@ int ns_watcher_deinit(ns_watcher_t *watcher);
 - `init`：统一初始化入口，接受 `ns_waitable_handle_t`（平台内核原语的透明别名，
   由构建注入的平台头提供：POSIX 是 fd，Windows 是 HANDLE，RTOS 是对象指针）和必填
   `handler`。内部直接把句柄赋给 `watcher->waitable.primitive`（events、
-  edge_triggered 同步设置），初始化 `broker_node`，并保存 `handler`。
+  edge_triggered 同步设置），并保存 `handler`。
 - `init` 校验顺序固定：`watcher == NULL` → `NS_E_INVAL`；`handler == NULL` →
   `NS_E_INVAL`；句柄/事件非法 → `NS_E_INVAL`；runtime 未就绪 → `NS_E_SHUTDOWN`。
 - `init` **不做重复初始化判定**（统一策略，同 `ns_signal_init_raw`）：重复 init
   未先 deinit 属调用方错误（未定义行为），仅在公开头 `@warning` 说明，不返回
   `NS_E_EXISTS`。
 - `init` 是正常公开初始化入口，不引入 `NS_E_UNSUPPORTED` 或按平台隐藏符号。
-  参数有效时应完成 waitable 和 broker_node 初始化；调用方负责在当前
+  参数有效时应完成 waitable 初始化；调用方负责在当前
   平台传入能被对应 waitset 后端等待的 fd 或 HANDLE。
-- `deinit`：完整重置 `waitable`、`broker_node` 并清零 `handler`。调用前必须已
+- `deinit`：完整重置 `waitable` 并清零 `handler`。调用前必须已
   `ns_broker_remove`。未初始化的 watcher 返回 `NS_E_INVAL`。
 - `events` 是 `NS_WAITABLE_EVENT_IN/OUT/ERR` 的位组合。
 - `edge_triggered`：1 = 边沿触发（Linux `EPOLLET` / macOS `EV_CLEAR`），0 = 电平触发。
@@ -131,7 +130,8 @@ int ns_watcher_deinit(ns_watcher_t *watcher);
 
 handler 在 broker 线程执行，必须非阻塞。它**不得调用任何会等待 broker 线程的
 nanosig API**（如 `ns_broker_add`、`ns_broker_remove`、`ns_shutdown` 及 broker
-teardown），否则会自死锁；`ns_signal_emit*` 属于非阻塞操作，**允许**调用。
+teardown），否则 broker 线程将**永久阻塞**（这些调用没有超时，不是可恢复的
+错误返回）；`ns_signal_emit*` 属于非阻塞操作，**允许**调用。
 电平触发的 watcher 必须在 handler 内把事件源读净，否则每轮 `waitset_wait`
 都会重复触发。
 
@@ -148,10 +148,13 @@ int ns_broker_remove(ns_watcher_t *watcher);
 - `ns_broker()`：返回全局 broker 指针（仅供内部和测试使用）。`ns_init` 前返回 `NULL`。
   公开 API 用户通常不需要此函数；`add` / `remove` 自动访问全局 broker。
 - `add`：注册 watcher 到 broker 的 waitset。同一 watcher 重复 add 返回
-  `NS_E_EXISTS`。内部设置 `watcher->waitable.user_data = watcher`，平台
-  waitset add 维护 `watcher->waitable.registered_waitset`。
+  `NS_E_EXISTS`（由平台 waitset add 的 `registered_waitset` 判定）。内部设置
+  `watcher->waitable.user_data = watcher`。
 - `remove`：从 waitset 注销 watcher，平台 waitset remove 清除 waitable
-  注册状态。已入队的 slot 调用不撤回。
+  注册状态；未注册时返回 `NS_E_INVAL`。已入队的 slot 调用不撤回。
+- `add` / `remove` 是**同步会合**：请求经内部 op 队列交给 broker 线程执行，
+  完成后才返回。**没有等待上界**——handler 阻塞或平台等待原语持续失败时调用
+  不会返回。这两个函数可由多线程并发调用；内部经 op 队列串行化到 broker 线程。
 
 ## 内部结构
 
@@ -161,12 +164,17 @@ int ns_broker_remove(ns_watcher_t *watcher);
 struct ns_event_broker {
     ns_platform_thread_t    *thread;
     ns_platform_waitset_t   *waitset;
-    ns_platform_event_t      event;           /* broker 自唤醒事件源（waitable 注册到 waitset） */
-    ns_list_node_t           watcher_head;    /* 已注册 watcher 链表 */
-    ns_platform_mutex_t     *watcher_mutex;   /* 保护链表 */
-    atomic_int               quit_requested;
+    ns_platform_event_t      event;          /* broker 自唤醒事件源（waitable 注册到 waitset） */
+    atomic_int               quit_requested; /* loop 退出信号 */
+    ns_platform_mutex_t     *op_lock;        /* 串行化 add/remove 入队 */
+    ns_list_node_t           op_queue_head;  /* 待处理 op 队列 */
+    atomic_int               shutdown_started; /* ns_shutdown 中置位，早返回新请求 */
 };
 ```
+
+所有字段仅 broker 线程访问：user 线程通过 op 队列交接 add/remove，不直接触碰
+waitset。此前用于保护 watcher 链表的 `watcher_mutex` 与 `watcher_head` 已删除
+——「已注册」状态由平台层的 `registered_waitset` 唯一表达。
 
 ### 全局单例
 
@@ -233,31 +241,34 @@ event 触发后 broker drain 该事件、重新计算 timeout 并继续循环。
 ### ns_broker_add
 
 ```
-1. mutex_lock(broker->watcher_mutex)
-2. 检查 watcher->broker_node 是否已链接（已链接 → NS_E_EXISTS）
-3. watcher->waitable.user_data = watcher
-4. waitset_add(broker->waitset, &watcher->waitable)（成功后设置 registered_waitset）
-5. list_push_back(&broker->watcher_head, &watcher->broker_node)
-6. mutex_unlock
+1. 构造 op_request（op = ADD，自建 wakeup）并入 op_queue
+2. event_signal 唤醒 broker 线程；signal 失败则在 op_lock 内回滚出队并返回错误
+3. 用户线程阻塞等待 req.wakeup（无超时）
+4. broker 线程 drain op_queue：
+   watcher->waitable.user_data = watcher
+   waitset_add(broker->waitset, &watcher->waitable)（已注册 → NS_E_EXISTS）
+5. broker 写 req.rc 并 signal req.wakeup；用户线程读取后返回
 ```
 
 ### ns_broker_remove
 
 ```
-1. mutex_lock(broker->watcher_mutex)
-2. 检查 watcher->broker_node 是否已链接（未链接 → NS_E_INVAL）
-3. waitset_remove(broker->waitset, &watcher->waitable)（成功后清除 registered_waitset）
-4. list_remove_init(&watcher->broker_node)
-5. mutex_unlock
+1. 构造 op_request（op = REMOVE）并入 op_queue
+2. event_signal 唤醒 broker 线程
+3. 用户线程阻塞等待 req.wakeup（无超时）
+4. broker 线程 drain op_queue：
+   waitset_remove(broker->waitset, &watcher->waitable)（未注册 → NS_E_INVAL）
+   成功后置 NULL 化本轮对应 completion.waitable，并清 user_data
+5. broker 写 req.rc 并 signal req.wakeup
 ```
 
 ### 线程安全
 
-- `add` / `remove` 通过 `watcher_mutex` 保护链表操作。
-- `waitset_add` / `waitset_remove` 在 mutex 内调用，保证与 broker
-  线程的 `waitset_wait` 不并发操作同一 waitset。
-- 用户线程调 `add` / `remove`，broker 线程调 `waitset_wait` +
-  `fire_expired`。两者通过 mutex 隔离。
+- `add` / `remove` 只操作 op 队列（受 `op_lock` 保护）；实际的 waitset 操作
+  全部在 broker 线程串行执行，与 `waitset_wait` 天然不并发。
+- `op_lock` 同时保证 signal 失败时能原子回滚已入队的 req。
+- 契约要求调用方在 `ns_shutdown()` 前完成 teardown；库不再兜底清理残留
+  watcher 或残留 op（见「生命周期协议 / 用户职责」）。
 
 ## 生命周期协议
 
@@ -272,10 +283,10 @@ ns_init()
     → ns_platform_event_init(&broker->event, "nanosig-broker")
     → broker->event.waitable.events = NS_WAITABLE_EVENT_IN
     → ns_platform_waitset_add(&broker->waitset, &broker->event.waitable)
-    → ns_platform_mutex_init(&broker->watcher_mutex)
-    → ns_list_init(&broker->watcher_head)
+    → ns_platform_mutex_init(&broker->op_lock)
+    → ns_list_init(&broker->op_queue_head)
     → ns_timer_mgr_global_init(ns_broker_notify, broker)
-    → atomic_init(&broker->quit_requested, 0)
+    → atomic_init(&broker->quit_requested, 0) / atomic_init(&broker->shutdown_started, 0)
     → ns_platform_thread_init(&broker->thread, broker_run, broker)
     → g_broker = broker
   → atomic_store(g_ns_initialized, 1)
@@ -290,21 +301,20 @@ manager 的 notify 回调使用非空 `ctx` 指向 broker，不依赖 `g_broker`
 
 ```
 ns_shutdown()
-  → 调用方已按前置条件销毁 loop/timer 并注销 watcher
+  → 调用方已按前置条件销毁 loop/timer 并注销全部 watcher
   → atomic_store(g_ns_initialized, 0)
   → ns_broker_destroy()
+    → atomic_store(broker->shutdown_started, 1)   /* 新 add/remove 直接返回 NS_E_SHUTDOWN */
     → atomic_store(broker->quit_requested, 1)
     → ns_platform_event_signal(&broker->event)
     → ns_platform_thread_join(&broker->thread)
-    → g_broker = NULL
+    → 若 op_queue 非空：记一条警告（不救援、不 signal；不持 op_lock）
     → ns_timer_mgr_global_shutdown()
-    → mutex_lock(broker->watcher_mutex)
-    → 遍历 watcher_list：waitset_remove + clear user_data + list_remove_init
-    → mutex_unlock
     → waitset_remove(event.waitable)
-    → waitset_destroy
+    → waitset_destroy（waitset 非空时返回 NS_E_EXISTS 并记录错误）
     → ns_platform_event_deinit(&broker->event)
-    → mutex_destroy
+    → mutex_destroy(op_lock)
+    → g_broker = NULL
     → ns_platform_free(broker)
   → ns_platform_shutdown()
 ```
@@ -313,9 +323,8 @@ ns_shutdown()
 
 - `ns_watcher_init` 必须在 `ns_broker_add` 之前调用。
 - `ns_broker_remove` 必须在 `ns_watcher_deinit` 之前调用。
-- `ns_broker_remove` 应在 `ns_shutdown` 之前调用。若仍有 watcher 残留，
-  `ns_shutdown` 的 broker 销毁路径必须至少把这些 watcher 从 waitset
-  注销、清除 waitable 注册状态并把 `broker_node` 重新初始化。
+- `ns_broker_remove` 必须在 `ns_shutdown` 之前调用。**库不兜底**：残留 watcher
+  不会被自动注销，`waitset_destroy` 因非空返回 `NS_E_EXISTS`，底层句柄泄漏。
 - `ns_timer_deinit` 必须在 `ns_shutdown` 之前调用。
 - `ns_loop_deinit` 必须在 `ns_shutdown` 之前调用（现有逻辑）。
 

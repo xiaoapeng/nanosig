@@ -11,7 +11,6 @@
 
 #include <stdint.h>
 
-#include <nanosig/nanosig_list.h>
 #include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
@@ -43,8 +42,9 @@ typedef struct ns_event_broker ns_event_broker_t;
  *          与 timer 投递。
  * @warning 本回调**不得调用任何会等待 broker 线程的 nanosig API**，例如
  *          `ns_broker_add`、`ns_broker_remove`、`ns_shutdown` 以及会触发 broker
- *          teardown 的调用——这些会自死锁。`ns_signal_emit*` 属于非阻塞操作，
- *          **允许**调用。
+ *          teardown 的调用。这类调用**没有超时**，一旦在回调内发起，broker 线程
+ *          将**永久阻塞**（不是可恢复的错误返回），整个 broker 停止工作。
+ *          `ns_signal_emit*` 属于非阻塞操作，**允许**调用。
  * @warning 电平触发的 watcher 必须在回调内把事件源读净，否则每轮 waitset_wait
  *          都会重复触发。
  *
@@ -66,8 +66,6 @@ typedef void (*ns_watcher_handler_fn)(ns_watcher_t *watcher, uint32_t triggered_
 struct ns_watcher {
     /** 可注册到 broker waitset 的平台 waitable。 */
     ns_platform_waitable_t waitable;
-    /** broker 内部链表节点，调用方不得直接修改。 */
-    ns_list_node_t broker_node;
     /** 就绪回调，必填；同时作为 watcher 的生命周期 marker。 */
     ns_watcher_handler_fn handler;
 };
@@ -76,7 +74,7 @@ struct ns_watcher {
  * @brief 初始化 watcher。
  *
  * 本函数初始化调用方提供的 `ns_watcher_t`：填充 `waitable` 的平台句柄 /
- * `events` / `edge_triggered`，初始化 broker 链表节点，并保存 `handler`。
+ * `events` / `edge_triggered`，并保存 `handler`。
  *
  * @pre `watcher` 必须已零初始化，或来自一次成功 `ns_watcher_deinit` 的 watcher。
  * @warning 本函数不幂等，且**不检测重复初始化**：对已初始化的 watcher 再次调用
@@ -116,10 +114,16 @@ extern int ns_watcher_deinit(ns_watcher_t *watcher);
  *
  * 必须在 `ns_init()` 之后、`ns_shutdown()` 之前调用。
  *
+ * @note 本函数是同步会合语义：请求经内部 op 队列交给 broker 线程，执行完成后
+ *       才返回。**没有等待上界**——等待时长取决于 broker 线程何时能处理，而
+ *       broker 线程可能正阻塞在某个 handler 中。因此 handler 阻塞或平台等待
+ *       原语持续失败时，本函数**永久阻塞**。
+ * @note 本函数可由多个线程并发调用；内部串行化到 broker 线程执行。
+ *
  * @warning 不得与 `ns_shutdown()` 并发调用。
  *
  * @param watcher 已初始化的 watcher。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码（如重复注册为 `NS_E_EXISTS`）。
  */
 extern int ns_broker_add(ns_watcher_t *watcher);
 
@@ -129,10 +133,12 @@ extern int ns_broker_add(ns_watcher_t *watcher);
  * 注销不会撤销已经开始的 dispatch；调用方仍需保证相关 `user_data`
  * 生命周期覆盖任何 in-flight 调用。
  *
+ * @note 与 `ns_broker_add()` 同为同步会合、无等待上界，同样可由多线程并发调用。
+ *
  * @warning 不得与 `ns_shutdown()` 并发调用。
  *
  * @param watcher 已注册的 watcher。
- * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ * @return `NS_OK` 表示成功；未注册时返回 `NS_E_INVAL`。
  */
 extern int ns_broker_remove(ns_watcher_t *watcher);
 

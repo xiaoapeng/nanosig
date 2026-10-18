@@ -1,6 +1,11 @@
 # 资源生命周期审计（P9.2）
 
 > nanosig v1 / 2026-06-20 审计快照
+>
+> **加注（2026-10-18，Iter 39）**：本快照中涉及 broker watcher 生命周期、`ns_broker_remove_all_watchers`、
+> `watcher_head` / `broker_node` / `watcher_mutex` 的结论已失效——这些结构与兜底清理路径均已删除
+> （`ns_shutdown` 不再兜底清理残留 watcher）。其余结论不变。详见 `docs/BROKER_DESIGN.md`
+> 与 `docs/plans/共识计划.md` 的 Iter 39。
 
 ## 摘要
 
@@ -152,7 +157,14 @@ destroy / deinit / remove / disconnect 对称性、失败路径清理、运行�
 
 OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_broker = broker`，与"发布前完整初始化"对齐，OK。
 
-### `ns_broker_global_shutdown()`（`src/ns_broker.c:344`）
+### `ns_broker_global_shutdown()`
+
+> **加注（2026-10-18，Iter 39）**：下述顺序描述的是本快照当时的实现。
+> 现实现已改为：置 `shutdown_started` + `quit_requested` → event_signal →
+> thread_join → 队列非空时记一条警告（不救援、不持锁）→ `ns_timer_mgr_global_shutdown`
+> → waitset_remove(event.waitable) → waitset_destroy → event_deinit → op_lock destroy
+> → `g_broker = NULL` → free broker。`ns_broker_remove_all_watchers` 已删除，
+> 库不再兜底清理残留 watcher。
 
 顺序：置 quit → wakeup_signal → thread_join → `g_broker = NULL` → `ns_timer_mgr_global_shutdown`
 → `ns_broker_remove_all_watchers`（清空 waitset）→ waitset_remove(wakeup_waitable) → waitset_destroy
@@ -200,13 +212,19 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
 
 ### 4. `ns_shutdown` 时 broker 销毁路径是否清理所有残留 watcher / timer？
 
+> **加注（2026-10-18，Iter 39）**：本节结论「watcher 残留清理完整」已失效。
+> 现实现**不兜底**：`ns_broker_remove_all_watchers` 已删除，残留 watcher 会使
+> `waitset_deinit` 返回 `NS_E_EXISTS` 并泄漏底层句柄。契约改为「调用方必须在
+> `ns_shutdown` 前 `ns_broker_remove` 全部 watcher」。残留 timer 的结论（不释放
+> signal mutex）未变。
+
 - **实现**：`ns_broker_global_shutdown`（`src/ns_broker.c:344`）：
   1. quit + join broker 线程
   2. `g_broker = NULL`
   3. `ns_timer_mgr_global_shutdown`（清空 rbtree，**不**调用 `ns_timer_deinit`——timer 句柄由调用方负责）
   4. `ns_broker_remove_all_watchers`（遍历清空 `watcher_head`，从 waitset 注销、`user_data = NULL`、broker_node 重新初始化）
   5. waitset 清理 / wakeup destroy / mutex destroy / free broker
-- **共识计划要求**（`docs/共识计划.md:122`）："shutdown 必须清理 waitset 中残留 watcher"——已实现（步骤 4）。
+- **共识计划要求**（`docs/plans/共识计划.md:122`）："shutdown 必须清理 waitset 中残留 watcher"——**已撤销**（Iter 39，见本节加注）。
 - **残留 timer**：`ns_timer_mgr_global_shutdown` 只清 rbtree 节点，不调 `ns_timer_deinit`。若调用方
   在 `ns_shutdown` 前未 `ns_timer_deinit`，则：
   - timer 内嵌的 `ns_signal_t` mutex 不会销毁（**泄漏**）；
@@ -361,8 +379,8 @@ OK。但**`g_broker` 发布顺序**——`ns_broker_global_init` 末尾才 `g_br
 - 失败路径清理：所有 create / init 的失败路径上，库不留堆内存（mutex / waitset / wakeup / thread 失败时按
   `out_*` 标签回滚）；
 - 重复 destroy 行为：deinit_raw 在 `mutex == NULL` 时返回 `NS_OK`（幂等）；
-- broker 关闭路径已实现 `ns_broker_remove_all_watchers` 兜底清理 waitset 中残留 watcher
-  （`docs/共识计划.md:122` 要求达成）；
+- ~~broker 关闭路径已实现 `ns_broker_remove_all_watchers` 兜底清理 waitset 中残留 watcher~~
+  **已撤销（Iter 39）**：库不再兜底，契约改为调用方在 shutdown 前 remove 全部 watcher；
 - 跨线程 quit 的原子保护：`running` 标志保证 destroy 不与 run 并发。
 
 **存在 6 项 Major 发现**，主要集中在：

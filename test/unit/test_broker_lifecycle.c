@@ -287,10 +287,16 @@ fail:
 }
 
 /* ------------------------------------------------------------------ */
-/*  Test: ns_shutdown removes any residual watcher                     */
+/*  Test: watcher deinit after shutdown with a residual watcher        */
+/*                                                                     */
+/*  调用方违反 teardown 契约（未 remove 就 shutdown）时的行为：库不再兜底   */
+/*  清理，waitset 因非空而 deinit 失败（记录 NS_E_EXISTS 与 fd 泄漏，      */
+/*  由 BROKER-011 处置跟踪）。本用例钉住两点：不崩溃，且 deinit 返回 OK    */
+/*  ——因为 broker 已销毁，watcher 无从属于任何 waitset。                   */
+/*  该路径**不受支持**，勿据此推断正常用法。                              */
 /* ------------------------------------------------------------------ */
 
-static int test_shutdown_removes_residual_watcher(void)
+static int test_watcher_deinit_after_shutdown(void)
 {
     ns_watcher_t watcher = {0};
     ns_platform_waitable_t raw;
@@ -303,6 +309,7 @@ static int test_shutdown_removes_residual_watcher(void)
     EXPECT_OK(ns_broker_add(&watcher) == NS_OK);
 
     EXPECT_OK(ns_shutdown() == NS_OK);
+    EXPECT_OK(ns_broker() == NULL);
     EXPECT_OK(ns_watcher_deinit(&watcher) == NS_OK);
     test_destroy_raw_waitable(raw);
     return 0;
@@ -486,7 +493,7 @@ int main(void)
     if(test_watcher_invalid_paths() != 0) return 1;
     if(test_broker_add_remove() != 0) return 1;
     if(test_watcher_event_reaches_loop() != 0) return 1;
-    if(test_shutdown_removes_residual_watcher() != 0) return 1;
+    if(test_watcher_deinit_after_shutdown() != 0) return 1;
     if(test_broker_remove_does_not_retract_enqueued() != 0) return 1;
     if(test_broker_error_continue() != 0) return 1;
     if(test_watcher_deinit_before_remove() != 0) return 1;

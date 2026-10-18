@@ -22,15 +22,12 @@ static void broker_contract_check_types(void)
     watcher.waitable.user_data = &watcher;
     watcher.waitable.primitive = (ns_waitable_handle_t)0;
 
-    ns_list_init(&watcher.broker_node);
     watcher.handler = broker_contract_handler;
 
     /* 结构断言（AC-8）：waitable 首字段，handler 为最后字段，无内嵌 signal。 */
     NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, waitable) == 0u,
                      "ns_watcher_t.waitable must be the first member");
-    NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, broker_node) > ns_offsetof(ns_watcher_t, waitable),
-                     "ns_watcher_t.broker_node must follow waitable");
-    NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, handler) > ns_offsetof(ns_watcher_t, broker_node),
+    NS_STATIC_ASSERT(ns_offsetof(ns_watcher_t, handler) > ns_offsetof(ns_watcher_t, waitable),
                      "ns_watcher_t.handler must be the last member");
 
     (void)broker;

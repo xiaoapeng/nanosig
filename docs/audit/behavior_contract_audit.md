@@ -138,7 +138,13 @@
 | 平台层新增 thread_create/join | P6 目标 | `test_platform_backend.c` 的 `test_thread` | 已覆盖 |
 | watcher 直接内嵌 waitable | P6 目标 | `ns_watcher_t` 结构体验证 | 已覆盖 |
 | broker 发布 g_broker 规则 | P6 目标 | `src/ns_broker.c` 中 `g_broker = broker` 在线程创建后执行 | **部分覆盖**（只覆盖正常路径，未测试创建失败） |
-| shutdown 清理残留 watcher | P6 目标 | `test_shutdown_removes_residual_watcher` | 已覆盖 |
+| shutdown 清理残留 watcher | P6 目标 | ~~`test_shutdown_removes_residual_watcher`~~ | **已撤销**（见文末加注） |
+
+> **加注（2026-10-18，Iter 39）**：本表「shutdown 清理残留 watcher」一行对应的契约已
+> 被撤销——`ns_shutdown` 不再兜底清理残留 watcher，改为要求调用方在 shutdown 前
+> `ns_broker_remove` 全部 watcher。用例已更名为 `test_watcher_deinit_after_shutdown`
+> （仍保留，改为验证违约路径不崩溃且 `ns_broker() == NULL`，路径不受支持）。
+> 本文件为审计快照，其余内容保持原样。
 
 ---
 
@@ -249,7 +255,7 @@
 | add 设置 user_data = watcher | 代码验证 | 已覆盖 |
 | broker 线程错误 continue | `test_broker_error_continue`（P11 Phase 1） | 已覆盖 |
 | 失败路径不得发布 g_broker | `src/ns_broker.c` 代码中 g_broker 在成功后赋值 | 已覆盖 |
-| shutdown 清理残留 watcher | `test_shutdown_removes_residual_watcher` | 已覆盖 |
+| shutdown 清理残留 watcher | ~~`test_shutdown_removes_residual_watcher`~~ | **已撤销**（见本文件加注） |
 
 ### v1 safety 策略
 
@@ -328,8 +334,11 @@
 - **证据**: `test_signal.c` 中 `test_disconnect_does_not_retract_enqueued`：emit → disconnect → run loop → 验证 slot 仍被调（`g_disconnect_does_not_retract == 1`）。
 
 ### "shutdown 清理 waitset 残留 watcher"
-- **状态**: 已覆盖
-- **证据**: `test_broker.c` 中 `test_shutdown_removes_residual_watcher` 验证 watcher 在 shutdown 后可能正常 deinit
+- **状态**: **已撤销**（2026-10-18，Iter 39）
+- **说明**: `ns_shutdown` 不再兜底清理残留 watcher；改为调用方必须在 shutdown 前
+  `ns_broker_remove` 全部 watcher，库不兜底。原证据用例更名为
+  `test_watcher_deinit_after_shutdown`（验证违约路径不崩溃），见 `src/ns_broker.c`
+  的 `ns_broker_global_shutdown`。
 
 ### "broker 线程错误 continue 不退出"
 - **状态**: **已覆盖**（P11 Phase 1 关闭）。
