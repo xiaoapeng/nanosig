@@ -293,6 +293,12 @@ static int test_snprintf_truncation(void)
     EXPECT_EQ(buf[0], 'X');  /* 缓冲未被改写 */
     EXPECT_EQ(buf[1], 'X');
 
+    /* size=0 且 buf == NULL（C99 探测长度用法）：只计数不写任何字节 */
+    n = ns_snprintf(NULL, 0, "hello %d", 42);
+    EXPECT_EQ(n, 8);
+    n = ns_snprintf(NULL, 0, "%f", 1.5);
+    EXPECT_EQ(n, 8);  /* "1.500000" */
+
     /* size=1：只写 NUL，返回值 = 应写全长 */
     memset(buf, 'X', sizeof(buf));
     n = ns_snprintf(buf, 1, "hello");
@@ -525,6 +531,12 @@ static int test_stream_memory(void)
     ns_stream_finish((struct ns_stream_base *)&s);
     EXPECT_EQ(strcmp((char *)mbuf, "ab7yz!"), 0);
 
+    /* size=0 且 buf == NULL:同 ns_snprintf(NULL,0,...) 的探测用法,只计数不写 */
+    ns_stream_memory_init(&s, NULL, 0);
+    n = ns_stream_printf((struct ns_stream_base *)&s, "ab%d", 7);
+    EXPECT_EQ(n, 3);
+    ns_stream_finish((struct ns_stream_base *)&s);
+
     return 0;
 }
 
@@ -643,6 +655,15 @@ static const struct dbl_case g_float_precision_cases[] = {
     { "%.2f", 0.999, "1.00" },
     { "%.6f", 0.9999999, "1.000000" },
     { "%.25f", 1.0, "1.0000000000000000000000000" },  /* 精度≥19 钳制 + 补零 */
+    /* FORMATIO-022: tie 分支进位后小数位数不得超过精度（修复前 "1.0"/"1.00"/"2.0" 输出成 "0.10"/"0.100"/"1.10"）。
+     * 0.95/1.95 与 libc 的 "0.9"/"1.9" 不同：按 10^precision 缩放后恰好落在半途，
+     * 尾位为奇 → 银行家舍入进位到整数（libc 用精确二进制值，低于半途）。 */
+    { "%.1f", 0.95, "1.0" },
+    { "%.2f", 0.995, "1.00" },
+    { "%.3f", 0.9995, "1.000" },
+    { "%.1f", 1.95, "2.0" },
+    { "%.1f", 2.65, "2.6" },      /* 尾位偶 → 不进位，与 libc 一致 */
+    { "%.1f", 1.05, "1.1" },      /* 非半途，走 remainder > 0.5 分支 */
 };
 
 static int test_float_precision(void)
@@ -689,9 +710,15 @@ static const struct dbl_case g_float_exp_cases[] = {
     { "%e", 1e19, "10.000000e+18" },
     /* 精度 ≥ 幂表大小（19）：float_normalized_decentralized 内钳制到 18 + 补零 */
     { "%.19e", 12345.678, "1.2345678000000000000e+04" },
-    /* 舍入恰在半途：scaled_remainder == 0.5 → 银行家舍入清零奇位（偶数化） */
+    /* 舍入恰在半途(scaled_remainder == 0.5):银行家舍入取偶。
+     * 精度 0 时目标位在整数部分,精度 ≥ 1 时在小数位(与 %.0f 语义一致)。 */
+    { "%.0e", 1.5, "2e+00" },
     { "%.0e", 2.5, "2e+00" },
-    { "%.0e", 3.5, "3e+00" },
+    { "%.0e", 3.5, "4e+00" },
+    { "%.0e", 5.5, "6e+00" },
+    { "%.0e", 7.5, "8e+00" },
+    { "%.1e", 1.25, "1.2e+00" },   /* 小数位为偶 → 不进位 */
+    { "%.1e", 1.35, "1.4e+00" },   /* 小数位为奇 → 进位 */
 };
 
 static int test_float_exp(void)

@@ -619,6 +619,62 @@ static int test_node_key_refresh_renew(void)
 }
 
 /* 错误路径：同一节点二次 insert → NS_E_EXISTS；不同节点相同键允许共存 */
+/* key_refresh 的目标桶处于"待重建"状态（table[idx].next == NULL）时必须先 try_remake：
+   否则 push_front 会沿 NULL 链接写内存 */
+static int test_node_key_refresh_need_remake_bucket(void)
+{
+    ns_hashtbl_t tbl;
+    struct ns_hashtbl *h;
+    struct ns_hashtbl_node *nodes[48];
+    struct ns_hashtbl_node *victim = NULL;
+    struct ns_hashtbl_node *out = NULL;
+    struct ns_hashtbl_node *node_pos, *node_tmp_n;
+    unsigned int tmp_uint_i;
+    uint32_t victim_key = 0u;
+    unsigned int i, j, n = 0u;
+    int count;
+
+    tbl = ns_hashtbl_create(NS_HASHTBL_DEFAULT_LOADFACTOR);
+    if(tbl == NULL) return 1;
+    h = (struct ns_hashtbl *)tbl;
+
+    /* 插到出现"已入表、但目标桶仍待重建"的节点为止 */
+    for(i = 0u; i < 48u; i++){
+        nodes[i] = ns_hashtbl_node_new_refresh(tbl, &i, 4, 4);
+        if(nodes[i] == NULL) return 1;
+        if(expect_true(ns_hashtbl_insert(tbl, nodes[i]) == NS_OK) != 0) return 1;
+        n = i + 1u;
+
+        for(j = 0u; j < n; j++){
+            if(ns_hash_table_node_is_need_remake(h, nodes[j]->hash_val & h->mask)){
+                victim = nodes[j];
+                victim_key = j;
+                break;
+            }
+        }
+        if(victim != NULL) break;
+    }
+    if(expect_true(victim != NULL) != 0) return 1;  /* 前提未构造出来，用例本身失败 */
+
+    /* 键未变，refresh 仍要能安全重入桶 */
+    ns_hashtbl_node_key_refresh(tbl, victim);
+
+    out = NULL;
+    if(expect_true(ns_hashtbl_find(tbl, &victim_key, 4, &out) == NS_OK) != 0) return 1;
+    if(expect_true(out == victim) != 0) return 1;
+
+    /* 表结构自洽：节点数不变，全表遍历不重不漏 */
+    if(expect_true(h->count == n) != 0) return 1;
+    count = 0;
+    ns_hashtbl_for_each_safe(tbl, node_pos, node_tmp_n, tmp_uint_i){
+        count++;
+    }
+    if(expect_true(count == (int)n) != 0) return 1;
+
+    ns_hashtbl_destroy(tbl);
+    return 0;
+}
+
 static int test_error_path_exists(void)
 {
     ns_hashtbl_t tbl;
@@ -736,6 +792,7 @@ int main(void)
     if(test_for_each_with_string_safe() != 0) return 1;
     if(test_for_each_with_key_safe() != 0) return 1;
     if(test_node_key_refresh_renew() != 0) return 1;
+    if(test_node_key_refresh_need_remake_bucket() != 0) return 1;
     if(test_error_path_exists() != 0) return 1;
     if(test_find_with_string_null_out() != 0) return 1;
     if(test_destroy_cleanup() != 0) return 1;

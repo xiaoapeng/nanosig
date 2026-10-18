@@ -33,17 +33,41 @@
 /* 宿主后端 ABI 探针符号；FreeRTOS 后端导出对称的 ns_platform_abi_freertos。 */
 const int ns_platform_abi_host = 0;
 
-static int ns_linux_wakeup_drain(ns_platform_wakeup_t *wakeup)
+/* EBADF 告警去重：热重试路径下每轮 drain 都会失败 */
+static int ns_linux_warned_closed_eventfd = 0;
+
+/* 读空 eventfd 计数。非可恢复错误的处置分两层：
+   ① 先把可读计数消费掉——否则调用方重试时 poll 会因计数器仍为正而立即返回
+      POLLIN，形成零等待热自旋；
+   ② EBADF 是例外：poll 对已关闭 fd 直接返回 POLLNVAL，清计数无法消除自旋，
+      只告警一次，由调用方决定是否终止重试。 */
+static int ns_linux_eventfd_drain(int fd)
 {
     uint64_t value;
+    int saved_errno;
 
     for(;;){
-        ssize_t rc = read((*wakeup), &value, sizeof(value));
+        ssize_t rc = read(fd, &value, sizeof(value));
         if(rc == (ssize_t)sizeof(value)) continue;
         if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
         if((rc < 0) && (errno == EINTR)) continue;
+
+        saved_errno = errno;
+        while(read(fd, &value, sizeof(value)) == (ssize_t)sizeof(value)){
+        }
+        if((saved_errno == EBADF) && !ns_linux_warned_closed_eventfd){
+            ns_linux_warned_closed_eventfd = 1;
+            ns_mwarnln(PLATFORM,
+                "drain: eventfd closed (EBADF); poll keeps returning POLLNVAL, caller must not retry hot");
+        }
+        errno = saved_errno;
         return NS_E_INVAL;
     }
+}
+
+static int ns_linux_wakeup_drain(ns_platform_wakeup_t *wakeup)
+{
+    return ns_linux_eventfd_drain((*wakeup));
 }
 
 int ns_platform_init(void)
@@ -169,15 +193,7 @@ int ns_platform_wakeup_wait(
 
 static int ns_linux_event_drain(ns_platform_event_t *event)
 {
-    uint64_t value;
-
-    for(;;){
-        ssize_t rc = read(event->waitable.primitive, &value, sizeof(value));
-        if(rc == (ssize_t)sizeof(value)) continue;
-        if((rc < 0) && ((errno == EAGAIN) || (errno == EWOULDBLOCK))) return NS_OK;
-        if((rc < 0) && (errno == EINTR)) continue;
-        return NS_E_INVAL;
-    }
+    return ns_linux_eventfd_drain(event->waitable.primitive);
 }
 
 int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
@@ -530,7 +546,10 @@ int ns_platform_waitset_wait(
 
             /* timerfd sentinel → 不报告 completion */
             if(wp == NS_WAITSET_TIMER_SENTINEL){
-                if(timer_armed) return NS_OK; /* 有限超时 → 到期 */
+                /* 有限超时到期。不能就此返回：同一次 epoll_wait 里排在后面的 fd
+                   也已就绪，边沿触发的边沿已被本次调用消费，丢弃即永久丢失。
+                   继续循环，末尾统一返回 NS_OK。 */
+                if(timer_armed) continue;
                 /* 非 armed 路径（INFINITE/0）：残余 readiness，drain timerfd */
                 {
                     uint64_t dummy;

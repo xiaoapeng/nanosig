@@ -73,7 +73,314 @@
 
 ## 现在打开的问题
 
-（无）
+### HASHTBL-104: `ns_hashtbl_node_key_refresh` 在目标桶处于"待重建"状态时空指针解引用
+
+- **状态**: 打开
+- **严重度**: 🔴 关键
+- **类型**: bug
+
+#### 问题描述
+`ns_hashtbl_node_key_refresh` 重算哈希后直接 `ns_list_push_front(hashtbl->table + idx, &node->node)`，
+完全依赖 `hashtbl->table[idx]` 已经是一张已初始化的链表头。但渐进式重建（`ns_hashtbl_try_remake`）
+用"`table[idx].next == NULL`"表示该桶的旧数据尚未迁移（见头文件 `ns_hash_table_node_is_need_remake`）。
+`ns_hashtbl_resize` 只把旧表前一半拼接过来，新表后一半保持 NULL（`memset(new_table + old_size, 0, ...)`）。
+因此任何一次扩容之后，后一半桶在被打散前都是 NULL 链表头；此时若改键后的节点哈希落在这些桶里，
+`ns_list_push_front` 会对 `head->next`（NULL）写入，立即崩溃。
+
+`ns_hashtbl_find` / `ns_hashtbl_insert` / `_ns_hashtbl_find_list_head` 都会先调用 `ns_hashtbl_try_remake`
+把目标桶打散，所以只有 `ns_hashtbl_node_key_refresh` 漏了这一层保护。
+
+#### review 建议
+在 `ns_hashtbl_node_key_refresh` 里对目标桶先做一次打散，与 insert/find 的处理对齐：
+
+```c
+idx = node->hash_val & hashtbl->mask;
+ns_list_remove(&node->node);           /* 先摘链，避免重建扫描到本节点 */
+ns_hashtbl_try_remake(hashtbl, idx);   /* 目标桶可能仍是待重建状态 */
+ns_list_push_front(hashtbl->table + idx, &node->node);
+```
+
+建议先摘链再打散，理由：`ns_hashtbl_try_remake(idx)` 会扫描源桶链表并就地搬迁节点，
+把本节点留在链上会让它参与这次扫描。`ns_hashtbl_try_remake` 内部已处理
+"目标桶正在被重建/已初始化为空"的两个分支，可直接复用，无需另写一套逻辑。
+同时建议在头文件 `ns_hashtbl_node_key_refresh` 的 Doxygen 中补一句目标桶约束或修复说明。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+表自带 16 个桶（threshold = 12），插入 12 个节点触发第一次扩容，mask 变为 31，桶 16..31 处于待重建状态：
+
+1. `ns_hashtbl_create(0.75f)`，`ns_hashtbl_node_new_with_string_refresh` + `ns_hashtbl_insert` 插入 12 个键；
+2. 取一个键，其 `ns_hash_string(key) & 31 >= 16`（例如 `r000000000` → 桶 31）；
+3. `memcpy(ns_hashtbl_node_key(n0), key, 10)` 原地改键（头文件要求改键后必须调用 key_refresh）；
+4. `ns_hashtbl_node_key_refresh(tbl, n0)`。
+
+实测（clang -fsanitize=address，macOS arm64）：
+
+```
+AddressSanitizer:DEADLYSIGNAL
+SEGV on unknown address 0x000000000008 (WRITE)
+#0 ns_list_insert_between nanosig_list.h:77
+#1 ns_list_push_front     nanosig_list.h:91
+#2 ns_hashtbl_node_key_refresh ns_hashtbl.c:238
+```
+
+触发条件是"节点已经在表上 + 新哈希落在待重建桶"，而不是"调用顺序违反文档"：
+头文件 nanosig_hashtbl.h:161 明确要求"获取节点键；修改键后必须调用 ns_hashtbl_node_key_refresh"，
+该文档化路径本身就会崩。（未插入表的新节点调用 key_refresh 时不崩，因为 is_insert 为假、提前返回。）
+
+#### 定位
+src/ds/ns_hashtbl.c:229
+src/ds/ns_hashtbl.c:234
+src/ds/ns_hashtbl.c:235
+src/ds/ns_hashtbl.c:238
+src/ds/ns_hashtbl.c:83
+src/ds/ns_hashtbl.c:269
+src/ds/ns_hashtbl.c:318
+include/nanosig/nanosig_hashtbl.h:66
+include/nanosig/nanosig_hashtbl.h:161
+
+---
+
+### HASHTBL-105: 遍历期间发生渐进式重建会破坏遍历——只读查找即可导致节点重复访问、扩容可致 use-after-free
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+`ns_hashtbl_for_each_safe` / `ns_hashtbl_for_each_with_string_safe` / `ns_hashtbl_for_each_with_key_safe`
+沿桶数组自增 `i` 遍历，并假定"某个桶的链表在本轮里不会被搬走"。但 `ns_hashtbl_find`、
+`ns_hashtbl_insert`、以及 `_ns_hashtbl_find_list_head[_with_string]`（后两个遍历宏入口自己调用）
+都会调用 `ns_hashtbl_try_remake`，把某个待重建桶的节点搬进 `hash & mask` 对应的桶——可能正是
+遍历**已经走过**的桶（表现为重复访问），也可能是**将要走过**的桶（表现为同一节点在更靠后的桶里
+再被访问一次）。两种可观测后果：
+
+1. 重复访问：被搬迁的节点物理位置改变，遍历计数大于 `count`，依赖遍历做资源回收、统计或去重的
+   调用方会重复处理同一节点（实测重复 1~2 个节点，见下方失败场景 1；120 组随机 churn 中 27 组复现，
+   各出现 1~2 次重复访问、0 次漏访）。
+2. use-after-free：遍历中若发生扩容（`ns_hashtbl_insert` 触发 `ns_hashtbl_resize`），旧表数组被
+   `ns_platform_free` 释放，而遍历的桶指针/链表指针仍指向已释放内存。
+
+三个遍历宏名字里的 `_safe` 沿用了底层 `ns_list_for_each_entry_safe` 的"可移除当前节点"语义，
+但头文件对三个宏只写了 @brief 和"表达式式静态断言做编译期类型检查"的 @note，既没有定义 `_safe`
+在这里的准确含义，也没有文档化"遍历期间禁止调用任何会触发重建/扩容的接口"这一前置条件
+（docs/review/AGENTS.md §4.4 要求该前提必须写在公共头文件中才构成合同前提保护）。
+
+#### review 建议
+三条路，按代价从低到高：
+
+1. 文档化：在三个遍历宏的 Doxygen 中明确写出"遍历期间禁止调用任何会触发重建或扩容的接口
+   （含 `ns_hashtbl_find` / `ns_hashtbl_insert`），否则节点可能被重复访问或产生悬垂指针"，
+   并支持"只读查找"是否也禁止（当前实现下**只读查找同样不安全**，必须写清楚）。
+2. 让重建不改变已访问桶：在 `ns_hashtbl_try_remake` 中改为移动前先检查目标桶序号与遍历游标的关系，
+   或把"已重建"标记与桶序号解耦（例如用独立的位图代替 `next == NULL` 哨兵），使搬迁目标只可能是
+   尚未访问的桶。
+3. 提供快照式遍历接口（内部记录 pending 位图并在遍历开始时冻结重建），代价最高。
+
+若选择第 1 条，建议同时把宏名从 `_safe` 收敛为语义更准确的名字，或在头文件中显式定义 `_safe` 的确切含义。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+失败场景 1（只读查找导致重复访问，4000 节点表）：
+
+1. 插入 4000 个字符串键，触发扩容至 mask = 8191；
+2. 取一个哈希落在待重建桶的探针键（如 `probe0000000`，目标桶 4859，其源桶为 763）；
+3. 用 `ns_hashtbl_for_each_safe` 遍历，在遍历到第 2189 个节点时（此时遍历位置在桶 2811，
+   位于源桶 763 与目标桶 4859 之间）调用一次 `ns_hashtbl_find(t, probe, ...)`（**只读**）；
+4. 遍历结束后统计。
+
+实测：
+
+```
+mask=8191 probe_bucket=4859 source=763 trigger_bucket=2811 trigger_node=2189
+FIND triggered at bucket 2813
+node key=key00002735 hash&mask=4347 hash&(mask/2)=251 : first at bucket 251, again at bucket 4347
+walked=4001 count=4000        <- 多访问了 1 个节点
+```
+
+被搬运的节点是 `key00002735`（`hash & 8191 = 4347`，源桶 251）：它在桶 251 被访问一次，
+随后遍历到桶 4347 时被再次访问。该搬迁由只读的 `ns_hashtbl_find` 触发——find 内部调用
+`ns_hashtbl_try_remake`，后者就地搬迁源桶节点，无需任何写操作。
+
+随机化复现（1500 节点/组，遍历中在源桶与目标桶均已走过的位置触发一次 `ns_hashtbl_find`）：
+
+```
+runs=120 total missed=0 total dup=27 worst missed=0 worst dup=2
+```
+
+即 120 组里 27 组出现"遍历访问次数 > count"，每次多访问 1~2 个节点。搬迁方向恒为
+低序号桶 → 高序号桶（`old_idx = idx & mask_tmp` 不大于 `idx`），所以已访问桶里的节点只会被
+搬到更靠后的桶，表现为重复访问而非漏访。
+
+失败场景 2（遍历中插入导致 use-after-free）：
+
+1. 表内 11 个节点（mask = 15，threshold = 12）；
+2. `ns_hashtbl_for_each_safe` 遍历到第 3 个节点时执行一次 `ns_hashtbl_insert`；
+3. 该 insert 触发 16 → 32 扩容。
+
+实测（clang -fsanitize=address）：
+
+```
+AddressSanitizer: heap-use-after-free on address ...
+freed by thread T0 here:
+    #2 ns_hashtbl_resize ns_hashtbl.c:96
+    #3 ns_hashtbl_insert ns_hashtbl.c:262
+READ of size 8 ... (遍历宏展开处)
+```
+
+同一路径下已确认崩溃（exit 134）。失败的正是"边遍历边收敛/边遍历边补插"这类实际用法。
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:255
+include/nanosig/nanosig_hashtbl.h:274
+include/nanosig/nanosig_hashtbl.h:293
+src/ds/ns_hashtbl.c:96
+src/ds/ns_hashtbl.c:103
+src/ds/ns_hashtbl.c:109
+src/ds/ns_hashtbl.c:119
+src/ds/ns_hashtbl.c:123
+src/ds/ns_hashtbl.c:127
+src/ds/ns_hashtbl.c:261
+src/ds/ns_hashtbl.c:269
+src/ds/ns_hashtbl.c:293
+src/ds/ns_hashtbl.c:305
+src/ds/ns_hashtbl.c:318
+
+---
+
+### HASHTBL-106: 公共头文件导出 `_ns_hashtbl_find_list_head*`，占用保留标识符命名空间
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`include/nanosig/nanosig_hashtbl.h:60` 与 `:62` 声明了两个下划线开头的函数
+`_ns_hashtbl_find_list_head` / `_ns_hashtbl_find_list_head_with_string`。C11 7.1.3 规定
+"所有以下划线开头的标识符在文件作用域内保留供实现使用"，把这类名字放进公开头文件会与
+工具链/运行时内部符号存在理论上的冲突面；同时它们被遍历宏直接调用，属于事实上的公共 API，
+却以"内部符号"的命名风格出现，使用者无法判断可用性。项目中 `ns_formatio.h:59` 的 `_ns_stdout`
+属同类模式，属既定风格，故仅记为 cleanup。
+
+#### review 建议
+二选一：
+1. 改名为 `ns_hashtbl_find_list_head` / `ns_hashtbl_find_list_head_with_string`，与
+   `ns_hashtbl_*` 公共命名空间对齐（调用点仅在遍历宏内部，改动面很小）；
+2. 若坚持保留下划线前缀，则在头文件中补 `@note 内部接口，仅供应宏使用，不保证稳定` 说明。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+无功能影响。可用于验证命名问题的检查：`grep -rn "^extern .*_[a-z]" include/nanosig/` 会同时列出
+本文件与 `ns_formatio.h` 的同类符号，说明该模式在公开头文件中重复出现，而非孤例。
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:60
+include/nanosig/nanosig_hashtbl.h:62
+
+---
+
+### HASHTBL-107: 头文件 include 注释仍写 `strncmp`，与 HASHTBL-101 修复后的宏实现不符
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+`include/nanosig/nanosig_hashtbl.h:22` 的 IWYU 说明为
+`#include <string.h>   /* 遍历宏调用点展开需要的 strncmp/memcmp */`，但 HASHTBL-101 修复后
+遍历宏的过滤条件已改为 `ns_hashtbl_node_key_len(node) == strlen(string) && memcmp(...)`，
+`strncmp` 在本文件与 `src/ds/ns_hashtbl.c` 中已无任何调用点。真正需要的 `<string.h>` 符号是
+`strlen` / `memcmp`（以及 `.c` 里的 `memcpy`）。这条注释会让后续做 IWYU 清理的人误判依赖来源。
+
+#### review 建议
+把注释改为 `/* 遍历宏调用点展开需要的 strlen/memcmp */`。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+无功能影响。验证方式：`grep -rn "strncmp" include/nanosig/nanosig_hashtbl.h src/ds/ns_hashtbl.c`
+只命中这条注释本身，无任何调用点。
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:22
+
+---
+
+### HASHTBL-108: 扩容守卫 `mask != UINT32_MAX` 比真正的溢出点晚一次倍增
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`ns_hashtbl_insert` 用 `hashtbl->mask != UINT32_MAX` 作为扩容的最后闸门，但 `ns_hashtbl_resize`
+里的增长算式在**更早一次倍增**就已经溢出：`unsigned int new_mask = (hashtbl->mask << 1) + 1;`
+当 `mask == 0x7FFFFFFF`（2^31−1，正常的 2 的次幂减一序列中的一项）时，
+`new_mask` 为 `0xFFFFFFFF`，随后按 `unsigned int` 计算的 `(new_mask + 1)` 回绕成 0，
+于是 `ns_platform_alloc(0)` 返回非 NULL，而紧跟其后的
+`memset(new_table + old_size, 0, sizeof(struct ns_list_node) * old_size)` 却要写 2^30 * 16 = 34 GB，
+落到分配块之外——实测 ASAN 报 heap-buffer-overflow（写 34359738368 字节）。
+
+同一处还有 `hashtbl->threshold <<= 1`，threshold 为 2^31 时会回绕为 0。
+
+可达性说明：要走公开 API 到这里，表必须先真实增长到 2^31 个桶（约 34 GB 表内存），
+现实中不可达；另一条路径是调用方直接写 `struct ns_hashtbl` 的公开字段（结构体在头文件里是
+完整定义，`ns_hashtbl_create` 返回的正是它的指针），此时守卫判断为"可以继续扩容"。
+因此这条是守卫边界算错（少算一次倍增）的加固问题，不是现实可达的崩溃，故记 🟢。
+
+与已关闭的 HASHTBL-103（threshold==0 导致每次 insert 都 resize）根因和位置都不同：
+那条是 `threshold` 下限，本条是 `new_mask + 1` 的 `unsigned int` 回绕与守卫阈值不匹配。
+
+#### review 建议
+把守卫收敛到"下一次倍增不会回绕"，即在 `ns_hashtbl_resize` 入口（或 insert 的调用点）判断：
+
+```c
+if(hashtbl->mask >= (UINT32_MAX >> 1))   /* 不能再翻倍 */
+    return NS_E_NOMEM;                   /* 或定义专门的"表已到上限"返回码 */
+```
+
+并把 `new_table = ... sizeof(struct ns_list_node) * ((size_t)new_mask + 1)` 里的 `+1` 放到
+`size_t` 一侧计算，避免 `new_mask + 1` 在 `unsigned int` 下先回绕。`threshold` 的倍增同样建议加
+上限检查。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+ns_hashtbl_t t = ns_hashtbl_create(0.75f);
+struct ns_hashtbl *h = (struct ns_hashtbl *)t;
+h->mask = 0x7FFFFFFFu;   /* 结构体公开，等价于"表已长到 2^31 桶" */
+h->threshold = 1u;       /* 逼出扩容分支 */
+ns_hashtbl_insert(t, ns_hashtbl_node_new_refresh(t, "k", 1, 4));
+```
+
+实测（clang -fsanitize=address，macOS arm64）：
+
+```
+state: mask=0x7fffffff threshold=1  (guard mask != UINT32_MAX passes: 1)
+AddressSanitizer: heap-buffer-overflow on address ...
+WRITE of size 34359738368 ... __asan_memset
+#1 ns_hashtbl_insert ns_hashtbl.c:262
+```
+
+纯算术核对（无需建表）：
+`mask=0x7fffffff → new_mask=0xffffffff → (unsigned)(new_mask+1)=0 → alloc(0) 成功`，
+而 `sizeof(struct ns_list_node)*old_size = 34359738368`。
+
+#### 定位
+src/ds/ns_hashtbl.c:73
+src/ds/ns_hashtbl.c:78
+src/ds/ns_hashtbl.c:83
+src/ds/ns_hashtbl.c:99
+src/ds/ns_hashtbl.c:261
 
 ---
 

@@ -32,10 +32,6 @@
 #include <nanosig/nanosig_status.h>
 #include <nanosig/nanosig_types.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ================================================================== */
 /*  平台后端头前置声明                                                   */
 /* ================================================================== */
@@ -64,8 +60,15 @@ struct ns_platform_waitable;
  * - `NS_PLATFORM_ABI_PROBE`（跨 TU 平台错配的链接期探针）；
  * - `ns_platform_wakeup_t` / `ns_platform_mutex_t` / `ns_platform_thread_t`
  *   / `ns_platform_waitset_t`，全部为平台内核原语的透明别名。
+ *
+ * 本 include 有意置于 `extern "C"` 之前：Windows 后端头直接包含 `<windows.h>`，
+ * 若被 C 链接包围会把 Win32 的 C++ 声明（重载/模板）一并带入 C 链接。
  */
 #include NANOSIG_PLATFORM_HEADER
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* ================================================================== */
 /*  可等待事件位                                                         */

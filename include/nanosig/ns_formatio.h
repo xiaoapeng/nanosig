@@ -29,6 +29,7 @@ enum ns_stream_type {
     NS_STREAM_TYPE_FUNCTION,
     NS_STREAM_TYPE_FUNCTION_NO_CACHE,
     NS_STREAM_TYPE_MEMORY,
+    NS_STREAM_TYPE_MEMORY_UNBOUNDED,  /* 无界内存流（ns_sprintf）：不做上界检查 */
 };
 
 struct ns_stream_base {
@@ -112,7 +113,7 @@ static inline void ns_stream_memory_init(
     stream->base.type = NS_STREAM_TYPE_MEMORY;
     stream->buf = buf;
     stream->pos = buf;
-    stream->end = buf + size;
+    stream->end = size ? buf + size : buf;  /* size==0 不做空指针加法 */
 }
 
 #ifdef __cplusplus

@@ -150,6 +150,113 @@ src/ds/ns_ringbuf.c:128
 
 ---
 
+### RINGBUF-025: `draft_write` 在"缓冲区已满"与"offset == 空闲空间"时返回 `NS_E_RANGE`，与头文件承诺的 `0` / "超过空闲空间" 语义不符
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+头文件 `nanosig_ringbuf.h:115` 的 `@return` 明确承诺"参数错误或**无空间返回 0**；offset 越界返回 `NS_E_RANGE`"，
+`@param offset`（`nanosig_ringbuf.h:112`）把越界定义为"**超过**当前空闲空间"。
+代码 `src/ds/ns_ringbuf.c:122` 只有一条判断 `if(offset >= free_size) return (int32_t)NS_E_RANGE;`，因此出现两处与文档相反的返回：
+
+1. **缓冲区已满**（`free_size == 0`）时，即使 `offset == 0` 完全没有越界，也返回 `NS_E_RANGE`，
+   而不是文档承诺的 `0`（"无空间"）。对照 `ns_ringbuf_write` 在满缓冲时返回 0（`src/ds/ns_ringbuf.c:90-91`），同一语义下两个函数返回值不一致。
+2. `offset == free_size`（**等于**空闲空间，并未"超过"）也返回 `NS_E_RANGE`。
+
+调用方按 `@return` 的承诺用 `rc == 0` 表示"无空间可写"时，会把满缓冲当成硬错误；也无法区分"offset 非法"与"无空间"两种情形。
+另注：`NS_E_RANGE` 这一分支在 `test/unit/test_ds_ringbuf.c` 中**零覆盖**（该文件只断言过 `NS_E_INVAL`）。
+
+#### review 建议
+两种改法都只需一处改动，任选其一（建议 a）：
+1. **保持 API 语义**，把"无空间"从越界分支中拆出：
+   `if(free_size == 0u) return 0;` 放在 `if(offset >= free_size) return NS_E_RANGE;` 之前；
+   同时把 `@param offset` 的文案由"超过当前空闲空间"改为"`offset ≥ 当前空闲空间`"，让相等边界也落在文档范围内。
+2. **保持代码行为**，改文档：删掉 `@return` 中的"或无空间返回 0"，写明"`free_size == 0` 或 `offset ≥ free_size` 均返回 `NS_E_RANGE`"。
+
+无论选哪种，都建议在 `test_ds_ringbuf.c` 补三条断言：满缓冲 `draft_write(offset=0)`、`offset == free_size`、`offset > free_size`。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+uint8_t store[5];
+uint8_t sink[8];
+uint8_t data[3] = {1, 2, 3};
+ns_ringbuf_t rb;
+
+ns_ringbuf_init(&rb, store, 5);
+ns_ringbuf_write(&rb, (const uint8_t *)"ABCDE", 5);   /* 填满：free_size == 0 */
+ns_ringbuf_draft_write(&rb, 0, data, 3);
+/* 期望（按 @return"无空间返回 0"）：0
+   实际（实测）：NS_E_RANGE(-12) */
+
+ns_ringbuf_read(&rb, sink, 1);                        /* free_size == 1 */
+ns_ringbuf_draft_write(&rb, 1, data, 3);
+/* 期望（按 @param"超过空闲空间"才越界）：0
+   实际（实测）：NS_E_RANGE(-12) */
+```
+
+#### 定位
+src/ds/ns_ringbuf.c:122
+include/nanosig/nanosig_ringbuf.h:112
+include/nanosig/nanosig_ringbuf.h:115
+
+---
+
+### RINGBUF-026: `ns_ringbuf_init` 的 size 上限拒绝路径（`NS_E_PARAM`）无测试，而它是镜像法溢出安全论证的唯一防线
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: test
+
+#### 问题描述
+`src/ds/ns_ringbuf.c:35` 的 `if(size > (UINT32_MAX / 3u)) return NS_E_PARAM;` 是 RINGBUF-002/003（🔴 关键，`w + wl` / `r + offset` 中间加法溢出）修复的**全部**依据。
+`src/ds/ns_ringbuf.c:24` 的 `_Static_assert((UINT32_MAX / 3u) <= (uint32_t)INT32_MAX, ...)` 不能替代它：
+`UINT32_MAX / 2` 同样满足该断言（实测 `2147483647 <= 2147483647`），断言只锁住"size 族返回值转 `int32_t` 不截断"这条不变量，不锁 size 上界。
+
+`test/unit/test_ds_ringbuf.c:92-94` 的 `test_invalid_inputs` 只覆盖 `NS_E_INVAL` 三个分支（`ringbuf == NULL` / `buf == NULL` / `size == 0`），
+**`NS_E_PARAM` 分支零覆盖**：守卫若被误删或被放宽，现有全部测试仍然通过，而超限 ringbuf 的镜像指针会回绕（见失败场景）。
+
+与 RINGBUF-002/003 的区别（避免与历史条目重复）：那两条的根因是"溢出本身"，修复方向是改上限算术；
+本条的根因是"拒绝路径无回归测试"，修复方向是补用例，属于 RINGBUF-024 同类的覆盖缺口。
+
+#### review 建议
+在 `test_invalid_inputs`（`test/unit/test_ds_ringbuf.c:84-104`）中补三条断言（`init` 只保存指针，不触碰后端内存，因此不需要真的分配 1.43 GiB）：
+```c
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u) == NS_OK) != 0) return 1;
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u + 1u) == NS_E_PARAM) != 0) return 1;
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX) == NS_E_PARAM) != 0) return 1;
+```
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+/* 场景：上界守卫被删掉或放宽为 UINT32_MAX/2（该值仍能通过 ns_ringbuf.c:24 的 _Static_assert）。
+   此时镜像空间 2*size == UINT32_MAX - 1，w 贴近 2*size 时写指针加法在 uint32_t 中回绕： */
+ns_ringbuf_t rb;
+uint8_t store[5];
+ns_ringbuf_init(&rb, store, 5);
+rb.size = UINT32_MAX / 2u;             /* 模拟被放行的超限 size */
+rb.w    = (UINT32_MAX / 2u) * 2u - 5u; /* 4294967289 */
+rb.r    = rb.w - 5u;                   /* 5 字节可读 */
+
+ns_ringbuf_write_skip(&rb, 8u);
+/* 实测：返回 8；rb.w 回绕为 1（w < r），ns_ringbuf_size() 由 5 变成 11 > size，
+   镜像法的 w/r 单调递增不变量被破坏。现有测试集对此无任何断言。 */
+```
+
+#### 定位
+src/ds/ns_ringbuf.c:35
+src/ds/ns_ringbuf.c:24
+test/unit/test_ds_ringbuf.c:84-104
+
+---
+
 ## 现在关闭的问题
 
 ### RINGBUF-011: SPSC 内存序——release fence + plain store 不构成发布语义 (HIGH)

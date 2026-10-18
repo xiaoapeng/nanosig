@@ -299,8 +299,7 @@ int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset)
     if(waitset == NULL) return NS_E_INVAL;
     if(waitset->count != 0u) return NS_E_EXISTS;
 
-    CloseHandle(waitset->timer);
-    return NS_OK;
+    return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;
 }
 
 static int ns_waitset_find(const ns_platform_waitset_t *waitset, HANDLE handle)

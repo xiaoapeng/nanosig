@@ -281,7 +281,11 @@ static inline void ns_slist_del_node_in_for_each_safe(
     } else {
         prev->next = next;
     }
-    if(next == NULL) list->last = prev;
+    if(next == NULL){
+        /* 删掉的是尾节点。prev 是假前驱(==list)或 NULL 时链表已空，last 必须回到
+           NULL；否则 last 指向链表头自身，后续 push_back 会写进 first 字段顶掉首节点。 */
+        list->last = (list->first == NULL) ? NULL : prev;
+    }
 }
 
 /**

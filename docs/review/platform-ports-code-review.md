@@ -19,7 +19,7 @@
 
 ---
 
-## 现在打开的问题（2026-07-05 review；PORT-018…022 来自 2026-10-18 review）
+## 现在打开的问题（2026-07-05 review；PORT-018…022、PORT-024…029 来自 2026-10-18 review）
 
 ### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
 
@@ -106,18 +106,29 @@ include/nanosig/nanosig_broker.h:147
 保持现状。
 
 #### 作者建议
-（待作者补充）
+按 review 建议修：sentinel 分支在 `timer_armed` 时不再 `return NS_OK`，改为 `continue`
+把同一批 epoll 事件里剩余的 fd 全部转成 completion，循环末尾统一返回 `NS_OK`。
+→ 关闭-已修复
+
+#### 关闭原因
+platform/linux/port.c 的 timerfd sentinel 分支在 `timer_armed` 时改为 `continue`
+（原为 `return NS_OK`），同一批 `epoll_wait` 结果里排在 timerfd 之后的就绪 fd 不再被丢弃；
+电平触发与边沿触发两条路径行为一致。未新增测试：稳定复现需要把 timer 到期与 fd 就绪
+压进同一轮 `epoll_wait`，时序不可控，按代码走查 + 注释说明处置。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 1. 两个 waitable 以 `edge_triggered = 1` 注册，broker 以有限超时（如 50ms）等待；
 2. 恰好某次 timer 到期瞬间，某个 `EPOLLET` fd 变为可读；
-3. `epoll_wait` 返回 `[timerfd, fd]` → 代码在 timer 分支 return，fd 的边沿被内核
+3. `epoll_wait` 返回 `[timerfd, fd]` → 修复前代码在 timer 分支 return，fd 的边沿被内核
    消费但从未上报；
 4. 该 watcher 的 handler 此后不再被调用，直到用户重新触发另一条边沿。
 
 #### 定位
+platform/linux/port.c:528
 platform/linux/port.c:532
-platform/linux/port.c:521
 
 ---
 
@@ -211,7 +222,15 @@ return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;
 ```
 
 #### 作者建议
-（待作者补充）
+按 review 建议修，与 Linux/macOS 对齐。→ 关闭-已修复
+
+#### 关闭原因
+platform/windows/port.c 的 `ns_platform_waitset_deinit` 改为
+`return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;`，
+关闭失败不再被吞掉，三后端失败语义一致。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit` 返回 `NS_OK`，
@@ -402,6 +421,413 @@ Linux，令 wakeup 的 eventfd 处于可读状态，`ns_platform_wakeup_wait` �
 platform/linux/port.c:30-47
 platform/linux/port.c:132-169
 src/ns_broker.c:239
+
+---
+
+### PORT-024: macOS `waitset_add` 在 kqueue 变更列表部分失败时泄漏 knote，且该 knote 无法回收
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测复现）
+
+#### 问题描述
+`ns_macos_waitset_apply_changes`（platform/macos/port.c:448-468）把整批 kevent 变更一次提交，
+用"返回值非 0 即整体失败"处理。但 `kevent()` 对变更列表是**逐条应用、遇到第一条错误即停止**：
+错误条目之后的变更不生效，**之前的变更已经生效**（本机三组探针确认：[无效, 有效] 时有效条目
+不生效；[有效, 无效] 时有效条目已生效）。
+
+而 `ns_macos_waitset_make_changes`（:419-446）在 `events` 同时含 IN 与 OUT 时生成 2 条变更
+（EVFILT_READ + EVFILT_WRITE），并非每种 fd 都同时支持两个 filter：kqueue fd 的 EVFILT_WRITE
+返回 EINVAL、`/dev/null` 两个 filter 都返回 EINVAL（本机实测）。
+
+后果（`ns_platform_waitset_add` :470-495）：
+
+- 第一条变更（EVFILT_READ）已在 kqueue 上注册并携带 `udata = &caller_waitable`，但函数返回
+  `NS_E_INVAL`，`waitset->count` 不增、`waitable->registered_waitset` 保持 NULL；
+- 该 waitable 在库视角"未注册"，但 kqueue 里仍有它的 knote，`ns_macos_waitset_wait`（:584-605）
+  只按下标读 `udata`，会**照常为它产出 completion**；
+- `ns_platform_waitset_remove`（:505-521）因 `registered_waitset != waitset` 立即返回
+  `NS_E_INVAL`，调用方**没有任何 API 能摘掉这条 knote**；
+- 调用方收到 `NS_E_INVAL` 后按合同可立即释放该 waitable（`ns_watcher_t` 常为栈上对象），
+  kqueue 中 `udata` 即成悬垂指针；下一次 `waitset_wait` 把该 completion 交给
+  `ns_broker_dispatch_pending_events`（src/ns_broker.c:336）解引用 `w->user_data` → use-after-free。
+
+同一根因在删除路径方向相反：`EV_DELETE` 列表若第一条已注册、第二条未注册，`kevent` 返回 -1，
+但第一条**已经被删除**——调用方看到 `NS_E_INVAL`（认为仍注册），实际该 waitable 已从 kqueue 摘除
+（本机实测）。
+
+#### review 建议
+不要再把 `kevent()` 的返回值当作"整批成败"：
+1. 每条变更单独提交（`change_count == 1`），失败时对**已生效**的变更做反向回滚
+   （add 失败回滚 EV_DELETE，delete 失败回滚 EV_ADD）；或
+2. 提交时带 `EV_RECEIPT`，逐条读回错误事件，按实际生效的条目更新内部状态与 `udata`；或
+3. 最小改动：`add` 失败后对该 fd 本次涉及的 filter 集合补发一次 `EV_DELETE` 清场，保证不留下
+   无法回收的 knote；`remove` 失败时不要跳过 `count--` 与 `registered_waitset = NULL`，而应按
+   "部分摘除"的实际结果重算。
+
+方向 1 最干净，且与 Linux（单 fd 单 `epoll_ctl`，原子）的行为模型一致。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+macOS 实测（直接调用平台层，非经 broker）：
+
+```c
+int inner = kqueue();   /* kqueue fd：EVFILT_READ 可注册，EVFILT_WRITE 返回 EINVAL */
+ns_platform_waitset_init(&ws);
+ns_waitable_init(&w);
+w.primitive = inner;
+w.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT;
+w.user_data = (void *)0xDEAD;
+
+ns_platform_waitset_add(&ws, &w);              /* -> -3 (NS_E_INVAL) */
+/* 此时 w.registered_waitset == NULL，但 kqueue 上留有一条 EVFILT_READ knote */
+
+/* 触发 inner kqueue 的 EVFILT_USER，使其可读 */
+ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
+/* cnt == 1，cc[0].waitable == &w，user_data == 0xDEAD —— 为"未注册"的 waitable 产出了 completion */
+
+ns_platform_waitset_remove(&ws, &w);           /* -> -3：摘不掉 */
+```
+
+实测输出：`add -> -3`、`wait -> cnt=1 / user_data=0xdead`、`remove -> -3`、
+`registered_waitset` 全程为 NULL。其余 macOS 版本与 Apple Silicon/Intel 差异未复核，
+但"逐条应用、首错停止"是 kevent 内核语义。
+
+#### 定位
+platform/macos/port.c:448
+platform/macos/port.c:463
+platform/macos/port.c:470
+platform/macos/port.c:489
+platform/macos/port.c:505
+platform/macos/port.c:515
+src/ns_broker.c:336
+
+---
+
+### PORT-025: macOS 允许两个 waitable 注册同一 fd，`remove` 其中一个会静默废掉另一个
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测复现）
+
+#### 问题描述
+`ns_platform_waitset_add`（platform/macos/port.c:470-495）只用
+`waitable->registered_waitset != NULL` 判重，**不检查该 fd 是否已被另一个 waitable 注册**。
+kqueue 的 knote 以 (fd, filter) 为键，第二次 `EV_ADD` 直接覆盖 `udata`（本机实测），于是：
+
+- 两个不同 waitable 对同一 fd `add` 都返回 `NS_OK`，但只有**后注册者**能收到 completion，
+  先注册者静默永不触发；
+- `remove` 先注册者时，`ns_macos_waitset_make_changes(..., EV_DELETE)`（:508-513）把该
+  (fd, filter) 的 knote 整个删掉，后注册者的 knote 随之消失，但它自己的
+  `registered_waitset` 仍指向该 waitset——此后它**既不触发、也摘不掉**（后续 `remove`
+  因 knote 已不在而返回 `NS_E_INVAL`，`remove` 的前置检查通过但底层 knote 已丢失）。
+
+对照另外两个宿主后端：Linux `epoll_ctl(EPOLL_CTL_ADD)` 对已注册 fd 返回 `EEXIST` →
+`NS_E_EXISTS`（platform/linux/port.c:439-440）；Windows 用 `ns_waitset_find` 按 handle 判重 →
+`NS_E_EXISTS`（platform/windows/port.c:331）。macOS 是三宿主里唯一不判重的后端，同一段调用方
+代码在 Linux/Windows 上拿到 `NS_E_EXISTS`、在 macOS 上拿到 `NS_OK` 并静默失效。
+
+`include/nanosig/nanosig_port.h:503-504` 与 platform/README.md:41 只承诺"同一 **waitable** 已注册
+返回 `NS_E_EXISTS`"，未规定"两个 waitable 注册同一句柄/fd"的行为，故不属 `docs/review/AGENTS.md`
+§2.4 的"已文档化设计"。与 PORT-014（关闭-延期，讲同一 waitable 的多事件合并）不同：本条讲两个
+不同 waitable 撞同一 fd 时的判重缺失及其连带失效，根因与修复方向均不同。
+
+#### review 建议
+在 `ns_platform_waitset_add` 增加按 fd 的判重（仿 Windows 的 `ns_waitset_find`），命中返回
+`NS_E_EXISTS`，并把"同一 fd 不可被两个 waitable 同时注册"补进 `nanosig_port.h` 中
+`ns_platform_waitset_add` 的契约（三宿主一致）。若不打算判重，则至少要文档化该情形为未定义，
+但 `remove` 的连带失效（静默废掉另一个已注册 waitable）仍需修复——后者本身就是缺陷。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+macOS 实测：
+
+```c
+pipe(p);
+ns_waitable_init(&a); a.primitive = p[0]; a.events = NS_WAITABLE_EVENT_IN;
+ns_waitable_init(&b); b.primitive = p[0]; b.events = NS_WAITABLE_EVENT_IN;
+
+ns_platform_waitset_add(&ws, &a);     /* macOS: NS_OK；Linux/Windows: NS_E_EXISTS */
+ns_platform_waitset_add(&ws, &b);     /* macOS: NS_OK */
+write(p[1], "x", 1);
+ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
+/* cnt == 1，cc[0].waitable == &b —— a 永不触发 */
+
+ns_platform_waitset_remove(&ws, &a);  /* NS_OK，但把 b 的 knote 一并删掉 */
+write(p[1], "x", 1);
+ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
+/* cnt == 0，而 b.registered_waitset 仍指向 ws */
+
+ns_platform_waitset_remove(&ws, &b);  /* NS_E_INVAL：b 再也摘不掉 */
+```
+
+实测输出依次为：`add A=0`、`add B=0`、`wait cnt=1 -> B`、`remove A=0`、`wait cnt=0`、`remove B=-3`。
+
+#### 定位
+platform/macos/port.c:479
+platform/macos/port.c:492
+platform/macos/port.c:508
+platform/linux/port.c:439
+platform/windows/port.c:331
+include/nanosig/nanosig_port.h:503
+platform/README.md:41
+
+---
+
+### PORT-026: Windows 后端完全忽略 `waitable->events`，恒报 `NS_WAITABLE_EVENT_IN`
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 高（代码走查；本机为 macOS，未在 Windows 上运行）
+
+#### 问题描述
+`ns_platform_waitset_add`（platform/windows/port.c:323-339）**从不读取** `waitable->events`：
+既不校验掩码，也不记录关注位。`ns_platform_waitset_wait`（:374-457）在报告 completion 时
+硬编码 `triggered_events = NS_WAITABLE_EVENT_IN`（:438、:447）。于是 Windows 的行为是
+"任何 waitable 一律按 IN 上报"：
+
+- 只注册 `NS_WAITABLE_EVENT_OUT` 或只注册 `NS_WAITABLE_EVENT_ERR` 的 watcher 在 Windows 上
+  `add` 返回 `NS_OK`，随后只要该 handle 变为 signaled 就以 `NS_WAITABLE_EVENT_IN` 触发
+  handler——调用方按"可读"分支去读一个只申请了"可写"的句柄；
+- Linux（platform/linux/port.c:402-411，掩码映射 `EPOLLIN/EPOLLOUT/EPOLLERR`）与 macOS
+  （platform/macos/port.c:419-446，掩码决定是否生成 `EVFILT_READ/EVFILT_WRITE`）都按掩码
+  注册，掩码在三宿主中语义不一致；
+- FreeRTOS / Zephyr 对含 OUT/ERR 的掩码直接返回 `NS_E_INVAL`，这一点已文档化
+  （include/nanosig/nanosig_port.h:506-508）。Windows 既未跟随 RTOS 的"拒绝"，也未实现
+  掩码语义，属第三种行为。
+
+公共文档未规定 Windows 忽略事件掩码：`include/nanosig/nanosig_port.h:77-79` 只定义三个位，
+platform/README.md:100-109 的 Windows 小节只写"`edge_triggered` 参数忽略"，未提 `events`，
+故不属 §2.4 文档仲裁范围。测试侧同样未覆盖：test/unit/test_broker_event.c:221-223 的
+OUT 投递用例在 `_WIN32` 下直接 `return 0`（socketpair 不可用），Windows 的掩码行为无断言。
+
+#### 为何非重复（AGENTS.md §3.1）
+BROKER-036（`关闭-已修复`）讲的是 **`events == 0`** 被 host 后端接受、RTOS 后端拒绝；
+本条讲的是**非零掩码中的 OUT/ERR 位在 Windows 上被静默降级为 IN**。输入不同、代码位置不同
+（broker 校验函数 vs `platform/windows/port.c` 的 add/wait）、修复方向不同。
+
+#### review 建议
+三选一，需作者决策后统一到文档（这是公共契约变更，不是纯实现修复）：
+
+1. **（推荐）Windows `waitset_add` 拒绝非 IN 位**：与 FreeRTOS/Zephyr 对齐，`add` 返回
+   `NS_E_INVAL`；`nanosig_port.h:506-508` 的 `@note` 把 Windows 一并列入 IN-only 后端。
+   代价：今天在 Windows 上用 `IN|OUT` 掩码"能跑"的调用方会收到新错误码。
+2. **实现 OUT 语义**：WFMO 无法表达"可写/错误"，只能对 `NS_WAITABLE_EVENT_OUT` 额外用
+   `WaitForSingleObject(handle, 0)` 试探——但句柄的 signaled 状态被消费会破坏已有的
+   auto-reset 语义，不建议。
+3. **纯文档化**：明确写"Windows 忽略 OUT/ERR，一律按 IN 上报"，并在 `nanosig_port.h` 的
+   `NS_WAITABLE_EVENT_OUT/ERR` 处标注该限制。
+
+无论选哪个，都应补一个覆盖 `_WIN32` 的掩码用例（当前 `_WIN32` 分支被跳过）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+Windows（按代码走查构造，未实测）：
+
+```c
+ns_watcher_t w = {0};
+ns_watcher_init(&w, handle, NS_WAITABLE_EVENT_OUT, 0, on_writable);  /* NS_OK */
+ns_broker_add(&w);                                                   /* NS_OK */
+/* handle 被 signal 后 handler 收到 triggered_events == NS_WAITABLE_EVENT_IN(0x1)，
+   而 Linux 上是 0x2(OUT) —— 调用方按 IN 分支去 read() 一个只申请了可写的句柄 */
+```
+
+同一段代码在 FreeRTOS / Zephyr 上 `ns_broker_add` 返回 `NS_E_INVAL`。
+
+#### 定位
+platform/windows/port.c:323
+platform/windows/port.c:438
+platform/windows/port.c:447
+platform/linux/port.c:402
+platform/macos/port.c:419
+include/nanosig/nanosig_port.h:506
+platform/README.md:109
+test/unit/test_broker_event.c:221
+
+---
+
+### PORT-027: macOS `event_signal` 写已关闭的 pipe 读端会触发 SIGPIPE，进程直接终止
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测：写已关闭读端的 pipe → 进程被 SIGPIPE 杀死，退出码 141）
+
+#### 问题描述
+macOS 的 event 用 pipe 实现（platform/macos/port.c:232-246），`signal_handle` 是写端 fd。
+`ns_platform_event_signal`（:249-263）直接 `write(fds[1], ...)`，**没有任何 SIGPIPE 防护**：
+全树 `grep -rn "SIGPIPE\|F_SETNOSIGPIPE"` 在 src/、platform/、include/、test/ 下 **0 命中**。
+
+一旦读端已关闭而写端仍被写入，macOS 默认投递 SIGPIPE——**进程立即终止**，不是返错。
+`ns_platform_event_deinit`（:271-287）会关闭两个 fd，而 `nanosig_port.h:18` 明确
+"`ns_platform_event_signal` 允许跨线程调用"，头文件的 thread-safety 段落只禁止同一对象上的
+init/deinit 并发与等待类调用并发，**从未**声明 `signal` 不得与 `deinit` 并发；调用方按字面
+理解在另一线程 signal、主线程 deinit，就会命中该路径。
+
+这也与文档承诺冲突：`nanosig_port.h:307-308` 写"signal 遇底层缓冲已满（macOS pipe EAGAIN）
+视为成功返回 NS_OK，**仅真实写错误才返回错误码**"——EPIPE 正是"真实写错误"，但进程先死，
+调用方永远拿不到那个错误码。
+
+三宿主横向对比：Linux eventfd 写已关闭 fd 得 `EBADF` → `NS_E_INVAL`；Windows `SetEvent`
+在已关闭 handle 上返回 0 → `NS_E_INVAL`；只有 macOS 会**杀死进程**。wakeup 侧不受影响
+（`ns_macos_user_event_signal` 写的是 kqueue fd，不产生 SIGPIPE）。
+
+#### review 建议
+在 `ns_platform_event_init` 创建 pipe 后对写端关闭 SIGPIPE 语义：
+
+```c
+#ifdef F_SETNOSIGPIPE
+    if(fcntl(fds[1], F_SETNOSIGPIPE, 1) < 0) { /* 回滚两个 fd 并返回 NS_E_NOMEM */ }
+#endif
+```
+
+本机实测：`fcntl(F_SETNOSIGPIPE, 1)` 在 pipe 写端返回 0，之后对已关闭读端的写入返回
+`-1/EPIPE` 且进程存活（原有 errno 分支随即返回 `NS_E_INVAL`）。这样"文档承诺返回错误码"
+重新成立，且不改变正常路径。若作者判断该并发调用的前提本就应由调用方保证，退一步的方案是
+在 `nanosig_port.h` 的 event 段落补一条 `@warning`（`signal` 不得与 `deinit` 并发）——
+但库内 API 能被一次正常调用杀死进程，仍建议加这一行加固。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+macOS 实测（最小复现，不经 nanosig API 以外的手段）：
+
+```c
+int fds[2]; pipe(fds);
+close(fds[0]);                       /* 等价于 event 的 waitable 侧已释放 */
+write(fds[1], "x", 1);               /* 进程收到 SIGPIPE */
+```
+
+本机运行结果：进程被信号终止，退出码 141（128+13），后续语句不执行——**不是**返回 -1。
+同一写操作若先 `fcntl(fds[1], F_SETNOSIGPIPE, 1)`，则返回 -1 / `EPIPE`，进程继续运行。
+落到 nanosig 上即：线程 A `ns_platform_event_signal(&e)` 与线程 B
+`ns_platform_event_deinit(&e)` 并发 → 进程死亡而非 `NS_E_INVAL`。
+
+#### 定位
+platform/macos/port.c:249
+platform/macos/port.c:256
+platform/macos/port.c:271
+platform/macos/port.c:281
+include/nanosig/nanosig_port.h:18
+include/nanosig/nanosig_port.h:307
+platform/linux/port.c:205
+platform/windows/port.c:152
+
+---
+
+### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 中（macOS 侧本机实测；Linux 侧为 epoll 语义推断，本机为 Darwin 未能实测）
+
+#### 问题描述
+`triggered_events` 的位语义在三宿主不统一，同一"对端正常关闭"场景报出的位不同：
+
+- Linux（platform/linux/port.c:413-423）：`EPOLLHUP → NS_WAITABLE_EVENT_IN`，
+  `EPOLLERR → NS_WAITABLE_EVENT_ERR`。对端关闭后的连接/管道（EPOLLHUP / EPOLLRDHUP）
+  只报 IN，**不会报 ERR**；
+- macOS（platform/macos/port.c:523-533）：`EV_EOF → NS_WAITABLE_EVENT_ERR`，同时
+  `EVFILT_READ → IN`。对端**有序半关闭**（管道写端 close、socket `shutdown(SHUT_WR)`）
+  在 kqueue 上必然带 `EV_EOF`，于是 macOS 把每个正常 EOF 都报成 `IN|ERR`；
+- Windows（platform/windows/port.c:438、446-448）：恒报 `IN`。
+
+后果：`handler(watcher, triggered_events)`（include/nanosig/nanosig_broker.h:55）中按
+`triggered_events & NS_WAITABLE_EVENT_ERR` 判定"出错/断开"的代码，在 macOS 上会把**正常的对端
+关闭**当错误处理，在 Linux 上则永远不进 ERR 分支——同一段 handler 代码两端走不同分支。
+
+公共文档未规定该映射：`include/nanosig/nanosig_port.h:77-79` 只有"可读 / 可写 / 错误"三行
+注释，platform/README.md:36 只列出位名，故不属 §2.4 文档仲裁范围。
+
+#### review 建议
+先定契约再对齐实现。建议在 `nanosig_port.h` 的 `NS_WAITABLE_EVENT_ERR` 处补一句
+"对端有序关闭（EOF）只置 `NS_WAITABLE_EVENT_IN`；`NS_WAITABLE_EVENT_ERR` 仅在底层等待原语
+报告真实错误（EPOLLERR / EV_ERROR）时置位"，随后 macOS 删除 `EV_EOF → ERR` 映射
+（EV_EOF 的语义"该向不再可读/可写"已由 filter 本身与 IN/OUT 位表达），Linux 保持
+`EPOLLHUP → IN`。若确实需要区分"对端关闭"，应新增独立事件位而非复用 ERR——那属公共头变更，
+需作者决策。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+macOS 实测：
+
+```c
+pipe(p);
+ns_waitable_init(&w); w.primitive = p[0]; w.events = NS_WAITABLE_EVENT_IN;
+ns_platform_waitset_add(&ws, &w);
+write(p[1], "abc", 3);
+close(p[1]);                       /* 有序 EOF，且仍有 3 字节未读 */
+ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
+/* macOS: cnt == 1, cc[0].triggered_events == 0x5 (IN|ERR) */
+/* 把数据读空后再次 wait：仍为 0x5 —— 正常关闭持续被报成"错误" */
+```
+
+Linux 同一场景为 `EPOLLIN|EPOLLHUP → 0x1 (IN)`，不含 ERR（本机未实测，按 epoll 语义推断）。
+
+#### 定位
+platform/macos/port.c:529
+platform/macos/port.c:530
+platform/linux/port.c:420
+platform/windows/port.c:438
+include/nanosig/nanosig_port.h:77
+include/nanosig/nanosig_broker.h:55
+
+---
+
+### PORT-029: platform/README.md 两处描述与实现不一致（句柄谓词、Windows completion 条数）
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **置信度**: 高
+
+#### 问题描述
+- platform/README.md:72 写"句柄有效性用平台头提供的 `ns_waitable_handle_is_valid(h)` 判定：
+  POSIX 为 `h >= 0`，**Windows 为 `h != NULL`**，RTOS 为 `h != NULL && h != (void *)~0`"。
+  但 `platform/windows/nanosig_platform_port.h:44-45` 的谓词（随 PORT-018 修复）已变为
+  `h != NULL && h != INVALID_HANDLE_VALUE`；
+- platform/README.md:225 写"Windows 后端单次 wait **最多返回 1 个 completion**（auto-reset event
+  语义）"。实际 `ns_platform_waitset_wait`（platform/windows/port.c:429-452）在 WFMO 报告首个
+  signaled handle 之后，还会用 `WaitForSingleObject(handles[i], 0u)` 扫描其余用户 handle，把
+  同时 signaled 的成员一并写入 completions——**单次可返回多个** completion。
+
+本条与 PORT-021（讲 platform/README.md:93 的 wakeup waitable 与 :102 的 `CreateThread`）同属
+"文档落后于实现"，但**具体行与具体主张均不同**，非 §3.1 意义上的重复：第一条是 PORT-018 修复后
+未同步的文档遗留，第二条是 Windows 多 completion 扫描（早于本次修复即存在）从未反映到文档。
+
+#### review 建议
+- platform/README.md:72 改为"Windows 为 `h != NULL && h != INVALID_HANDLE_VALUE`"；
+- platform/README.md:225 改为"单次 wait 可返回多个 completion：WFMO 报告首个，其余同时就绪的
+  成员由零超时等待扫描捕获"，并删除"auto-reset event 语义 ⇒ 最多 1 个"的推论。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+- 照 README:72 的"Windows 只需判 NULL"口径编写调用方，把 `ns_waitable_init` 产出的
+  `INVALID_HANDLE_VALUE` 哨兵交给 `ns_platform_waitset_add`：期望注册成功（文档口径），
+  实际返回 `NS_E_INVAL`（实现口径）；
+- 照 README:225 假定 Windows 每次至多 1 个 completion 编写 `completions` 下标规划：两个用户
+  handle 同时 signaled 时一次拿到 2 个 completion，数组规划（如 `count <= 1`）失效。
+
+#### 定位
+platform/README.md:72
+platform/README.md:225
+platform/windows/nanosig_platform_port.h:44
+platform/windows/port.c:443
 
 ---
 
