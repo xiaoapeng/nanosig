@@ -223,6 +223,15 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     target_compile_definitions(nanosig_test_broker_multi PRIVATE NANOSIG_TEST)
     nanosig_add_unit_test(nanosig_test_broker_delivery test/unit/test_broker_delivery.c)
     target_compile_definitions(nanosig_test_broker_delivery PRIVATE NANOSIG_TEST)
+    # broker add/remove 是同步会合且无等待上界：契约被违反时表现为永久阻塞，
+    # 没有 TIMEOUT 会拖到 ctest 默认上限（1500s）并烧掉 CI job。
+    set_tests_properties(
+        nanosig_test_broker_lifecycle
+        nanosig_test_broker_event
+        nanosig_test_broker_handler
+        nanosig_test_broker_multi
+        nanosig_test_broker_delivery
+        PROPERTIES TIMEOUT 60)
     target_compile_definitions(nanosig PRIVATE NANOSIG_TEST)
     nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
     nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
@@ -244,6 +253,7 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_unit_test(nanosig_test_loop_reuse test/unit/test_loop_reuse.c)
     nanosig_add_unit_test(nanosig_test_timer_deinit_use test/unit/test_timer_deinit_use.c)
     nanosig_add_unit_test(nanosig_test_broker_concurrent_remove test/unit/test_broker_concurrent_remove.c)
+    set_tests_properties(nanosig_test_broker_concurrent_remove PROPERTIES TIMEOUT 60)
 
     # Previously unregistered stress test
     nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)

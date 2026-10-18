@@ -1,6 +1,11 @@
 # 内存序审计（P9.4）
 
 > nanosig v1 / 2026-06-20 审计快照
+>
+> **加注（2026-10-18，Iter 39）**：本快照中关于 broker watcher list 由 `watcher_mutex` 保护、
+> `ns_broker_remove_all_watchers` 无锁遍历的行已失效——`watcher_mutex` 与那条链表均已删除。
+> 现 `ns_broker_add` / `ns_broker_remove` 经 `op_lock` 保护的 op 队列交接，`shutdown_started`
+> 已改 `atomic_int`。其余结论不变。
 
 ## 摘要
 

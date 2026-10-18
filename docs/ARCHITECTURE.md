@@ -114,7 +114,6 @@ broker 线程直接调用 watcher 绑定的 handler，不再内嵌或 emit signa
 ```
 ns_watcher_t
 ├─ waitable（ns_platform_waitable_t，可注册到 waitset）
-├─ broker_node（broker 内部链表节点）
 └─ handler（ns_watcher_handler_fn，必填，同时是生命周期 marker）
 ```
 
@@ -230,7 +229,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `ns_signal_t` | 调用方 | 静态/栈/堆；`ns_signal_init` 只分配 mutex | `ns_signal_deinit` |
 | `ns_connection_t` | 调用方 | 调用方完全拥有存储 | 调用方自由处置 |
 | `ns_timer_t` | 调用方 | 静态/栈/堆；`ns_timer_init` 只 init + mutex | `ns_timer_deinit` |
-| `ns_watcher_t` | 调用方 | 静态/栈/堆；`ns_watcher_init` 只填充 waitable/broker_node/handler | `ns_watcher_deinit` |
+| `ns_watcher_t` | 调用方 | 静态/栈/堆；`ns_watcher_init` 只填充 waitable/handler | `ns_watcher_deinit` |
 | `ns_event_broker_t` | 库 | `ns_init` 时 `ns_platform_alloc` | `ns_shutdown` 时释放 |
 | MPSC record ring | `ns_loop_t` 内联 | 内嵌在 `ns_loop_init` 的分配块中 | `ns_loop_deinit` 隐式 |
 

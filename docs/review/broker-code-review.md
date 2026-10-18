@@ -7,6 +7,48 @@
 
 ## 修复历史
 
+### 2026-10-18 — op 等待改无限等待 + shutdown 契约收紧（撤销 BROKER-020/030 的修复）
+
+- **审查范围**: `src/ns_broker.c` 的 op 等待 / shutdown 路径；随契约收紧一并清理死代码。
+- **背景**: BROKER-020 实现的 500ms 超时恢复路径（配合 BROKER-030 的返回值检查）在第二次超时后，
+  用户线程会销毁栈上的 `req` 与 `wakeup`，而 broker 线程随后仍执行 `req->rc = op_rc` 并向
+  `req->wakeup` signal——写已失效的栈帧、向已关闭的 fd 写信号，构成 use-after-free。
+  入队侧已能在 signal 失败时持锁回滚（BROKER-019），超时路径只剩这一条不安全分支。
+- **改动**:
+  1. `ns_broker_wait_op_completion` 改用 `NS_PLATFORM_WAIT_INFINITE_US` 且**失败不返回**（重试；
+     提前返回同样会遗留仍挂在 op_queue 中的 `req`）。`ns_broker_try_dequeue_op` 删除。
+  2. `ns_broker_add` / `ns_broker_remove` 的超时分支与二次等待删除，公共骨架合并为
+     `ns_broker_submit_op`。两者不再返回 `NS_E_TIMEOUT`。
+  3. shutdown 契约收紧为「调用方必须在 `ns_shutdown()` 前完成全部 teardown，库不兜底」：
+     删除 `ns_broker_drain_op_queue_shutdown`；删除 `ns_broker_remove_all_watchers`，改为
+     join 后若 op 队列非空则记一条警告（不救援线程、不持 `op_lock`）。
+  4. 删除 broker 侧 `watcher_mutex`、`watcher_head` 链表与 `ns_watcher_t.broker_node` 字段；
+     「已注册」判定改用平台层 `registered_waitset`，且收窄为 `== &g_broker->waitset`
+     （该字段语义是"注册在某个 waitset"，调用方也可自建 waitset）。
+  5. `shutdown_started` 改 `atomic_int`；`ns_broker_run` 的 timer timeout 死分支简化。
+  6. 公开头文件补充「同步会合、无等待上界、可多线程并发调用」与 handler 死锁后果说明；
+     `ns_shutdown` 的 `@pre` 补「库不再兜底」。
+- **行为变更（有意）**: handler 内误调 `ns_broker_add` / `ns_broker_remove` / `ns_shutdown`，
+  表现从"500ms 后返回 `NS_E_TIMEOUT`"变为**永久阻塞**。已在 `nanosig_broker.h` 的 `@warning`
+  与 `@note` 中写明。
+- **BROKER-020 / BROKER-030 处置**: 两条的「已修复」历史**保留不改写**（append-only）；
+  本次撤销的是其实现方式，不是判定它们当时误报。BROKER-030 的返回值检查随第二次等待一并删除
+  ——无限等待下不存在"读完一次仍超时"的分支。
+- **BROKER-009 关联**: 该条以「合同前提保护」关闭-已拒绝。本次把 `shutdown_started` 改
+  `atomic_int` 消除了形式上的 C11 竞争，但**不构成 UAF 屏障**——`g_broker` 仍是 plain pointer
+  且会被 free，对象生命周期竞争依旧存在，仍依赖调用方的 teardown 契约。
+- **BROKER-011 影响**: BROKER-011 的复现路径依赖本次删除的 `ns_broker_remove_all_watchers`
+  遍历；改动后同场景退化为 `remove → NS_E_INVAL` + waitset 句柄泄漏，不再是"
+  `ns_shutdown` 死循环"。该条目的处置见"现在打开的问题"中 BROKER-011。
+- **未修（已登记）**: Linux `ns_linux_wakeup_drain` 在非 EAGAIN/EINTR 的 errno 上返回
+  `NS_E_INVAL` 且未消费 eventfd 计数，导致 `poll` 立即再返回——无限等待下表现为 100% CPU
+  热自旋。根因在 `platform/`，登记于 `docs/review/platform-ports-code-review.md`。
+- **测试**: 六个 broker 单测补 `TIMEOUT 60`（无等待上界使死锁更容易发生）；
+  `test_shutdown_removes_residual_watcher` 更名 `test_watcher_deinit_after_shutdown` 并保留。
+- **影响文件**: `src/ns_broker.c`、`include/nanosig/nanosig_broker.h`、`include/nanosig/nanosig.h`、
+  `test/unit/test_broker_lifecycle.c`、`test/unit/test_broker_contract_compile.c`、
+  `test/unit/test_broker_concurrent_remove.c`、`CMakeLists.txt`。
+
 ### 2026-07-05 — 第四轮审查：Proxy 模型并发深度分析
 
 - **审查范围**: `src/ns_broker.c` — proxy 模型重构后的并发安全性、OS 原语内存序假设、错误路径完整性、文档与实践一致性。

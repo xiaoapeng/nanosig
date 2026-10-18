@@ -1,6 +1,10 @@
 # 线程安全审计（P9.5）
 
 > nanosig v1 / 2026-06-20 审计快照
+>
+> **加注（2026-10-18，Iter 39）**：本快照中涉及 `watcher_mutex` / `watcher_head` / `broker_node` 的
+> 结论已失效——这些结构已删除。`ns_broker_add` / `ns_broker_remove` 现经内部 op 队列（`op_lock`）
+> 串行化到 broker 线程，不再有 broker 侧 watcher 锁。其余结论不变。
 
 ## 摘要
 

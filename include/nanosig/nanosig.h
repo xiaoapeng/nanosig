@@ -40,9 +40,15 @@ extern int ns_init(void);
  * @pre 调用前必须已销毁所有 loop（`ns_loop_deinit()`）。库不再内部检查，
  *      违反此约束将导致平台状态未定义。
  * @pre 调用前必须已销毁所有 timer（`ns_timer_deinit()`）。
- * @pre 调用前必须已注销所有 watcher（`ns_broker_remove()`）。
+ * @pre 调用前必须已注销所有 watcher（`ns_broker_remove()`）。**库不再兜底清理**：
+ *      残留 watcher 仍在 broker 的 waitset 中，`ns_platform_waitset_deinit` 会因
+ *      非空而拒绝销毁（记录错误）并泄漏底层句柄（Linux/macOS 为 epoll/kqueue 与
+ *      timer fd）。
  * @pre 本函数不得与 `ns_init()` 或自身并发调用。调用方应保证在程序生命
  *      周期的单一线程中顺序调用 `ns_init()` 和 `ns_shutdown()`。
+ *
+ * @note shutdown 期间若内部 op 队列非空（说明上面的 teardown 约束被违反），
+ *       库只记录一条警告，不救援对应的等待线程。
  *
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */

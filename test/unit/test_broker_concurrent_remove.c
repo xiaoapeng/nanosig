@@ -3,14 +3,14 @@
  * @brief Gap test: ns_broker_add/remove in a tight loop must not corrupt broker state.
  * @date 2026-06-28
  *
- * The broker walks its watcher list when dispatching events. If add() and
- * remove() are not properly serialized internally, a quick succession of
- * add → remove pairs could leave dangling list nodes, leak waitables, or
- * crash on the next dispatch.
+ * A quick succession of add → remove pairs must not leak waitset entries or
+ * crash. add/remove are serialized by the broker's op queue, not by a
+ * broker-side mutex (the watcher list this test's name refers to no longer
+ * exists); this test exercises that serialization in isolation across many
+ * iterations.
  *
  * This test does not attempt to race against the dispatch thread (that would
- * require a loop running); it instead exercises the broker's add/remove
- * locking in isolation across many iterations.
+ * require a loop running).
  */
 
 #include <stdio.h>
