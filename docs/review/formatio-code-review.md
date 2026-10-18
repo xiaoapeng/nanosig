@@ -86,6 +86,660 @@
 
 ---
 
+### FORMATIO-020: `ns_snprintf(NULL, 0, ...)` 把 buf 写空指针（无界哨兵与包 size==0 冲突）
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+`ns_vsnprintf` 用 `ns_stream_memory_init(&stream, buf, size)` 初始化内存流（src/ns_formatio.c:1157），
+`ns_stream_memory_init` 内部执行 `stream->end = buf + size`（include/nanosig/ns_formatio.h:115）。
+当 `buf == NULL` 且 `size == 0` 时得到 `end == NULL`，而 `end == NULL` 正是 FORMATIO-019
+为 `ns_vsprintf` 引入的"无界流"哨兵（src/ns_formatio.c:1169、src/ns_formatio.c:240、src/ns_formatio.c:269-271）。
+于是 `ns_snprintf(NULL, 0, ...)` 被误判为无界流，`streamout_in_byte` 的 MEMORY 分支
+无条件执行 `*m->pos = ch`（src/ns_formatio.c:241-243），对 NULL 解引用写入；收尾时
+`*m->pos = '\0'` 同样写 NULL（src/ns_formatio.c:269-271）。
+
+C99 明确允许 `snprintf(NULL, 0, fmt, ...)` 用于探测所需长度（size 为 0 时 buf 可以是空指针），
+公共头 include/nanosig/ns_formatio.h:70-75 没有任何 docstring 记录"buf 不得为 NULL"这一前提，
+因此不属于 §4.4 合同前提保护。FORMATIO-018 修好了 `buf != NULL, size == 0`，
+但没有覆盖 `buf == NULL, size == 0` 这一 C99 合法输入。
+
+同一根因的第二个入口：`size == 0` 的探测式调用若配合 `ns_vsnprintf` 直接传 NULL 也走同一分支。
+
+#### review 建议
+
+把"无界"与"零容量"两种状态区分开，不要共用 `end == NULL`：
+
+- 方案 A（最小改动）：在 `ns_vsnprintf` 入口对 `buf == NULL || size == 0` 走计数型丢弃路径
+  （end 指向一个内部哑缓冲，或给 stream 增加显式 `unbounded` 标志），返回值仍为应写全长；
+- 方案 B：给 `struct ns_stream_memory` 增加 `bool unbounded` 字段，`ns_vsprintf` 显式置位，
+  `streamout_in_byte` / `streamout_finish` 改为判断该标志而非 `end == NULL`；
+- 无论哪种方案，都应在 ns_formatio.h 为 `ns_snprintf` / `ns_vsnprintf` 补 docstring，
+  写明 `size == 0` 时 buf 可为 NULL、返回值为应写全长。
+
+修复后建议在测试中补 `ns_snprintf(NULL, 0, "hello %d", 42)` 与 `ns_snprintf(NULL, 0, "%f", 1.5)`
+的探测用例（期望返回应写全长且不崩溃）。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+/* ASAN 实测：SEGV on unknown address 0x000000000000，WRITE memory access */
+ns_snprintf(NULL, 0, "hello %d", 42);
+/* 崩溃栈：
+ *   #0 streamout_in_byte src/ns_formatio.c:242
+ *   #1 streamout_vprintf src/ns_formatio.c:944
+ *   #2 ns_vsnprintf      src/ns_formatio.c:1158
+ *   #3 ns_snprintf       src/ns_formatio.c:1181
+ */
+```
+
+对照（已修复、不崩溃）：
+
+```c
+char buf[16];
+ns_snprintf(buf, 0, "hello %d", 42);  /* 返回 8，buf 不被写入 */
+```
+
+#### 定位
+src/ns_formatio.c:1157
+src/ns_formatio.c:241-243
+src/ns_formatio.c:269-271
+src/ns_formatio.c:1168-1169
+include/nanosig/ns_formatio.h:109-116
+
+---
+
+### FORMATIO-021: `%e`/`%E` 对 subnormal（0 < |x| < DBL_MIN）指数错误、数值丢失
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+`log10_of_positive`（src/ns_formatio.c:171-190）通过 `du.exponent - FORMAT_DBL_EXP_OFFSET`
+取二进制指数，并把 `du.exponent` 强行写回 1023 后计算尾数。该推导隐含"IEEE 754 规格化数、
+尾数有隐含前导 1"的假设；subnormal（exponent 字段为 0）不满足该假设，于是同一函数对
+所有 subnormal 返回几乎相同的估计值（实测恒为约 -307.95），与真实十进制指数无关。
+
+`vprintf_float_e` 随后用该估计值做"整数化 + 修正"（src/ns_formatio.c:647-653）：
+
+```c
+double exp10 = log10_of_positive(abs_number);
+floored_exp10 = bastardized_floor(exp10);
+double p10 = pow10_of_int(floored_exp10);
+if (abs_number < p10) { floored_exp10--; p10 /= 10; }
+```
+
+对 subnormal 而言 `floored_exp10` 停在 -308/-309，导致 `%e` 输出的指数与尾数全错，
+甚至在默认精度下把有效数值完全丢掉（输出 0.000000）：
+
+| 输入 | nanosig 输出 | libc snprintf |
+|------|--------------|---------------|
+| 5e-324 | `0.000000e-309` | `4.940656e-324` |
+| 1e-310 | `0.100000e-309` | `1.000000e-310` |
+| 2.5e-310 | `0.250000e-309` | `2.500000e-310` |
+| 1e-315 | `0.000001e-309` | `1.000000e-315` |
+| 1e-309 | `1.000000e-309`（碰巧正确） | `1.000000e-309` |
+
+`%g`/`%G` 走同一路径（`vprintf_float` 对超范围回退 `%e`，src/ns_formatio.c:705-711），
+因此 subnormal 的 `%g` 输出同样错误（5e-324 → `0.000000`）。DBL_MIN 及以上
+（1e-308、2.2250738585072014e-308）正常，问题边界是 `(|x| < DBL_MIN) && (|x| > 0)`。
+
+#### review 建议
+
+在指数估计前显式处理 subnormal：
+
+- 方案 A：在 `vprintf_float_e`（以及任何复用 `log10_of_positive` 的路径）入口判断
+  `du.exponent == 0 && du.mantissa != 0`，先把输入按 2^52 归一化（`x * 4503599627370496.0`
+  或用 `frexp`/`ldexp` 组合）再进入原有十进制估计，并在最终指数上扣回该缩放量；
+- 方案 B：`log10_of_positive` 内部对 `exp2 == 0` 单独分支，先用 `x * 2^52` 规格化后再套用
+  现有泰勒展开，避免"把 0 指数当作 -1023 并使用隐含 1.0 尾数"；
+- 补一条 subnormal 的表驱动用例（5e-324 / 1e-310 / 1e-315 / DBL_MIN/2）并与 libc 对拍。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%e", 5e-324);   /* 实际 "0.000000e-309"，libc "4.940656e-324" */
+ns_snprintf(buf, sizeof(buf), "%e", 1e-310);   /* 实际 "0.100000e-309"，libc "1.000000e-310" */
+ns_snprintf(buf, sizeof(buf), "%e", 1e-315);   /* 实际 "0.000001e-309"，libc "1.000000e-315" */
+ns_snprintf(buf, sizeof(buf), "%g", 5e-324);   /* 实际 "0.000000"，libc "4.94066e-324" */
+ns_snprintf(buf, sizeof(buf), "%e", 1e-320);   /* 实际 "0.000000e-309"（数值全部丢失） */
+```
+
+`log10_of_positive` 对 1e-310 的估计值为 -307.94997197808431（真实值 -310），
+对 5e-324 为 -307.95184826398543（真实值 -323.306），二者几乎相同，可见与输入无关。
+
+#### 定位
+src/ns_formatio.c:171-190
+src/ns_formatio.c:646-657
+src/ns_formatio.c:705-711
+
+---
+
+### FORMATIO-022: `float_decentralized` 半途(tie)分支进位丢失，`%.1f` 0.95 输出 "0.10"
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+`float_decentralized`（src/ns_formatio.c:391-427）的 `remainder > 0.5` 分支在自增
+`fractional` 后会检查是否越过 `powers_of_10[precision]` 并进位到 `integral`
+（src/ns_formatio.c:410-415）；但紧随其后的 `remainder == 0.5` 分支（src/ns_formatio.c:416-419）
+只做 `++components->fractional`，**没有**同样的越界进位检查：
+
+```c
+} else if ((remainder == 0.5) &&
+           ((components->fractional == 0U) || (components->fractional & 1U))) {
+    ++components->fractional;          /* 可为 powers_of_10[precision]，无进位处理 */
+}
+```
+
+结果 `fractional` 变成等于 `powers_of_10[precision]`，输出位数比精度多一位且数值错误：
+
+实测 0.95（双精度实际值 0.94999999999999995559）在 `%.1f` 下：
+`integral=0`、`fractional=9`、`remainder=0.5` → tie 分支把 `fractional` 增到 10 →
+`fractional_valid_len = num_bit_count(10) = 2` → 输出 `"0.10"`。
+正确结果应为 `"0.9"`（libc）或按进位写成 `"1.0"`；`"0.10"` 与两者都不符，且读起来是 0.10 而非 0.9。
+
+#### review 建议
+
+在 tie 分支的 `++components->fractional` 之后补上与 `remainder > 0.5` 分支相同的进位处理，
+或把两个分支合并为"先算出按精度缩放后的四舍五入值，再做一次越界进位检查"的统一形式：
+
+```c
+if ((double)components->fractional >= powers_of_10[precision]) {
+    components->fractional = 0;
+    ++components->integral;
+}
+```
+
+修复后补 `%.1f`/`%.2f`/`%.3f` 在 0.95、0.995、0.9995、0.05、1.95、9.95 等 tie 邻域
+与 libc 的对拍用例。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%.1f", 0.95);    /* 实际 "0.10"（n=4），libc "0.9" */
+ns_snprintf(buf, sizeof(buf), "%.2f", 0.995);   /* 实际 "0.100"（n=5），libc "0.99" */
+ns_snprintf(buf, sizeof(buf), "%.3f", 0.9995);  /* 实际 "0.1000"（n=6），libc "1.000" */
+ns_snprintf(buf, sizeof(buf), "%.1f", 1.95);    /* 实际 "1.10"（n=4），libc "1.9" */
+```
+
+#### 定位
+src/ns_formatio.c:416-419
+src/ns_formatio.c:410-415
+
+---
+
+### FORMATIO-023: `%.0e` 半途(tie)分支把进位清零，1.5 → "1e+00"、3.5 → "3e+00"
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+
+`float_normalized_decentralized`（src/ns_formatio.c:429-470）的 tie 处理为：
+
+```c
+components->fractional = (uint64_t)scaled_remainder;
+scaled_remainder -= (double)components->fractional;
+components->fractional += (scaled_remainder >= rounding_threshold);   /* :462 */
+if (scaled_remainder == rounding_threshold) {
+    components->fractional &= ~((uint64_t)0x1);                       /* :464 把刚加上的 1 清掉 */
+}
+if ((double)components->fractional >= prec_power_of_10) { ... ++integral; }  /* :466 进不了 */
+```
+
+恰等 0.5 时先 `+1` 再用 `&= ~1` 清掉，且清尾之后 `integral` 不再变化，
+等价于"tie 时永远向下取整"（只在整数部分恰为偶数时碰巧与银行家舍入一致）。
+实测：`%.0e` 1.5 → `"1e+00"`、3.5 → `"3e+00"`、5.5 → `"5e+00"`、7.5 → `"7e+00"`，
+而 libc 分别给出 `2e+00`/`4e+00`/`6e+00`/`8e+00`（round-half-even）。
+
+同一模块内 `%.0f` 走 `float_decentralized` 的 precision==0 分支（src/ns_formatio.c:421-426），
+1.5 → `"2"`、3.5 → `"4"`，与 `%.0e` 结果自相矛盾——同一数值同一精度，
+`%f` 与 `%e` 得到不同舍入方向，可判定 `%e` 侧为缺陷而非有意权衡。
+
+注：test/unit/test_formatio.c:693-694 的黄金值把 `"2e+00"`/`"3e+00"` 固化为期望
+（注释称"银行家舍入清零奇位"），3.5 → 4 才是银行家舍入，现有黄金值是缺陷快照，需随修复更新。
+
+#### review 建议
+
+把 tie 分支改为先做尾数清位、再判断是否需要进位到 `integral`，例如：
+
+```c
+if (scaled_remainder == rounding_threshold) {
+    components->fractional &= ~((uint64_t)0x1);
+}
+if ((double)components->fractional >= prec_power_of_10) {
+    components->fractional = 0;
+    ++components->integral;
+}
+```
+
+或统一改为"按 `integral` 奇偶决定 tie 是否进位"，使其与 `%.0f` 的银行家舍入语义一致，
+并同步修正 test/unit/test_formatio.c:693-694 的黄金值。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%.0e", 1.5);   /* 实际 "1e+00"，libc "2e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 3.5);   /* 实际 "3e+00"，libc "4e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 5.5);   /* 实际 "5e+00"，libc "6e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 2.5);   /* "2e+00"（碰巧正确） */
+/* 同模块内不自洽： */
+ns_snprintf(buf, sizeof(buf), "%.0f", 3.5);   /* "4"，而 %.0e 3.5 给 "3e+00" */
+```
+
+#### 定位
+src/ns_formatio.c:459-469
+src/ns_formatio.c:421-426
+
+---
+
+### FORMATIO-024: `%q`/`%Q` 字段宽度在 precision 小于单个元素时下溢，宽度反而变大
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+
+`vprintf_array`（src/ns_formatio.c:718-810）用 precision 反推可见长度：
+
+```c
+array_len = precision / item_size;                       /* :754 */
+remainder = precision % item_size;
+array_reality_len = array_len - (remainder ? 1 : 0);     /* :756 可为 0 或 -1 */
+valid_len = (array_reality_len * (item_size * 2)) + (array_reality_len - 1);  /* :757 */
+if (field_width > valid_len)
+    space_pad_len = field_width - valid_len;
+```
+
+当 `precision < item_size`（例如 `%.0hhq`、`%.1q`）时 `array_reality_len` 为 0 乃至负数
+（`array_len == 0` 且 `remainder != 0` 时是 -1），`valid_len` 计算为 -1 或更小的负数，
+`space_pad_len = field_width - valid_len` 因此**超出请求宽度**：
+
+- `"%20.0hhq"` → 输出 21 个字符（20 空格 + 换行不算，实测 n=21、strlen=21），宽度 20 被突破；
+- `"%10.0hhq"` → n=11；
+- `"%20.1q"`（`q` 的 item_size = sizeof(unsigned int) = 4）→ 30 个填充空格 + `" ??????44"`，
+  n=39，远超请求的宽度 20。
+
+另外 partial item 分支（src/ns_formatio.c:781-803）会额外输出 `2*remainder+1` 个字符
+（`" ??"` 占位 + 分隔空格），这部分没有被计入 `valid_len`，因此 `precision % item_size != 0`
+时宽度一律偏大。数据字节本身输出正确，问题集中在 padding 计算。
+
+#### review 建议
+
+不要从 precision 反推可见长度，改为在输出过程中累加实际字符数（与 `vprintf_number` 的
+`reality_count` 同思路），或至少在计算 padding 前修正：
+
+- `array_reality_len` 为 0 时应令 `valid_len = 0`（避免负数与 `-1` 下溢）；
+- partial item 的 `2 * remainder + 1` 个字符要计入 `valid_len`；
+- `space_pad_len` 计算后防御性钳制 `>= 0`。
+
+补 `%20.0hhq`、`%10.1hhq`、`%20.1q`、`%20.5q` 的宽度断言用例。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[128];
+int n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", "");
+/* 实际 n=21、strlen=21（全空格），请求宽度 20 */
+n = ns_snprintf(buf, sizeof(buf), "%20.1q",
+                (const unsigned[]){0x11223344u, 0u, 0u, 0u});
+/* 实际 n=39、strlen=39，请求宽度 20；多出 30 个填充空格 */
+```
+
+#### 定位
+src/ns_formatio.c:754-759
+src/ns_formatio.c:781-803
+
+---
+
+### FORMATIO-025: 调试层互斥锁不可重入，输出 sink 回灌调试宏即自死锁
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+
+`ns_dbg_raw` / `ns_vdbg_raw` 在持有 `ns_dbg_mutex` 期间完成整条输出（src/ns_debug.c:98-104、
+src/ns_debug.c:115-120），其间经 `ns_printf`/`ns_vprintf` → `streamout_in_byte`
+（src/ns_formatio.c:214-248）回调到平台输出 sink（`stdout_write` →
+`platform_stdout_write`，强符号由应用覆盖）。平台层用的是普通 pthread 互斥量
+（platform/linux/port.c:250 `pthread_mutex_init(mutex, NULL)`，非 recursive）。
+
+只要 sink 或信号处理里再调用任一 `ns_dbg_*` / `ns_errln` / `ns_mprintln`，
+就会在同一线程上重复加锁 → 自死锁。实测：强定义 `stdout_write` 内调用 `ns_errln`
+（第一次 flush 由 `NS_DEBUG_ENTER_SIGN` 的 `\n` 触发），进程永久挂死。
+
+`ns_dbg_hex` 已意识到该风险并刻意不自行加锁（src/ns_debug.c:130-131 注释），
+但该防护只覆盖库内调用，不覆盖用户 sink；ns_debug.h 未以任何形式的
+@warning/@pre 说明"sink 内不得调用调试宏"。
+
+#### review 建议
+
+三选一：
+
+- 方案 A：`ns_debug_init` 创建递归互斥量（`PTHREAD_MUTEX_RECURSIVE` / Windows
+  `CRITICAL_SECTION` / FreeRTOS `xSemaphoreCreateRecursiveMutex`），需平台层新增一个
+  "recursive mutex" 原语（注意这属于 platform/ 模块，需同步 platform-ports review 文档）；
+- 方案 B：保持非递归锁，但把输出缓冲拼装与锁解耦——锁内只做格式化到线程局部缓冲，
+  flush 到 sink 时释放锁；
+- 方案 C：在 ns_debug.h 的 `ns_debug_init` docstring 明确写出"sink 内禁止调用任何
+  ns_dbg_*/ns_m*ln 宏，否则自死锁"的合同前提，并同步到 nanosig_port.h 的
+  `platform_stdout_write` 说明。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+/* 应用侧覆盖 stdout sink，sink 内记录一条诊断（例如串口驱动报告丢字节） */
+void stdout_write(void *stream, const uint8_t *buf, size_t size)
+{
+    static int depth;
+    if (depth++ == 0) ns_errln("sink wrote %zu bytes", size);  /* 回灌调试层 */
+    depth--;
+    fwrite(buf, 1, size, stdout);
+}
+
+ns_debug_init();
+ns_errln("hello %d", 42);   /* 卡死：第一次 flush 由换行触发，同一线程重复加锁 */
+```
+
+#### 定位
+src/ns_debug.c:98-104
+src/ns_debug.c:115-120
+src/ns_formatio.c:214-248
+
+---
+
+### FORMATIO-026: doc 推荐的 `NS_DBG_MODULE_LEVEL_DEFAULT` 从未定义，门控恒为 30
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: doc
+
+#### 问题描述
+
+include/nanosig/ns_debug.h:17 把下面的写法作为"每个模块定义其等级"的推荐用法：
+
+```c
+#define NS_DBG_MODULE_LEVEL_FOO  NS_DBG_MODULE_LEVEL_DEFAULT
+```
+
+include/nanosig/ns_debug.h:24 进一步承诺"项目默认等级为 NS_DBG_SYS（仅 ERR / WARNING / SYS 输出）"。
+但 `NS_DBG_MODULE_LEVEL_DEFAULT` 在 include/、src/、platform/、CMakeLists.txt、CMakePresets.json、
+cmake/ 中**从未定义**（全仓 grep 只命中 ns_debug.h:17 这行注释）。
+
+于是按 doc 写法的模块，`NS_MACRO_DEBUG_LEVEL`（include/nanosig/ns_debug.h:97）
+对 `"NS_DBG_MODULE_LEVEL_DEFAULT"` 取首字符得 `'N' - '0' = 30`，
+门控 `30 >= level` 对 0..5 全部成立 → **无条件输出所有等级**（含 DEBUG），
+与 doc 承诺的"仅 ERR/WARNING/SYS"正好相反。
+
+实测（`#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_MODULE_LEVEL_DEFAULT` 后调用门控）：
+
+```
+FOO via stringify = 'NS_DBG_MODULE_LEVEL_DEFAULT' -> 30
+BAZ via stringify = 'NS_DBG_MODULE_LEVEL_BAZ'(=NS_DBG_DEBUG) -> 5
+```
+
+与 FORMATIO-012（关闭-已拒绝，理由是"内置等级只有 0-5 个位数，多位数等级不会出现"）
+的关系与 §3.1 例外 1 相关，故此处逐条说明为何不是重复提出：
+
+- 相同点：都落在 include/nanosig/ns_debug.h:97 的 `NS_MACRO_DEBUG_LEVEL` 首字符解析上。
+- 不同点（根因）：FORMATIO-012 讨论的是"等级**值**写成多位数"（如 `#define ... 10`）；
+  本条讨论的是"**doc 推荐的默认值标识符从未定义**"，`NS_STRINGIFY` 得到的是标识符
+  文本 `"NS_DBG_MODULE_LEVEL_DEFAULT"`，首字符是 `'N'`（78），因此门控值恒为 30。
+  这不是"值是多位数"，而是 doc 承诺的宏在仓库中不存在。
+- 不同点（修复方向）：FORMATIO-012 的建议是改宏实现（被作者以 C 预处理器限制拒绝）；
+  本条的建议是补一条 `#define NS_DBG_MODULE_LEVEL_DEFAULT NS_DBG_SYS`（或改 doc 措辞），
+  不触碰 `NS_MACRO_DEBUG_LEVEL` 的实现，与已拒绝方向无交集。
+- §3.1 例外 1 成立：FORMATIO-012 的拒绝理由（"多位数等级在本项目中不会出现"）
+  在本条证据下不再成立——按 doc 写法接入的模块**立即**得到 30，并非需要构造多位数等级。
+
+补充：仓库内 src/ns_timer.c:16、src/ns_broker.c:41、platform/macos/port.c:24
+等模块是显式 `#define ... NS_DBG_SYS`，所以只有按 doc 第 17 行推荐写法新接入的模块会踩到。
+
+#### review 建议
+
+在 ns_debug.h 的等级区补上定义，使 doc 与代码一致：
+
+```c
+/* 项目默认模块等级：与 ns_debug.h:24 的说明一致 */
+#define NS_DBG_MODULE_LEVEL_DEFAULT NS_DBG_SYS
+```
+
+若刻意不提供该宏，则应把 ns_debug.h:17、ns_debug.h:24 的推荐写法改为
+`#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_SYS`，并删掉 `NS_DBG_MODULE_LEVEL_DEFAULT` 字样。
+另建议补一条编译期用例（或 test/unit/test_debug.c 的宏展开断言），
+把"按 doc 写法接入的模块，门控值等于 NS_DBG_SYS"固定下来。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+#include <nanosig/ns_debug.h>
+#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_MODULE_LEVEL_DEFAULT   /* doc ns_debug.h:17 的写法 */
+void f(void) { ns_mdebugln(FOO, "should be suppressed at NS_DBG_SYS"); }
+/* 实际：无条件输出。
+ * NS_STRINGIFY(NS_DBG_MODULE_LEVEL_FOO) = "NS_DBG_MODULE_LEVEL_DEFAULT"
+ * 'N' - '0' = 78 - 48 = 30，30 >= NS_DBG_DEBUG(5) 成立。
+ */
+```
+
+#### 定位
+include/nanosig/ns_debug.h:17
+include/nanosig/ns_debug.h:24
+include/nanosig/ns_debug.h:97
+
+---
+
+### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+
+两处宽度解析缺少边界保护，均已用 UBSAN 复现：
+
+1. `skip_atoi`（src/ns_formatio.c:286-292）逐位累加进 `int i`，无溢出检查：
+
+```c
+while (isdigit((int)(**s)))
+    i = i * 10 + (*((*s)++) - '0');   /* :290 */
+```
+
+`ns_snprintf(buf, 64, "%99999999999d", 1)` 触发
+`runtime error: signed integer overflow: 999999999 * 10 cannot be represented in type 'int'`，
+得到的 `field_width` 是 1215752191，随后 `vprintf_number` 的填充循环按该宽度迭代
+（有界流只是被逐字节截断并返回 12 亿级的 n；若走 `ns_sprintf`/`ns_vsprintf` 的无界流
+（end == NULL），会向调用方缓冲区写入 10 亿级字节 → 越界写）。
+
+2. `*` 宽度取负（src/ns_formatio.c:969-976）：
+
+```c
+field_width = va_arg(args, int);
+if (field_width < 0) {
+    field_width = -field_width;    /* :973 INT_MIN 取负 UB */
+```
+
+`ns_snprintf(buf, 64, "%*d", INT_MIN, 1)` 触发
+`runtime error: negation of -2147483648 cannot be represented in type 'int'`。
+
+两者都在"格式串来自外部输入"时可达（`ns_printf(fmt)` / `ns_stream_printf(stream, fmt)`
+的 fmt 完全可由调用方传入）。ns_formatio.h:67-81 未对宽度上限做任何文档化约束。
+
+#### review 建议
+
+- `skip_atoi` 改为在 `i > (INT_MAX - d) / 10` 时停止累加（或饱和到 INT_MAX），
+  并在 `streamout_vprintf` 中对最终 `field_width` / `precision` 做上限钳制
+  （例如拒绝 > 1<<20 的宽度并转为忽略该字段，或直接返回 0）；
+- `*` 宽度取负改为安全写法：`field_width = -(unsigned)field_width` 后钳制，
+  或先判断 `field_width == INT_MIN` 时按 0 处理；
+- 若选择"不限制宽度"，则必须在公共头文档化"宽度由调用方格式串保证合理"这一前提
+  （但即便如此，`%99999999999d` 的 UB 本身仍应消除）。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%99999999999d", 1);
+/* UBSAN: src/ns_formatio.c:290:15 signed integer overflow: 999999999 * 10 ... */
+/* 实际 n=1215752191（64 字节缓冲），填充循环迭代 10 亿次 */
+
+ns_snprintf(buf, sizeof(buf), "%*d", INT_MIN, 1);
+/* UBSAN: src/ns_formatio.c:973:31 negation of -2147483648 cannot be represented in type 'int' */
+```
+
+#### 定位
+src/ns_formatio.c:286-292
+src/ns_formatio.c:969-976
+
+---
+
+### FORMATIO-028: `%g` 等多处 C99 语义差异未在公共头文档化
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: doc
+
+#### 问题描述
+
+ns_formatio.h:67-81 声明的 printf 族（`ns_printf` / `ns_snprintf` / `ns_sprintf` /
+`ns_vprintf` / `ns_vsnprintf`）没有任何 docstring 说明支持哪些转换、语义是否遵循 C99。
+实测存在以下与 C99 `snprintf` 的差异，且都没有文档：
+
+1. **`%g`/`%G` 等价于 `%f`**：`FORMAT_FLOAT_G` 只是走
+   `vprintf_float_f_or_g`（src/ns_formatio.c:705-711、src/ns_formatio.c:1072-1077），
+   不剥除尾随零、不按指数范围切换到 `%e`。实测 `%g` 1e-5 → `"0.000010"`（libc `"1e-05"`）、
+   `%g` 1e6 → `"1000000.000000"`（libc `"1e+06"`）、`%g` 0.0001 → `"0.000100"`（libc `"0.0001"`）。
+   test/unit/test_formatio.c:14 明确把 `%g` 排除在 libc 差分之外，看起来是有意为之——
+   若如此，按 §2.4 应补文档而不是改代码。
+2. **`*` 负精度被钳为 0**（src/ns_formatio.c:978-989）：C99 规定负精度"视同未指定"，
+   nanosig 得到 precision==0。实测 `"%.*s"` 传 -1 → `""`（libc `"hello"`）、
+   `"%.*d"` 传 -2 → `"42"`，`%.*f` 传 -1 → `"4"`。
+3. **`%.0d`/`%.0x` 零值输出 `"0"`**（src/ns_formatio.c:200-208 `num_bit_count` 的 do/while
+   保证至少 1 位、src/ns_formatio.c:879-892 在 precision==0 时不抑制零值）：
+   实测 `"%.0d", 0` → `"0"`（libc `""`）、`"%5.0d", 0` → `"    0"`（libc `"     "`）。
+4. **`%#x`/`%#o` 零值仍加前缀**（src/ns_formatio.c:864-875 无条件加 special）：
+   实测 `"%#x", 0` → `"0x0"`（libc `"0"`）、`"%#o", 0` → `"00"`（libc `"0"`）。
+   test/unit/test_formatio.c:256、258 已把 `"0x0"`/`"00"` 固化为期望。
+
+#### review 建议
+
+若这些差异是设计选择（`%q`/`%b`/`%#b` 等本就是扩展），在 include/nanosig/ns_formatio.h
+为 printf 族补一段 docstring，列出"支持的转换 + 与 C99 的差异清单 + 精度/宽度上限"，
+至少覆盖上面 4 条；若认为第 2、3 条应遵循 C99，则相应修改
+src/ns_formatio.c:978-989（负精度视同未指定）与 vprintf_number 的零值+精度 0 分支。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%g", 1e6);        /* 实际 "1000000.000000"，C99 "1e+06" */
+ns_snprintf(buf, sizeof(buf), "[%.*s]", -1, "hello");  /* 实际 "[]"，C99 "[hello]" */
+ns_snprintf(buf, sizeof(buf), "%.0d", 0);        /* 实际 "0"，C99 "" */
+ns_snprintf(buf, sizeof(buf), "%#x", 0);         /* 实际 "0x0"，C99 "0" */
+```
+
+#### 定位
+include/nanosig/ns_formatio.h:67-81
+src/ns_formatio.c:705-711
+src/ns_formatio.c:978-989
+src/ns_formatio.c:200-208
+src/ns_formatio.c:864-875
+
+---
+
+### FORMATIO-029: `ns_stream_puts` 对 NULL 字符串不设防，与同族 API 的 NULL 容忍不一致
+
+- **状态**: 打开
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+
+`ns_stream_puts`（src/ns_formatio.c:1245-1263）只检查 stream 是否为 NULL，
+对 `s` 的 NULL 不做处理：`NS_STREAM_TYPE_FUNCTION_NO_CACHE` 分支直接
+`strlen(s)`（src/ns_formatio.c:1255），其他分支走 `while (*p)` 解引用（src/ns_formatio.c:1260-1261），
+`ns_stream_puts(stream, NULL)` 必然崩溃。
+
+同族 API 则显式容忍 NULL：`ns_stream_putc` / `ns_stream_printf` 检查 stream==NULL
+（src/ns_formatio.c:1238-1243、src/ns_formatio.c:1225-1236），
+`vprintf_string` 把 NULL 字符串替换为 `"(null)"`（src/ns_formatio.c:319-320）。
+公共头未文档化任何 NULL 约束，故属行为不一致的健壮性缺口，而非合同前提保护。
+
+#### review 建议
+
+在入口补 `if (s == NULL) return 0;`，与 `ns_stream_putc`/`ns_stream_printf` 的 NULL 语义对齐；
+或在 ns_formatio.h 的 `ns_stream_puts` 声明处文档化"`s` 不得为 NULL"。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+struct ns_stream_memory m;
+uint8_t mbuf[16];
+ns_stream_memory_init(&m, mbuf, sizeof(mbuf));
+ns_stream_puts((struct ns_stream_base *)&m, NULL);  /* 解引用 NULL → SEGV */
+```
+
+#### 定位
+src/ns_formatio.c:1245-1263
+
+---
+
 ## 现在关闭的问题
 
 ### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出

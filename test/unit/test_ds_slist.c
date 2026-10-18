@@ -283,6 +283,47 @@ static int test_traversal(void)
     return 0;
 }
 
+/* 删到空链表后 last 必须回到 NULL：否则后继 push_back 会经 list->last == &list
+   的别名写入 first 字段，把先入队的节点顶掉 */
+static int test_for_each_safe_drain_to_empty(void)
+{
+    ns_slist_t list = NS_SLIST_INITIALIZER;
+    slist_item_t items[4] = {
+        { 10, { NULL } },
+        { 20, { NULL } },
+        { 30, { NULL } },
+        { 40, { NULL } },
+    };
+    ns_slist_node_t *pos_prev, *pos, *tmp;
+    int count = 0;
+
+    ns_slist_push_back(&list, &items[0].node);
+    ns_slist_push_back(&list, &items[1].node);
+
+    ns_slist_for_each_safe(pos_prev, pos, tmp, &list){
+        count++;
+        ns_slist_del_node_in_for_each_safe(&list, pos_prev, tmp);
+    }
+    if(expect_true(count == 2) != 0) return 1;
+    if(expect_true(ns_slist_empty(&list)) != 0) return 1;
+    if(expect_true(ns_slist_first(&list) == NULL) != 0) return 1;
+    if(expect_true(ns_slist_last(&list) == NULL) != 0) return 1;
+
+    /* 空链表上继续入队：两个节点都必须还在 */
+    ns_slist_push_front(&list, &items[2].node);
+    ns_slist_push_back(&list, &items[3].node);
+    if(expect_true(ns_slist_first(&list) == &items[2].node) != 0) return 1;
+    if(expect_true(ns_slist_last(&list) == &items[3].node) != 0) return 1;
+
+    count = 0;
+    ns_slist_for_each(pos, &list){
+        count++;
+    }
+    if(expect_true(count == 2) != 0) return 1;
+
+    return 0;
+}
+
 static int test_invalid_inputs(void)
 {
     ns_slist_t list = NS_SLIST_INITIALIZER;
@@ -302,6 +343,7 @@ int main(void)
     if(test_head_move_init() != 0) return 1;
     if(test_stack_queue_ops() != 0) return 1;
     if(test_traversal() != 0) return 1;
+    if(test_for_each_safe_drain_to_empty() != 0) return 1;
     if(test_invalid_inputs() != 0) return 1;
     return 0;
 }

@@ -237,11 +237,17 @@ static inline void streamout_in_byte(struct ns_stream_base *stream, char ch)
         }
         case NS_STREAM_TYPE_MEMORY: {
             struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
-            /* end == NULL 表示无界流(ns_sprintf/ns_vsprintf),调用方保证缓冲足够 */
-            if (m->end == NULL || m->pos < m->end) {
+            if (m->pos < m->end) {
                 *m->pos = (uint8_t)ch;
                 m->pos++;
             }
+            break;
+        }
+        case NS_STREAM_TYPE_MEMORY_UNBOUNDED: {
+            struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
+            /* 调用方保证缓冲足够(ns_sprintf/ns_vsprintf) */
+            *m->pos = (uint8_t)ch;
+            m->pos++;
             break;
         }
     }
@@ -266,18 +272,20 @@ static NS_NOINLINE void streamout_finish(struct ns_stream_base *stream)
         }
         case NS_STREAM_TYPE_MEMORY: {
             struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
-            if (m->end == NULL) {
-                /* 无界流(ns_sprintf/ns_vsprintf):调用方保证空间,直接收尾 */
-                *m->pos = '\0';
-            } else if (m->end > m->buf) {
-                /* 有界且 size >= 1:截断时在 end-1 处写 NUL */
+            if (m->end > m->buf) {
+                /* size >= 1:截断时在 end-1 处写 NUL */
                 if (m->pos < m->end) {
                     *m->pos = '\0';
                 } else {
                     *(m->end - 1) = '\0';
                 }
             }
-            /* 有界且 size == 0:不写任何字节(与 C99 一致) */
+            /* size == 0(含 buf == NULL 的 C99 探测调用):不写任何字节 */
+            break;
+        }
+        case NS_STREAM_TYPE_MEMORY_UNBOUNDED: {
+            struct ns_stream_memory *m = (struct ns_stream_memory *)stream;
+            *m->pos = '\0';
             break;
         }
     }
@@ -416,6 +424,12 @@ static void float_decentralized(double num, struct ns_double_components *compone
     } else if ((remainder == 0.5) &&
                ((components->fractional == 0U) || (components->fractional & 1U))) {
         ++components->fractional;
+        /* precision == 0 时进位由下面基于 integral 奇偶的分支处理，此处不重复进位 */
+        if ((precision > 0U) &&
+            ((double)components->fractional >= powers_of_10[precision])) {
+            components->fractional = 0;
+            ++components->integral;
+        }
     }
 
     if (precision == 0U) {
@@ -459,9 +473,15 @@ static void float_normalized_decentralized(
     components->fractional = (uint64_t)scaled_remainder;
     scaled_remainder -= (double)components->fractional;
 
-    components->fractional += (scaled_remainder >= rounding_threshold);
-    if (scaled_remainder == rounding_threshold) {
-        components->fractional &= ~((uint64_t)0x1);
+    if (scaled_remainder > rounding_threshold) {
+        ++components->fractional;
+    } else if (scaled_remainder == rounding_threshold) {
+        /* 半途:银行家舍入取偶;precision == 0 时目标位在 integral 上 */
+        if (precision == 0U) {
+            components->fractional = (components->integral & (uint64_t)0x1);
+        } else if (components->fractional & (uint64_t)0x1) {
+            ++components->fractional;
+        }
     }
     if ((double)components->fractional >= prec_power_of_10) {
         components->fractional = 0;
@@ -1166,7 +1186,7 @@ int ns_vsprintf(char *buf, const char *fmt, va_list args)
     struct ns_stream_memory stream;
 
     ns_stream_memory_init(&stream, (uint8_t *)buf, 0);
-    stream.end = NULL; /* 无界流:不设上界,调用方保证缓冲足够 */
+    stream.base.type = NS_STREAM_TYPE_MEMORY_UNBOUNDED; /* 无界流:调用方保证缓冲足够 */
     n = streamout_vprintf((struct ns_stream_base *)&stream, fmt, args);
     streamout_finish((struct ns_stream_base *)&stream);
     return n;

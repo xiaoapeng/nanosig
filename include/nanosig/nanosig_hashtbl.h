@@ -244,6 +244,13 @@ extern uint32_t ns_hash_string(const char *key);
 /**
  * @brief 遍历哈希表全部节点。
  *
+ * @warning 遍历体内禁止调用任何可能触发渐进式重建或扩容的接口，包括只读的
+ *          ns_hashtbl_find / ns_hashtbl_find_with_string / ns_hashtbl_node_key_refresh
+ *          以及 ns_hashtbl_insert。这些调用会在遍历中途把节点搬到别的桶，导致同一节点被
+ *          重复访问或漏访；插入触发的扩容还会释放旧桶数组，使遍历持有的链表指针悬垂
+ *          （use-after-free）。
+ * @note 宏名里的 _safe 只表示"可在遍历体内删除当前节点"（沿用
+ *       ns_list_for_each_entry_safe 语义），不表示遍历期间可以修改表结构。
  * @note 使用表达式式静态断言做编译期类型检查（NS_STATIC_ASSERT_EXPR），
  *       C11 与 C++ 均可用。
  *
@@ -265,6 +272,14 @@ extern uint32_t ns_hash_string(const char *key);
 /**
  * @brief 遍历哈希表，键为字符串（仅精确匹配键的节点：长度与内容均相等，不做前缀匹配）。
  *
+ * @warning 遍历体内禁止调用任何可能触发渐进式重建或扩容的接口，包括只读的
+ *          ns_hashtbl_find / ns_hashtbl_find_with_string / ns_hashtbl_node_key_refresh
+ *          以及 ns_hashtbl_insert。这些调用会让被遍历的链表中途发生搬迁（重复访问或
+ *          漏访），插入触发的扩容还会释放旧桶数组（use-after-free）。
+ * @note 宏名里的 _safe 只表示"可在遍历体内删除当前节点"，不表示遍历期间可以修改表结构。
+ *       宏自身的初始化表达式会先对目标桶做一次重建（_ns_hashtbl_find_list_head*），
+ *       这是有意为之，不属于上述禁止范围。
+ *
  * @param hashtbl       哈希表句柄。
  * @param string        字符串。
  * @param node_pos      节点位置变量。
@@ -282,6 +297,14 @@ extern uint32_t ns_hash_string(const char *key);
 
 /**
  * @brief 遍历哈希表，键为二进制（仅匹配键匹配的节点）。
+ *
+ * @warning 遍历体内禁止调用任何可能触发渐进式重建或扩容的接口，包括只读的
+ *          ns_hashtbl_find / ns_hashtbl_find_with_string / ns_hashtbl_node_key_refresh
+ *          以及 ns_hashtbl_insert。这些调用会让被遍历的链表中途发生搬迁（重复访问或
+ *          漏访），插入触发的扩容还会释放旧桶数组（use-after-free）。
+ * @note 宏名里的 _safe 只表示"可在遍历体内删除当前节点"，不表示遍历期间可以修改表结构。
+ *       宏自身的初始化表达式会先对目标桶做一次重建（_ns_hashtbl_find_list_head*），
+ *       这是有意为之，不属于上述禁止范围。
  *
  * @param hashtbl       哈希表句柄。
  * @param key           键。

@@ -234,6 +234,11 @@ void ns_hashtbl_node_key_refresh(ns_hashtbl_t _hashtbl, struct ns_hashtbl_node *
     node->hash_val = ns_hash_val((const char *)node->kv, node->key_len);
     if(ns_hashtbl_node_is_insert(node)){
         idx = node->hash_val & hashtbl->mask;
+
+        /* 尝试进行重建：目标桶可能仍是待重建状态（next == NULL），
+           直接 push_front 会经 NULL 链接写坏内存 */
+        ns_hashtbl_try_remake(hashtbl, idx);
+
         ns_list_remove(&node->node);
         ns_list_push_front(hashtbl->table + idx, &node->node);
     }

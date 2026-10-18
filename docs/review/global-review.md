@@ -169,16 +169,27 @@ C++ 消费者会把整份 Win32 声明包进 `extern "C"`，可能与 C++ 重载
 `extern "C"` 与否不影响类型别名）。修改后需在 MSVC/clang-cl 上补一次编译验证。
 
 #### 作者建议
-（待作者补充）
+按 review 建议修：把 `#include NANOSIG_PLATFORM_HEADER` 连同它前面的
+`ns_platform_thread_fn` 前置声明与 `struct ns_platform_waitable;` 一起移到
+`extern "C"` 之前。本机（macOS）事后跑过 macos-release 全量 ctest 与
+api-compile-checks 的 CPP 兼容检查（Clang），MSVC 上仍未验证。→ 关闭-已修复
+
+#### 关闭原因
+include/nanosig/nanosig_port.h 现按 include 顺序 + 前置声明 + 平台后端头 +
+`extern "C"` 排列：平台 SDK 头（Windows 的 `<windows.h>`）不再被 C 链接包围。
+macos-release 52/52、api-compile-checks（含 cpp_compat）通过。
+
+- 关闭日期: 2026-10-18
+- 状态: 关闭-已修复
 
 #### 可重现的失败场景
 Windows + MSVC：一个 C++ TU 只 `#include <nanosig/nanosig.h>`（间接包含
 `nanosig_port.h`）即可能因 `<windows.h>` 的 C++ 声明被 C 链接包围而报错。
-未在本机验证，需 Windows CI 或本地 MSVC 复核。
+本机未验证，需 Windows CI 或本地 MSVC 复核。
 
 #### 定位
-include/nanosig/nanosig_port.h:35
-include/nanosig/nanosig_port.h:68
+include/nanosig/nanosig_port.h:67
+include/nanosig/nanosig_port.h:70
 platform/windows/nanosig_platform_port.h:22
 
 ---

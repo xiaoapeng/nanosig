@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined(__linux__)
+#include <unistd.h>  /* close()：构造已关闭 eventfd 的 drain 用例 */
+#endif
+
 #include <nanosig/nanosig_port.h>
 
 #include "test_helpers.h"
@@ -55,6 +59,26 @@ static int test_wakeup(void)
     EXPECT_OK(wait_result == NS_PLATFORM_WAIT_SIGNALED);
     EXPECT_OK(ns_platform_wakeup_deinit(&wakeup) == NS_OK);
 
+    return 0;
+}
+
+/* Linux eventfd 的 drain 在非可恢复 errno 下必须先消费计数再报错，否则调用方
+   （broker 的 wakeup 等待）重试时 poll 会立即再次返回 POLLIN，形成零等待热自旋。
+   用已关闭的 eventfd 构造 EBADF：poll 得 POLLNVAL、read 得 EBADF。 */
+static int test_wakeup_drain_closed_fd(void)
+{
+#if defined(__linux__)
+    ns_platform_wakeup_t wakeup;
+    ns_platform_wait_result_t wait_result = NS_PLATFORM_WAIT_SIGNALED;
+
+    EXPECT_OK(ns_platform_wakeup_init(&wakeup, "drain-closed-fd") == NS_OK);
+    EXPECT_OK(ns_platform_wakeup_signal(&wakeup) == NS_OK);
+    EXPECT_OK(close(wakeup) == 0);
+
+    /* 要求：立即返回错误，不得挂死 */
+    EXPECT_OK(ns_platform_wakeup_wait(&wakeup, NS_PLATFORM_WAIT_INFINITE_US, &wait_result)
+        == NS_E_INVAL);
+#endif
     return 0;
 }
 
@@ -1023,6 +1047,7 @@ int main(void)
     if(test_alloc() != 0){ fprintf(stderr, "test_alloc failed\n"); return 1; }
     if(test_mutex() != 0){ fprintf(stderr, "test_mutex failed\n"); return 1; }
     if(test_wakeup() != 0){ fprintf(stderr, "test_wakeup failed\n"); return 1; }
+    if(test_wakeup_drain_closed_fd() != 0){ fprintf(stderr, "test_wakeup_drain_closed_fd failed\n"); return 1; }
     if(test_clock() != 0){ fprintf(stderr, "test_clock failed\n"); return 1; }
     if(test_thread() != 0){ fprintf(stderr, "test_thread failed\n"); return 1; }
     if(test_waitset_lifecycle() != 0){ fprintf(stderr, "test_waitset_lifecycle failed\n"); return 1; }
