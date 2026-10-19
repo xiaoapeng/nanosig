@@ -6,7 +6,7 @@ entries:
     status: "closed-rejected"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
     closed_date: "2026-07-18"
     location: "docs/review/rbtree-code-review.md#RBTREE-009"
   - id: "RBTREE-010"
@@ -14,7 +14,8 @@ entries:
     status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-07-11"
     location: "docs/review/rbtree-code-review.md#RBTREE-010"
   - id: "RBTREE-012"
     module: "rbtree"
@@ -25,17 +26,19 @@ entries:
     location: "docs/review/rbtree-code-review.md#RBTREE-012"
   - id: "RBTREE-014"
     module: "rbtree"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-014"
   - id: "RBTREE-015"
     module: "rbtree"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-015"
   - id: "RBTREE-016"
     module: "rbtree"
@@ -46,17 +49,19 @@ entries:
     location: "docs/review/rbtree-code-review.md#RBTREE-016"
   - id: "RBTREE-013"
     module: "rbtree"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-013"
   - id: "RBTREE-017"
     module: "rbtree"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-017"
   - id: "RBTREE-018"
     module: "rbtree"
@@ -223,60 +228,6 @@ src/ds/ns_rbtree.c:641
 
 ---
 
-<a id="RBTREE-014"></a>
-### RBTREE-014: `ns_rb_replace_node` 替换 leftmost 节点后 `rb_leftmost` 悬垂
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_rb_replace_node`（src/ds/ns_rbtree.c:590）把 victim 的 parent_and_color / 左右孩子整体搬到 new，并修正四周节点的回指，但**没有同步 `root->rb_leftmost`**。当 victim 恰好是 leftmost 时，`rb_leftmost` 仍指向已脱离树的 victim。后果三连：
-
-1. `ns_rbtree_first()` 返回游离节点（后续 `ns_rbtree_for_each_entry` 已是从游离节点起走）；
-2. `ns_rbtree_del` 的 leftmost 判断基于该缓存 → 删除别的节点时不更新 leftmost，缓存永久错位；
-3. 调用方按所有权释放 victim 存储（该函数搬走的是树链接，victim 的存储仍归调用方）→ 任何随后的 `ns_rbtree_first()` 就是 UAF。
-
-（与 RBTREE-011 不重复：那条针对"导出但未声明"的符号面缺口，本条针对函数体缺失的 leftmost 维护；根因与修复方向均不同。）
-
-
-#### review 建议
-在 `ns_rb_replace_node` 内同步维护缓存，与 `ns_rbtree_add` / `ns_rbtree_find_add` / `ns_rbtree_del` 的 leftmost 维护点对齐：
-
-```c
-if (root->rb_leftmost == victim)
-    root->rb_leftmost = new;
-```
-
-位置放在 `__ns_rb_change_child(victim, new, parent, root)` 之后（与 `ns_rbtree_del` 先在删除前修正 leftmost 的写法一致）。若作者坚持该函数只是内部原语，最低限度也要在函数上方补 `@pre` 说明"调用方须自行修复 rb_leftmost"，但既然该符号对静态库导出、测试也按公共原语逐形态覆盖，直接修复更稳妥。测试侧建议在 test/unit/test_ds_rbtree.c:555 的 `test_replace_node` 中补一条断言：替换 leftmost 后 `tree.rb_leftmost == &repl[r].node`。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-item_t *victim = malloc(sizeof *victim);
-victim->key = 7u; ns_rbtree_node_init(&victim->node);
-ns_rbtree_add(&victim->node, &tree);        /* 单节点树：victim 同时是 root 与 leftmost */
-item_t repl; repl.key = 7u; ns_rbtree_node_init(&repl.node);
-ns_rb_replace_node(&victim->node, &repl.node, &tree);
-free(victim);                               /* 存储归调用方 */
-ns_rbtree_first(&tree);                     /* 读已释放内存 */
-```
-实测（clang -fsanitize=address,undefined）：替换后 `tree.rb_node == &repl.node` 而 `tree.rb_leftmost == victim` 悬垂；
-`ns_rbtree_first()` 触发 `AddressSanitizer: heap-use-after-free READ of size 4`（复现脚本：单节点树，victim = root = leftmost）。
-
-#### 定位
-src/ds/ns_rbtree.c:590
-src/ds/ns_rbtree.c:596
-src/ds/ns_rbtree.c:603
-test/unit/test_ds_rbtree.c:555
-test/unit/test_ds_rbtree.c:598
-
----
-
-<a id="RBTREE-015"></a>
-
 <a id="RBTREE-016"></a>
 ### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
 
@@ -385,7 +336,18 @@ cmake/ApiCompileChecks.cmake:38
 
 ## 现在关闭的问题
 
+<a id="RBTREE-014"></a>
+### RBTREE-014: `ns_rb_replace_node` 替换 leftmost 节点后 `rb_leftmost` 悬垂
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: `ns_rb_replace_node` 在生产代码中零调用，仅测试通过 `extern` 引用，已整体删除该函数及对应测试用例；leftmost 缓存维护缺失与 victim 未复位问题随函数消失，代码中不再存在该内部原语。
+- **关闭日期**: 2026-10-19
+
 ---
+
+<a id="RBTREE-015"></a>
 ### RBTREE-015: `ns_rb_replace_node` 未把 victim 置回空节点状态，残留链接导致后续删除丢失真实节点
 
 - **状态**: 关闭-已拒绝
@@ -393,8 +355,11 @@ cmake/ApiCompileChecks.cmake:38
 - **类型**: bug
 - **关闭原因**: 合同前提保护：`ns_rb_replace_node` 是内部非公共 API，不在 `include/nanosig/nanosig_rbtree.h` 声明，仅供测试通过 `extern` 手动引用。调用方需自行理解函数语义，在替换 leftmost 节点后自行维护 `rb_leftmost` 缓存及 victim 状态复位。库内部其他代码不调用此函数，正常构建路径不会触发。
 - **关闭日期**: 2026-10-19
-<a id="RBTREE-011"></a>
+- **加注（2026-10-19）**: 该函数已整体删除，本条随函数消失而失效。
+
 ---
+
+<a id="RBTREE-017"></a>
 ### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
 
 - **状态**: 关闭-已修复
@@ -429,11 +394,16 @@ cmake/ApiCompileChecks.cmake:38
 - **类型**: doc
 - **关闭原因**: 审核确认 `ns_rbtree_add` 的返回值为 `leftmost ? node : NULL`，与文档完全一致，reviewer 误读代码。非库缺陷。
 - **关闭日期**: 2026-10-19
+
+---
+
+<a id="RBTREE-011"></a>
 ### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
 
 - **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **类型**: design
+- **加注（2026-10-19）**: 该函数已整体删除，符号面不一致问题不复存在。
 
 #### 问题描述
 
