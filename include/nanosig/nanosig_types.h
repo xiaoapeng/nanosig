@@ -14,11 +14,12 @@
 
 #ifdef __cplusplus
 #include <type_traits>
-/* typeof 是 GCC 扩展，非 C++ 标准关键字；遍历宏中使用裸 typeof，
-   此处统一收口为 __typeof__ 以兼容严格 C++ 模式。 */
+#endif
+
+/* typeof 是 GCC/Clang 扩展，非 C/C++ 标准关键字。遍历宏中使用裸 typeof，
+   此处统一收口为 __typeof__ 以兼容严格 C11/C++ 模式。 */
 #if !defined(typeof) && (defined(__GNUC__) || defined(__clang__))
 #define typeof(...) __typeof__(__VA_ARGS__)
-#endif
 #endif
 
 #if defined(__has_attribute)
