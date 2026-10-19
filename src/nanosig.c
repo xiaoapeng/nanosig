@@ -6,6 +6,8 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <string.h>
+
 #include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
@@ -189,7 +191,8 @@ int ns_loop_destroy(ns_loop_t *loop)
     return rc;
 }
 
-static void ns_loop_dispatch_pending(ns_loop_t *loop)
+static void __attribute__((no_sanitize("function")))
+ns_loop_dispatch_pending(ns_loop_t *loop)
 {
     void *record = NULL;
     size_t record_size = 0u;
