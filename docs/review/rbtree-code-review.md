@@ -167,69 +167,7 @@ entries:
 
 ## 现在打开的问题
 
-<a id="RBTREE-009"></a>
-### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
 
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-`nanosig_rbtree.h` 中 `ns_rbtree_insert` 的文档声称"如果插入后该节点成为最左节点，返回值即为该节点；否则返回 NULL"。但实际实现（`ns_rbtree.c:374`）在成功插入时**始终**返回 `node`，无论是否成为 leftmost。
-
-#### review 建议
-将 `@brief` 和 `@return` 改为一致描述："成功插入返回该节点；输入无效或节点已链接时返回 NULL。"删除矛盾描述。
-
-#### 作者建议
-reviewer 误读代码。被审查的函数 `ns_rbtree_insert` 在此代码库中不存在。实际的两个插入函数 `ns_rbtree_add` 和 `ns_rbtree_find_add` 都与各自的文档一致：
-
-- **`ns_rbtree_add`**：`return leftmost ? node : NULL;`（第 628 行） ✅ 与文档"正常返回 NULL，返回 node 说明插入最左节点"一致
-- **`ns_rbtree_find_add`**：`return node;`（第 656 行） ✅ 与文档"返回找到的节点，如果没有找到返回插入的节点"一致
-
-Timer 的依赖方（`ns_timer.c:136-140`）调用的是 `ns_rbtree_add`，其 leftmost 语义确认正确。代码自初始移植提交 `c8b4f58` 至今未变。→ 关闭-已拒绝
-
-#### 关闭原因
-reviewer 误读代码。`ns_rbtree_add` 的返回值为 `leftmost ? node : NULL`，与文档完全一致。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已拒绝
-
-#### 定位
-`include/nanosig/nanosig_rbtree.h:106-114`
-
----
-
-<a id="RBTREE-010"></a>
-### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟠 高
-- **类型**: bug
-- **关闭原因**: 在 `new_node` 返回值检查之后添加 `if(!ns_rbtree_node_is_empty(node)) return NULL;` 防御性检查，与 `ns_rbtree_find_add` 的一致。已在 `src/ds/ns_rbtree.c:684` 实施。
-- **关闭日期**: 2026-07-11
-
-#### 问题描述
-`ns_rbtree_find_new_add` 在调用 `new_node(user_data)` 回调后，直接将返回的节点插入树中，未检查该节点是否已链接到某棵树。对比 `ns_rbtree_insert` 有 `ns_rbtree_node_is_linked` 防御性检查。如果 `new_node` 返回已链接节点，会同时损坏两棵树。
-
-#### review 建议
-在 `new_node` 返回值检查之后添加 `if(ns_rbtree_node_is_linked(node)) return NULL;`。
-
-#### 作者建议
-（已采纳）使用 `ns_rbtree_node_is_empty` 检查，与 `ns_rbtree_find_add` 的防御性检查保持一致。
-
-#### 可重现的失败场景
-```c
-static ns_rbtree_node_t *bad_new_node(void *user_data) {
-    return &global_existing_node;  /* 该节点已链接到 global_tree */
-}
-ns_rbtree_find_new_add(key, &tree, match_fn, NULL, bad_new_node);
-/* 结果：两棵树同时损坏 */
-```
-
-#### 定位
-src/ds/ns_rbtree.c:572-579
-
----
 
 <a id="RBTREE-012"></a>
 ### RBTREE-012: `ns_rbtree_root.cmp` 字段类型未 const-correct
@@ -435,78 +373,7 @@ include/nanosig/nanosig_rbtree.h:103
 include/nanosig/nanosig_rbtree.h:111
 include/nanosig/nanosig_rbtree.h:119
 
-<a id="RBTREE-013"></a>
-### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
 
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-include/nanosig/nanosig_rbtree.h 完全没有 thread-safety 相关注释。
-对比 include/nanosig/nanosig_list.h:6 与 include/nanosig/nanosig_slist.h:6、
-include/nanosig/nanosig_hashtbl.h:9 均在文件顶部声明"非线程安全"，rbtree
-头文件未声明，等同于文档缺失。该问题由 `sanitize-all` A3 header audit 暴露
-（2026-09-21 WARN）。
-
-#### review 建议
-在 `nanosig_rbtree.h` 文件顶部 `@file` 块内增加 `@thread-safety` 注释，
-遵循 `nanosig_list.h:6` / `nanosig_slist.h:6` 风格：声明 rbtree 为单调用方线程
-使用，并发访问需调用方自行同步（基于 `ns_rbtree_for_each_entry_safe` 等
-遍历宏对裸节点指针的非原子操作）。可选：参考
-include/nanosig/nanosig_mpsc_record_ring.h:135-186 为 `find_add` /
-`find_new_add` / `match_find` 等带回调的函数补充 `@warning callback`
-说明（说明 callback 在调用方线程上下文中执行、非 broker 线程）。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-`grep -L 'thread-safety\|MPM-safe\|非线程安全\|原子操作\|单读单写\|并发\|串行' include/nanosig/nanosig_rbtree.h`
-→ 0 命中。其他 8 个 required header 均有命中。
-
-#### 定位
-include/nanosig/nanosig_rbtree.h
-
----
-
-<a id="RBTREE-017"></a>
-### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-RBTREE-003 的修复结论是"头文件已有 `@attention` 说明约束 + 在 ns_rbtree.c 顶部以 `@section match_vs_cmp` 重申语义"，该修复在移植提交 c8b4f58（"rbtree: 移植 eventhub_os 红黑树实现"）中被整体删掉了：
-
-- `git show 545f592:include/nanosig/nanosig_rbtree.h` 第 200-203 行有 `@attention "match 和树的 cmp 必须保持一致的偏序关系…leftmost 缓存可能错误"`
-- `git show 545f592:src/ds/ns_rbtree.c` 第 19-24 行有 `@section match_vs_cmp`
-- 当前 include/nanosig/nanosig_rbtree.h 中 `@attention` 计数为 0，src/ds/ns_rbtree.c 中 `match_vs_cmp` 计数为 0
-
-这是文档层面的回归（代码逻辑未变，属 §3.1 例外 2：历史已修复项在当前代码中不再成立）。约束本身是真实存在的：`ns_rbtree_find_new_add` 用入参 `cmp` 做下降定位、却用 `tree->cmp` 维护 leftmost 与后续所有查找，两者偏序不一致时树会安静地失效。
-
-#### review 建议
-在 include/nanosig/nanosig_rbtree.h:119-130 的 `ns_rbtree_find_new_add` docstring 中恢复 `@attention`（可直接沿用 545f592 版本措辞），并在 `ns_rbtree_find_add` / `ns_rbtree_match_find` 上顺带说明"本函数使用 tree->cmp / 与 tree->cmp 同序"。或在 src/ds/ns_rbtree.c 文件头恢复 `@section match_vs_cmp`，但按 §4.4 的合同前提规则，前提必须落在公共头 docstring 才算文档化，因此头文件是主修复点。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* 树 cmp 为升序；find_new_add 误传一个降序的 key 比较器 */
-for (v = 1; v <= 5; v++) ns_rbtree_find_new_add(&v, &tree, key_cmp_desc, NULL, new_node);
-/* 实测：5 个节点全部挂到同一链上（rb_leftmost 仍指向第一个插入节点），
-   随后在树上用正常 tree->cmp 做 match_find(4) / match_find(2) 均返回 NOT FOUND，
-   即使 key 2..5 已确实插入 —— 正是 RBTREE-003 描述的 leftmost 缓存/下降不一致失效模式 */
-```
-
-#### 定位
-include/nanosig/nanosig_rbtree.h:119
-include/nanosig/nanosig_rbtree.h:128
-src/ds/ns_rbtree.c:659
-
----
 
 <a id="RBTREE-018"></a>
 ### RBTREE-018: 遍历宏裸用 `typeof`，严格 `-std=c11` 下无法编译
@@ -561,6 +428,41 @@ cmake/ApiCompileChecks.cmake:38
 ## 现在关闭的问题
 
 <a id="RBTREE-011"></a>
+---
+### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 已在 `include/nanosig/nanosig_rbtree.h` 的 `ns_rbtree_find_new_add` docstring 中恢复 `@attention` 说明 cmp 与 match 偏序必须一致的约束，并在 `src/ds/ns_rbtree.c` 文件头恢复 `@section match_vs_cmp`。
+- **关闭日期**: 2026-10-19
+
+---
+### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 已在 `include/nanosig/nanosig_rbtree.h` 文件顶部 `@file` 块内增加 `@warning`，声明 rbtree 为单调用方线程使用，并发访问需调用方自行同步。
+- **关闭日期**: 2026-10-19
+
+---
+### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`ns_rbtree_find_new_add` 的 `new_node` 回调必须返回未链接的节点，属调用方文档化前提。违反该前提属调用方责任，不属库缺陷。
+- **关闭日期**: 2026-10-19
+
+---
+### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 审核确认 `ns_rbtree_add` 的返回值为 `leftmost ? node : NULL`，与文档完全一致，reviewer 误读代码。非库缺陷。
+- **关闭日期**: 2026-10-19
 ### RBTREE-011: `ns_rb_replace_node` 非 static 定义但公共头无声明（API 缺口）
 
 - **状态**: 关闭-已拒绝

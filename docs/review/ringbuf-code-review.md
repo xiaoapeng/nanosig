@@ -302,41 +302,6 @@ entries:
 
 ## 现在打开的问题
 
-<a id="RINGBUF-023"></a>
-### RINGBUF-023: `ns_ringbuf_peek` 不拒绝 `*len == 0`，与其他函数不一致
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟢 较低
-- **类型**: design
-
-#### 问题描述
-`ns_ringbuf_peek` 当调用方传入 `*len = 0` 时，函数不拒绝，而是返回内部缓冲区指针和可用连续字节数。这与 `ns_ringbuf_read`/`ns_ringbuf_peek_copy`/`ns_ringbuf_write` 的 `len == 0 → return 0` guard 不一致。头文件文档 `@param len [in] 需要读取的字节数` 暗示 `*len = 0` 应返回 NULL。
-
-#### review 建议
-在 `ns_ringbuf_peek` 中 `rl = *len;` 之后增加 `if(rl == 0u) return NULL;` guard。若"探测可用连续字节数"是有意设计，应在头文件中显式文档化。
-
-#### 作者建议
-设计如此。`*len=0` 时返回内部指针和可用连续字节数，可用于探测可读数据量，是有意设计的功能而非缺陷。不需要修改代码。
-→ 关闭-已拒绝
-
-#### 关闭原因
-设计如此，使用 `*len=0` 可直接获取当前内部缓冲区和可用连续字节数，是探测可读数据量的有用功能。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已拒绝
-
-#### 可重现的失败场景
-```c
-uint32_t want = 0;
-const uint8_t *p = ns_ringbuf_peek(&rb, 0, buf, &want);
-// 期望: p == NULL, want 不变
-// 实际: p != NULL (指向内部缓冲区), want = 5
-```
-
-#### 定位
-src/ds/ns_ringbuf.c:223-224
-
----
 
 <a id="RINGBUF-024"></a>
 ### RINGBUF-024: `peek`/`peek_copy` 绕回路径及 `draft_write` 非零 offset 路径无测试覆盖
@@ -378,64 +343,6 @@ src/ds/ns_ringbuf.c:128
 
 ---
 
-<a id="RINGBUF-025"></a>
-### RINGBUF-025: `draft_write` 在"缓冲区已满"与"offset == 空闲空间"时返回 `NS_E_RANGE`，与头文件承诺的 `0` / "超过空闲空间" 语义不符
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-头文件 `nanosig_ringbuf.h:115` 的 `@return` 明确承诺"参数错误或**无空间返回 0**；offset 越界返回 `NS_E_RANGE`"，
-`@param offset`（`nanosig_ringbuf.h:112`）把越界定义为"**超过**当前空闲空间"。
-代码 `src/ds/ns_ringbuf.c:122` 只有一条判断 `if(offset >= free_size) return (int32_t)NS_E_RANGE;`，因此出现两处与文档相反的返回：
-
-1. **缓冲区已满**（`free_size == 0`）时，即使 `offset == 0` 完全没有越界，也返回 `NS_E_RANGE`，
-   而不是文档承诺的 `0`（"无空间"）。对照 `ns_ringbuf_write` 在满缓冲时返回 0（`src/ds/ns_ringbuf.c:90-91`），同一语义下两个函数返回值不一致。
-2. `offset == free_size`（**等于**空闲空间，并未"超过"）也返回 `NS_E_RANGE`。
-
-调用方按 `@return` 的承诺用 `rc == 0` 表示"无空间可写"时，会把满缓冲当成硬错误；也无法区分"offset 非法"与"无空间"两种情形。
-另注：`NS_E_RANGE` 这一分支在 `test/unit/test_ds_ringbuf.c` 中**零覆盖**（该文件只断言过 `NS_E_INVAL`）。
-
-#### review 建议
-两种改法都只需一处改动，任选其一（建议 a）：
-1. **保持 API 语义**，把"无空间"从越界分支中拆出：
-   `if(free_size == 0u) return 0;` 放在 `if(offset >= free_size) return NS_E_RANGE;` 之前；
-   同时把 `@param offset` 的文案由"超过当前空闲空间"改为"`offset ≥ 当前空闲空间`"，让相等边界也落在文档范围内。
-2. **保持代码行为**，改文档：删掉 `@return` 中的"或无空间返回 0"，写明"`free_size == 0` 或 `offset ≥ free_size` 均返回 `NS_E_RANGE`"。
-
-无论选哪种，都建议在 `test_ds_ringbuf.c` 补三条断言：满缓冲 `draft_write(offset=0)`、`offset == free_size`、`offset > free_size`。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-uint8_t store[5];
-uint8_t sink[8];
-uint8_t data[3] = {1, 2, 3};
-ns_ringbuf_t rb;
-
-ns_ringbuf_init(&rb, store, 5);
-ns_ringbuf_write(&rb, (const uint8_t *)"ABCDE", 5);   /* 填满：free_size == 0 */
-ns_ringbuf_draft_write(&rb, 0, data, 3);
-/* 期望（按 @return"无空间返回 0"）：0
-   实际（实测）：NS_E_RANGE(-12) */
-
-ns_ringbuf_read(&rb, sink, 1);                        /* free_size == 1 */
-ns_ringbuf_draft_write(&rb, 1, data, 3);
-/* 期望（按 @param"超过空闲空间"才越界）：0
-   实际（实测）：NS_E_RANGE(-12) */
-```
-
-#### 定位
-src/ds/ns_ringbuf.c:122
-include/nanosig/nanosig_ringbuf.h:112
-include/nanosig/nanosig_ringbuf.h:115
-
----
-
-<a id="RINGBUF-026"></a>
 ### RINGBUF-026: `ns_ringbuf_init` 的 size 上限拒绝路径（`NS_E_PARAM`）无测试，而它是镜像法溢出安全论证的唯一防线
 
 - **状态**: 打开

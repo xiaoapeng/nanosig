@@ -167,6 +167,9 @@ extern int ns_mpsc_record_ring_try_push(
  * @retval NS_E_INVAL      参数非法（ring/parts 为 NULL、片段 data 为 NULL
  *                          且 size > 0、或总大小溢出）。
  * @retval NS_E_QUEUE_FULL 空间不足，记录未写入。
+ * @pre 调用 try_pushv 的生产者线程必须在 reserve 与 commit 之间保持存活，
+ *      不得在函数中途被取消/终止；环是尽力而为的排队设施，线程非正常
+ *      终止会导致该环不可用。
  */
 extern int ns_mpsc_record_ring_try_pushv(
     ns_mpsc_record_ring_t *ring,

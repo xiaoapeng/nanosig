@@ -168,51 +168,6 @@ entries:
 docs/MPSC_MEMORY_ORDER.md（全文）
 
 <a id="MPSC-012"></a>
-### MPSC-012: 生产者死在 reserve 与 commit 之间会永久卡死整个环
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-生产的"独占权"由 reserve_pos 决定，但空间/layout 判定用的是 write_pos/read_pos：plan_push 只按 write_pos-read_pos 判断 free_capacity，而 CAS 的 expected 是 write_pos（要求 reserve_pos == write_pos 才能抢占）。两者一旦分叉就再也回不来——没有任何代码路径能把 reserve_pos 拉回 write_pos。
-
-若某生产者在 CAS 成功之后、store write_pos 之前终止（线程被取消、abort 式退出、或永久得不到调度），reserve_pos 会永久领先 write_pos，产生两个后果：
-
-1. 生产者侧挂死：之后任何线程调用 try_pushv 都在重试循环里无限自旋。每次迭代 plan_push 都会成功（free_capacity 仍按未变的 write_pos 计算），CAS 却永远失败，函数不返回。这直接违反头文件对 try_push/try_pushv 的承诺"非阻塞；空间不足时立即返回 NS_E_QUEUE_FULL，不自旋"。调用方（如 ns_signal_emit 持锁 emit）会连带把持有者一起挂死。
-2. 消费者侧永久空转：write_pos 卡在泄漏点不再推进，消费者观察到的 used 恒为 0，永远返回 NS_E_EMPTY（即使后续还有活着的生产者，它们也全部被 1 卡住）。
-
-对称地，若生产者在 store write_pos 之后、写 payload/release-store meta 之前终止，write_pos 已越过该槽位，头部槽位的 valid 仍为 0：消费者在 try_acquire 里通过 used != 0 检查后落到 valid=0 分支，返回 NS_E_EMPTY，此后 read_pos 永远推不过这一槽位，环同样永久不可用。
-
-注：docs/MPSC_MEMORY_ORDER.md 的"关键不变量"承认 reserve_pos >= write_pos（即这种分叉是设计上允许的状态），但头文件与任何文档都没有声明"reserve_pos > write_pos 时环会彻底不可用"，也没有把"生产者线程不得在 reserve 与 commit 之间终止"写成 @pre。
-
-#### review 建议
-注意本条与已关闭的 MPSC-003 不是同一问题：MPSC-003 讨论的是 CAS 失败后 read_pos 未刷新（已确认为误报），本条讨论的是重试循环在 reserve_pos != write_pos 时永不终止、环被永久卡死，根因与修复方向都不同。
-
-按代价从低到高，建议至少做前两项：
-1. 把该前提显式写进公共头（try_push/try_pushv 的 @pre）："调用 try_pushv 的生产者线程必须在 reserve 与 commit 之间保持存活，不得在函数中途被取消/终止"；同时明确"环是尽力而为的排队设施，线程非正常终止会导致该环不可用"。
-2. 把 CAS 重试循环上界化：健康路径下 CAS 只需一次成功（CAS 成功条件本身就是 reserve_pos == write_pos，而在途 owner 的窗口只有 CAS 到 store write_pos 之间的几条指令），因此可设一个较宽的迭代上限（例如 1024 次或 8×已知生产者数），超限返回 NS_E_CORRUPT/NS_E_BUSY。这样把"无限挂死"变成调用方可见的错误，而不是静默卡死。注意这是启发式阈值，不能代替前提文档化。
-3. 若要真正容错，需要给"armed 但未提交"的槽位引入可回收机制（例如额外的 publish 序号或超时回收策略），成本高，不建议本轮做。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-形态 A（生产者侧无限自旋，独立 harness 实测复现）：init(capacity=128) 成功后，模拟一个在 CAS 成功后死亡的生产者——只把 reserve_pos 置为 24（write_pos 仍为 0）；随后任意线程调用 try_push(8 字节 payload, size=0xAAAAAAAA...)。预期：立即返回 NS_E_QUEUE_FULL 或错误码；实测：函数在 ns_mpsc_record_ring.c:383 的 CAS 重试循环内不返回，2 秒看门狗线程打印告警后强杀进程。因为 write_pos 恒为 0、reserve_pos 恒为 24，循环条件 `expected = write_pos` 永远不成立，重试必然无限。
-
-形态 B（消费者侧永久 E_EMPTY，实测复现）：init(capacity=128) → 连续 push 若干记录（全成功）→ 模拟某生产者在 store write_pos 之后死亡：把 write_pos 置为 16（越过 write_pos=0 处那条记录的槽位）、该槽位 meta 保持 0 → 反复 try_acquire 均返回 NS_E_EMPTY（NS_E_EMPTY == -8），write_pos=16、read_pos=0、free=32，之后无法再恢复。
-
-#### 定位
-src/ds/ns_mpsc_record_ring.c:367
-src/ds/ns_mpsc_record_ring.c:379
-src/ds/ns_mpsc_record_ring.c:383
-src/ds/ns_mpsc_record_ring.c:407
-src/ds/ns_mpsc_record_ring.c:452
-include/nanosig/nanosig_mpsc_record_ring.h:132
-include/nanosig/nanosig_mpsc_record_ring.h:156
-docs/MPSC_MEMORY_ORDER.md:107
-
----
 
 <a id="MPSC-013"></a>
 ### MPSC-013: 32 位构建下 meta 的 16 位 stride 字段会静默截断大记录
@@ -292,6 +247,14 @@ src/ds/ns_mpsc_record_ring.c:383
 ## 现在关闭的问题
 
 <a id="MPSC-003"></a>
+---
+### MPSC-012: 生产者死在 reserve 与 commit 之间会永久卡死整个环
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：生产者线程必须在 `reserve` 与 `commit` 之间保持存活，属调用方文档化前提。环卡死仅在调用方违反该前提时发生（线程取消/abort/永久不调度），不属库缺陷。已在 `include/nanosig/nanosig_mpsc_record_ring.h` 的 `try_push/try_pushv` docstring 中补写 `@pre` 前置条件。
+- **关闭日期**: 2026-10-19
 ### MPSC-003: `try_pushv` CAS 重试循环未刷新 `read_pos`
 
 - **状态**: 关闭-已拒绝

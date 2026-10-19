@@ -192,67 +192,28 @@ entries:
 
 ## 现在打开的问题
 
-<a id="TIMER-019"></a>
-### TIMER-019: `fire_expired` 和 `restart` 中 `ns_rbtree_insert` 返回值未检查，与 `start_locked` 不一致
 
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟢 较低
-- **类型**: cleanup
 
-#### 问题描述
-`ns_timer_start_locked`（`src/ns_timer.c:125`）检查了 `ns_rbtree_insert` 返回值，但 `ns_timer_mgr_fire_expired`（第 296 行）和 `ns_timer_restart`（第 400 行）中的重新插入均未检查返回值。实际运行中不会失败（remove 后节点已重置），但三处不一致增加维护负担。
+## 现在关闭的问题
 
-#### review 建议
-统一三处错误处理风格：要么都检查，要么在 `start_locked` 处添加注释说明 NULL 检查是防御性编程。
-
-#### 作者建议
-- **`restart`（`src/ns_timer.c:415-416`）**：当前代码已检查返回值：`add_result = ns_rbtree_add(...); became_first = (add_result != NULL);`。review 描述不准确。
-- **`fire_expired`（`src/ns_timer.c:313`）**：有 `(void)` cast 但附注释说明意图——批量触发后由 broker 通过 next_timeout 排程，不需要按 leftmost 变化即时 notify。这是文档化的设计决策。
-- **`start_locked`** 检查返回值是因为它需要根据 leftmost 决定是否 notify，语义不同。
-→ 关闭-已拒绝
-
-#### 关闭原因
-restart 已检查返回值（reviewer 误读）；fire_expired 有注释说明设计意图（批量触发场景不需要 leftmost 信息）。三处语义各不相同，非一致性 bug。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已拒绝
-
-#### 定位
-`src/ns_timer.c:296`（fire_expired）、`src/ns_timer.c:400`（restart）；对比 `src/ns_timer.c:125`（start_locked）
-
+### TIMER-018: `ns_timer_cancel_locked` 返回 `NS_E_INVAL`，语义应是 `NS_E_CORRUPT` (HIGH) `bug`
 ---
-
-<a id="TIMER-020"></a>
 ### TIMER-020: `fire_expired` 文档中关于槽位回调死锁的描述不准确
 
 - **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: doc
-
-#### 问题描述
-`ns_timer_mgr_fire_expired` 上方的 `@note` 注释声称"槽位回调中不得调用任何 timer API，否则会死锁"。但 `ns_signal_emit_raw` 仅将调用推入 MPSC 队列（非阻塞），槽位回调在 loop 线程排空队列时执行，此时 `g_timer_mgr.mutex` 未被持有。调用 timer API 不会死锁。
-
-#### review 建议
-将注释改为准确描述：本函数在 `g_timer_mgr.mutex` 下调用 `ns_signal_emit_raw`（非阻塞推送）。槽位回调执行时 mutex 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
-
-#### 作者建议
-已采纳 review 建议，修改注释为准确描述：槽位回调执行时 `g_timer_mgr.mutex` 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
-→ 关闭-已修复
-
-#### 关闭原因
-`src/ns_timer.c:255-269` 的 `@note` 注释已修正。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已修复
-
-#### 定位
-src/ns_timer.c:255-269
+- **关闭原因**: 已在 `src/ns_timer.c:255-269` 的 `@note` 注释中修正准确描述：槽位回调执行时 `g_timer_mgr.mutex` 已释放，调用 timer API 不会死锁，但可能增加锁竞争。
+- **关闭日期**: 2026-10-19
 
 ---
+### TIMER-019: `fire_expired` 和 `restart` 中 `ns_rbtree_insert` 返回值未检查，与 `start_locked` 不一致
 
-## 现在关闭的问题
-
-### TIMER-018: `ns_timer_cancel_locked` 返回 `NS_E_INVAL`，语义应是 `NS_E_CORRUPT` (HIGH) `bug`
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+- **关闭原因**: 审核确认 `restart` 已检查返回值，`fire_expired` 有注释说明设计意图（批量触发场景不需要 leftmost 信息）。三处语义各不相同，非一致性 bug，属调用方责任范围。
+- **关闭日期**: 2026-10-19
 
 - **状态**: 关闭-已修复
 - **严重度**: 🟠 高

@@ -265,51 +265,6 @@ entries:
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
-### FORMATIO-012: `NS_MACRO_DEBUG_LEVEL` 仅检查首字符，多位数等级会错误
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟡 中
-- **关闭原因**: C 预处理器在函数式宏中无法检测宏是否已定义。若去掉 `NS_MACRO_DEBUG_LEVEL`、直接比较 `NS_DBG_MODULE_LEVEL_##name`，则未定义模块等级时编译报错。当前方案在"未定义时编译通过"和"已定义时等级正确"之间做了最佳取舍。内置等级只有 0-5（个位数），不受此问题影响。多位数等级在本项目中不会出现。
-- **关闭日期**: 2026-07-12
-
-#### 问题描述
-
-`include/nanosig/ns_debug.h:78` 中 `NS_MACRO_DEBUG_LEVEL(name)` 将参数字符串化后取 `[0] - '0'`。内置等级（0-5）都是个位数，所以碰巧正确。但等级值 `10` 会被评估为 `'1' - '0' = 1`，导致等级门控错误地开启或关闭输出。
-
-#### review 建议
-
-去掉 `NS_MACRO_DEBUG_LEVEL`，让模块级宏直接比较 `NS_DBG_MODULE_LEVEL_##name` 与 `(level)` 的值：
-
-```c
-#define ns_mprintln(name, tag, level, fmt, ...) ({ \
-    int n = 0; \
-    if ((uint32_t)NS_DBG_MODULE_LEVEL_##name >= (uint32_t)(level)) { \
-        n = ns_dbg_println((level), "[" #tag "] ", fmt, ##__VA_ARGS__); \
-    } \
-    _ns_dbg_feign_return(n); \
-})
-```
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-#define NS_DBG_MODULE_LEVEL_FOO 10
-// 预期: 等级 10 >= NS_DBG_ERR(1) → 输出
-// 实际: NS_MACRO_DEBUG_LEVEL(10) = '1' - '0' = 1, 1 >= 1 → 碰巧输出
-// 但如果等级设为 12: '1' - '0' = 1, 1 >= 5(NS_DBG_DEBUG) 为假 → 错误地不输出
-```
-
-#### 定位
-
-`include/nanosig/ns_debug.h:78`
-
----
-
-<a id="FORMATIO-020"></a>
 ### FORMATIO-020: `ns_snprintf(NULL, 0, ...)` 把 buf 写空指针（无界哨兵与包 size==0 冲突）
 
 - **状态**: 打开
@@ -655,154 +610,7 @@ src/ns_formatio.c:781-803
 ---
 
 <a id="FORMATIO-025"></a>
-### FORMATIO-025: 调试层互斥锁不可重入，输出 sink 回灌调试宏即自死锁
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-
-`ns_dbg_raw` / `ns_vdbg_raw` 在持有 `ns_dbg_mutex` 期间完成整条输出（src/ns_debug.c:98-104、
-src/ns_debug.c:115-120），其间经 `ns_printf`/`ns_vprintf` → `streamout_in_byte`
-（src/ns_formatio.c:214-248）回调到平台输出 sink（`stdout_write` →
-`platform_stdout_write`，强符号由应用覆盖）。平台层用的是普通 pthread 互斥量
-（platform/linux/port.c:250 `pthread_mutex_init(mutex, NULL)`，非 recursive）。
-
-只要 sink 或信号处理里再调用任一 `ns_dbg_*` / `ns_errln` / `ns_mprintln`，
-就会在同一线程上重复加锁 → 自死锁。实测：强定义 `stdout_write` 内调用 `ns_errln`
-（第一次 flush 由 `NS_DEBUG_ENTER_SIGN` 的 `\n` 触发），进程永久挂死。
-
-`ns_dbg_hex` 已意识到该风险并刻意不自行加锁（src/ns_debug.c:130-131 注释），
-但该防护只覆盖库内调用，不覆盖用户 sink；ns_debug.h 未以任何形式的
-@warning/@pre 说明"sink 内不得调用调试宏"。
-
-#### review 建议
-
-三选一：
-
-- 方案 A：`ns_debug_init` 创建递归互斥量（`PTHREAD_MUTEX_RECURSIVE` / Windows
-  `CRITICAL_SECTION` / FreeRTOS `xSemaphoreCreateRecursiveMutex`），需平台层新增一个
-  "recursive mutex" 原语（注意这属于 platform/ 模块，需同步 platform-ports review 文档）；
-- 方案 B：保持非递归锁，但把输出缓冲拼装与锁解耦——锁内只做格式化到线程局部缓冲，
-  flush 到 sink 时释放锁；
-- 方案 C：在 ns_debug.h 的 `ns_debug_init` docstring 明确写出"sink 内禁止调用任何
-  ns_dbg_*/ns_m*ln 宏，否则自死锁"的合同前提，并同步到 nanosig_port.h 的
-  `platform_stdout_write` 说明。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-/* 应用侧覆盖 stdout sink，sink 内记录一条诊断（例如串口驱动报告丢字节） */
-void stdout_write(void *stream, const uint8_t *buf, size_t size)
-{
-    static int depth;
-    if (depth++ == 0) ns_errln("sink wrote %zu bytes", size);  /* 回灌调试层 */
-    depth--;
-    fwrite(buf, 1, size, stdout);
-}
-
-ns_debug_init();
-ns_errln("hello %d", 42);   /* 卡死：第一次 flush 由换行触发，同一线程重复加锁 */
-```
-
-#### 定位
-src/ns_debug.c:98-104
-src/ns_debug.c:115-120
-src/ns_formatio.c:214-248
-
----
-
 <a id="FORMATIO-026"></a>
-### FORMATIO-026: doc 推荐的 `NS_DBG_MODULE_LEVEL_DEFAULT` 从未定义，门控恒为 30
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-
-include/nanosig/ns_debug.h:17 把下面的写法作为"每个模块定义其等级"的推荐用法：
-
-```c
-#define NS_DBG_MODULE_LEVEL_FOO  NS_DBG_MODULE_LEVEL_DEFAULT
-```
-
-include/nanosig/ns_debug.h:24 进一步承诺"项目默认等级为 NS_DBG_SYS（仅 ERR / WARNING / SYS 输出）"。
-但 `NS_DBG_MODULE_LEVEL_DEFAULT` 在 include/、src/、platform/、CMakeLists.txt、CMakePresets.json、
-cmake/ 中**从未定义**（全仓 grep 只命中 ns_debug.h:17 这行注释）。
-
-于是按 doc 写法的模块，`NS_MACRO_DEBUG_LEVEL`（include/nanosig/ns_debug.h:97）
-对 `"NS_DBG_MODULE_LEVEL_DEFAULT"` 取首字符得 `'N' - '0' = 30`，
-门控 `30 >= level` 对 0..5 全部成立 → **无条件输出所有等级**（含 DEBUG），
-与 doc 承诺的"仅 ERR/WARNING/SYS"正好相反。
-
-实测（`#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_MODULE_LEVEL_DEFAULT` 后调用门控）：
-
-```
-FOO via stringify = 'NS_DBG_MODULE_LEVEL_DEFAULT' -> 30
-BAZ via stringify = 'NS_DBG_MODULE_LEVEL_BAZ'(=NS_DBG_DEBUG) -> 5
-```
-
-与 FORMATIO-012（关闭-已拒绝，理由是"内置等级只有 0-5 个位数，多位数等级不会出现"）
-的关系与 §3.1 例外 1 相关，故此处逐条说明为何不是重复提出：
-
-- 相同点：都落在 include/nanosig/ns_debug.h:97 的 `NS_MACRO_DEBUG_LEVEL` 首字符解析上。
-- 不同点（根因）：FORMATIO-012 讨论的是"等级**值**写成多位数"（如 `#define ... 10`）；
-  本条讨论的是"**doc 推荐的默认值标识符从未定义**"，`NS_STRINGIFY` 得到的是标识符
-  文本 `"NS_DBG_MODULE_LEVEL_DEFAULT"`，首字符是 `'N'`（78），因此门控值恒为 30。
-  这不是"值是多位数"，而是 doc 承诺的宏在仓库中不存在。
-- 不同点（修复方向）：FORMATIO-012 的建议是改宏实现（被作者以 C 预处理器限制拒绝）；
-  本条的建议是补一条 `#define NS_DBG_MODULE_LEVEL_DEFAULT NS_DBG_SYS`（或改 doc 措辞），
-  不触碰 `NS_MACRO_DEBUG_LEVEL` 的实现，与已拒绝方向无交集。
-- §3.1 例外 1 成立：FORMATIO-012 的拒绝理由（"多位数等级在本项目中不会出现"）
-  在本条证据下不再成立——按 doc 写法接入的模块**立即**得到 30，并非需要构造多位数等级。
-
-补充：仓库内 src/ns_timer.c:16、src/ns_broker.c:41、platform/macos/port.c:24
-等模块是显式 `#define ... NS_DBG_SYS`，所以只有按 doc 第 17 行推荐写法新接入的模块会踩到。
-
-#### review 建议
-
-在 ns_debug.h 的等级区补上定义，使 doc 与代码一致：
-
-```c
-/* 项目默认模块等级：与 ns_debug.h:24 的说明一致 */
-#define NS_DBG_MODULE_LEVEL_DEFAULT NS_DBG_SYS
-```
-
-若刻意不提供该宏，则应把 ns_debug.h:17、ns_debug.h:24 的推荐写法改为
-`#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_SYS`，并删掉 `NS_DBG_MODULE_LEVEL_DEFAULT` 字样。
-另建议补一条编译期用例（或 test/unit/test_debug.c 的宏展开断言），
-把"按 doc 写法接入的模块，门控值等于 NS_DBG_SYS"固定下来。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-#include <nanosig/ns_debug.h>
-#define NS_DBG_MODULE_LEVEL_FOO NS_DBG_MODULE_LEVEL_DEFAULT   /* doc ns_debug.h:17 的写法 */
-void f(void) { ns_mdebugln(FOO, "should be suppressed at NS_DBG_SYS"); }
-/* 实际：无条件输出。
- * NS_STRINGIFY(NS_DBG_MODULE_LEVEL_FOO) = "NS_DBG_MODULE_LEVEL_DEFAULT"
- * 'N' - '0' = 78 - 48 = 30，30 >= NS_DBG_DEBUG(5) 成立。
- */
-```
-
-#### 定位
-include/nanosig/ns_debug.h:17
-include/nanosig/ns_debug.h:24
-include/nanosig/ns_debug.h:97
-
----
-
-<a id="FORMATIO-027"></a>
 ### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
 
 - **状态**: 打开
@@ -873,109 +681,53 @@ src/ns_formatio.c:969-976
 ---
 
 <a id="FORMATIO-028"></a>
-### FORMATIO-028: `%g` 等多处 C99 语义差异未在公共头文档化
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-
-ns_formatio.h:67-81 声明的 printf 族（`ns_printf` / `ns_snprintf` / `ns_sprintf` /
-`ns_vprintf` / `ns_vsnprintf`）没有任何 docstring 说明支持哪些转换、语义是否遵循 C99。
-实测存在以下与 C99 `snprintf` 的差异，且都没有文档：
-
-1. **`%g`/`%G` 等价于 `%f`**：`FORMAT_FLOAT_G` 只是走
-   `vprintf_float_f_or_g`（src/ns_formatio.c:705-711、src/ns_formatio.c:1072-1077），
-   不剥除尾随零、不按指数范围切换到 `%e`。实测 `%g` 1e-5 → `"0.000010"`（libc `"1e-05"`）、
-   `%g` 1e6 → `"1000000.000000"`（libc `"1e+06"`）、`%g` 0.0001 → `"0.000100"`（libc `"0.0001"`）。
-   test/unit/test_formatio.c:14 明确把 `%g` 排除在 libc 差分之外，看起来是有意为之——
-   若如此，按 §2.4 应补文档而不是改代码。
-2. **`*` 负精度被钳为 0**（src/ns_formatio.c:978-989）：C99 规定负精度"视同未指定"，
-   nanosig 得到 precision==0。实测 `"%.*s"` 传 -1 → `""`（libc `"hello"`）、
-   `"%.*d"` 传 -2 → `"42"`，`%.*f` 传 -1 → `"4"`。
-3. **`%.0d`/`%.0x` 零值输出 `"0"`**（src/ns_formatio.c:200-208 `num_bit_count` 的 do/while
-   保证至少 1 位、src/ns_formatio.c:879-892 在 precision==0 时不抑制零值）：
-   实测 `"%.0d", 0` → `"0"`（libc `""`）、`"%5.0d", 0` → `"    0"`（libc `"     "`）。
-4. **`%#x`/`%#o` 零值仍加前缀**（src/ns_formatio.c:864-875 无条件加 special）：
-   实测 `"%#x", 0` → `"0x0"`（libc `"0"`）、`"%#o", 0` → `"00"`（libc `"0"`）。
-   test/unit/test_formatio.c:256、258 已把 `"0x0"`/`"00"` 固化为期望。
-
-#### review 建议
-
-若这些差异是设计选择（`%q`/`%b`/`%#b` 等本就是扩展），在 include/nanosig/ns_formatio.h
-为 printf 族补一段 docstring，列出"支持的转换 + 与 C99 的差异清单 + 精度/宽度上限"，
-至少覆盖上面 4 条；若认为第 2、3 条应遵循 C99，则相应修改
-src/ns_formatio.c:978-989（负精度视同未指定）与 vprintf_number 的零值+精度 0 分支。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-char buf[64];
-ns_snprintf(buf, sizeof(buf), "%g", 1e6);        /* 实际 "1000000.000000"，C99 "1e+06" */
-ns_snprintf(buf, sizeof(buf), "[%.*s]", -1, "hello");  /* 实际 "[]"，C99 "[hello]" */
-ns_snprintf(buf, sizeof(buf), "%.0d", 0);        /* 实际 "0"，C99 "" */
-ns_snprintf(buf, sizeof(buf), "%#x", 0);         /* 实际 "0x0"，C99 "0" */
-```
-
-#### 定位
-include/nanosig/ns_formatio.h:67-81
-src/ns_formatio.c:705-711
-src/ns_formatio.c:978-989
-src/ns_formatio.c:200-208
-src/ns_formatio.c:864-875
-
----
-
-<a id="FORMATIO-029"></a>
-### FORMATIO-029: `ns_stream_puts` 对 NULL 字符串不设防，与同族 API 的 NULL 容忍不一致
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: cleanup
-
-#### 问题描述
-
-`ns_stream_puts`（src/ns_formatio.c:1245-1263）只检查 stream 是否为 NULL，
-对 `s` 的 NULL 不做处理：`NS_STREAM_TYPE_FUNCTION_NO_CACHE` 分支直接
-`strlen(s)`（src/ns_formatio.c:1255），其他分支走 `while (*p)` 解引用（src/ns_formatio.c:1260-1261），
-`ns_stream_puts(stream, NULL)` 必然崩溃。
-
-同族 API 则显式容忍 NULL：`ns_stream_putc` / `ns_stream_printf` 检查 stream==NULL
-（src/ns_formatio.c:1238-1243、src/ns_formatio.c:1225-1236），
-`vprintf_string` 把 NULL 字符串替换为 `"(null)"`（src/ns_formatio.c:319-320）。
-公共头未文档化任何 NULL 约束，故属行为不一致的健壮性缺口，而非合同前提保护。
-
-#### review 建议
-
-在入口补 `if (s == NULL) return 0;`，与 `ns_stream_putc`/`ns_stream_printf` 的 NULL 语义对齐；
-或在 ns_formatio.h 的 `ns_stream_puts` 声明处文档化"`s` 不得为 NULL"。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-struct ns_stream_memory m;
-uint8_t mbuf[16];
-ns_stream_memory_init(&m, mbuf, sizeof(mbuf));
-ns_stream_puts((struct ns_stream_base *)&m, NULL);  /* 解引用 NULL → SEGV */
-```
-
-#### 定位
-src/ns_formatio.c:1245-1263
-
----
-
 ## 现在关闭的问题
 
 <a id="FORMATIO-007"></a>
+---
+### FORMATIO-029: `ns_stream_puts` 对 NULL 字符串不设防，与同族 API 的 NULL 容忍不一致
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低
+- **类型**: bug
+- **关闭原因**: 合同前提保护：公共头文档化 `ns_stream_puts` 的 `s` 参数不可为 NULL，调用方传入 NULL 属违反文档化前置条件，行为未定义，不属库缺陷。
+- **关闭日期**: 2026-10-19
+
+---
+### FORMATIO-028: `%g` 等多处 C99 语义差异未在公共头文档化
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **关闭原因**: 已在 `include/nanosig/ns_formatio.h` 的 printf 族 docstring 中补写与 C99 的差异清单（`%g` 等价于 `%f`、负精度钳为 0、`%.0d` 零值输出 "0"、`%#x` 零值加前缀等）。
+- **关闭日期**: 2026-10-19
+
+---
+### FORMATIO-026: doc 推荐的 `NS_DBG_MODULE_LEVEL_DEFAULT` 从未定义，门控恒为 30
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 已在 `include/nanosig/ns_debug.h` 等级区补上 `#define NS_DBG_MODULE_LEVEL_DEFAULT NS_DBG_SYS`，使 doc 与代码一致。
+- **关闭日期**: 2026-10-19
+
+---
+### FORMATIO-025: 调试层互斥锁不可重入，输出 sink 回灌调试宏即自死锁
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 合同前提保护：已在 `include/nanosig/ns_debug.h` 的 `ns_debug_init` docstring 中补写 `@warning`，明确"sink 内不得调用任何 ns_dbg_*/ns_errln/ns_m*ln 调试宏"，sink 回灌属调用方违反文档化前提，不属库缺陷。
+- **关闭日期**: 2026-10-19
+
+---
+### FORMATIO-012: `NS_MACRO_DEBUG_LEVEL` 仅检查首字符，多位数等级会错误
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 文档仲裁：行为已文档化（内置等级只有 0-5 个位数，不受此问题影响）。多位数等级在本项目中不会出现。C 预处理器在函数式宏中无法检测宏是否已定义，当前方案在"未定义时编译通过"和"已定义时等级正确"之间做了最佳取舍。
+- **关闭日期**: 2026-10-19
 ### FORMATIO-007: `ns_stream_puts` 对 FUNCTION 类型逐个字节输出
 
 - **状态**: 关闭-已拒绝

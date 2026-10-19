@@ -131,6 +131,8 @@ extern ns_rbtree_node_t * ns_rbtree_find_add(ns_rbtree_node_t *node, ns_rbtree_t
  * @param  user_data        用于new_node函数的参数
  * @param  new_node         创建新节点的函数
  * @return ns_rbtree_node_t*
+ * @attention cmp 与 tree->cmp 必须保持一致的偏序关系。若两者偏序不一致，
+  *          leftmost 缓存可能错误，BST 序会被静默破坏。
  */
 extern ns_rbtree_node_t *ns_rbtree_find_new_add(const void *key, ns_rbtree_t *tree,
           int (*cmp)(const void *key, const ns_rbtree_node_t *), void *user_data,
