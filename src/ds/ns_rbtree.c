@@ -592,25 +592,6 @@ ns_rbtree_node_t *ns_rbtree_prev(const ns_rbtree_node_t *node)
     return parent;
 }
 
-/* 内部实现函数，不是公共 API。公共头 nanosig_rbtree.h 不声明它，
-   外部不应直接调用；测试文件仅通过手工 extern 临时引用。 */
-void ns_rb_replace_node(ns_rbtree_node_t *victim, ns_rbtree_node_t *new,
-             ns_rbtree_t *root)
-{
-    ns_rbtree_node_t *parent = ns_rb_parent(victim);
-
-    /* Copy the pointers/colour from the victim to the replacement */
-    *new = *victim;
-
-    /* Set the surrounding nodes to point to the replacement */
-    if (victim->rb_left)
-        ns_rb_set_parent(victim->rb_left, new);
-    if (victim->rb_right)
-        ns_rb_set_parent(victim->rb_right, new);
-    __ns_rb_change_child(victim, new, parent, root);
-}
-
-
 ns_rbtree_node_t * ns_rbtree_add(ns_rbtree_node_t *node, ns_rbtree_t *tree)
 {
     ns_rbtree_node_t **link = &tree->rb_node;

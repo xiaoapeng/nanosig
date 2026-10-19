@@ -267,10 +267,9 @@ static int test_find_first_and_match(void)
     return 0;
 }
 
-/* __ns_rb_erase_color 与 ns_rb_replace_node 为非 static 符号, 静态库会导出,
+/* __ns_rb_erase_color 为非 static 符号, 静态库会导出,
  * 但未在公共头文件声明, 测试在此补充 extern 声明 */
 extern void __ns_rb_erase_color(ns_rbtree_node_t *, ns_rbtree_t *);
-extern void ns_rb_replace_node(ns_rbtree_node_t *, ns_rbtree_node_t *, ns_rbtree_t *);
 
 static ns_rbtree_node_t *find_by_key(ns_rbtree_t *tree, uint64_t key)
 {
@@ -547,67 +546,6 @@ static int test_find_new_add(void)
     if(count_nodes(&tree) != 3) return 1;
 
     if(validate_tree(&tree) != 0) return 1;
-
-    return 0;
-}
-
-/* 覆盖 ns_rb_replace_node 的左右子树/仅左/仅右/叶/根五种形态 */
-static int test_replace_node(void)
-{
-    ns_rbtree_t tree;
-    tree_item_t items[9];
-    tree_item_t repl[5];
-    const uint64_t keys[] = { 10u, 5u, 15u, 3u, 7u, 12u, 18u, 1u, 9u };
-    const uint64_t order[] = { 1u, 3u, 5u, 7u, 9u, 10u, 12u, 15u, 18u };
-    static const struct {
-        uint64_t key;
-        int has_left;
-        int has_right;
-    } shapes[] = {
-        { 5u,  1, 1 },   /* 左右子树 */
-        { 3u,  1, 0 },   /* 仅左 */
-        { 7u,  0, 1 },   /* 仅右 */
-        { 9u,  0, 0 },   /* 叶 */
-        { 10u, 1, 1 },   /* 根 */
-    };
-    ns_rbtree_node_t *victim;
-    ns_rbtree_node_t *old_parent;
-    int i;
-    int r;
-
-    ns_rbtree_root_init(&tree, tree_item_cmp);
-    for(i = 0; i < 9; ++i){
-        items[i].id = i;
-        items[i].key = keys[i];
-        ns_rbtree_node_init(&items[i].node);
-        ns_rbtree_add(&items[i].node, &tree);
-    }
-    if(validate_tree(&tree) != 0) return 1;
-
-    for(r = 0; r < 5; ++r){
-        victim = find_by_key(&tree, shapes[r].key);
-        if(victim == NULL) return 1;
-        if((victim->rb_left != NULL) != (shapes[r].has_left != 0)) return 1;
-        if((victim->rb_right != NULL) != (shapes[r].has_right != 0)) return 1;
-
-        old_parent = ns_rb_parent(victim);
-
-        repl[r].id = 100 + r;
-        repl[r].key = shapes[r].key;
-        ns_rbtree_node_init(&repl[r].node);
-        ns_rb_replace_node(victim, &repl[r].node, &tree);
-
-        /* 替换后父指针指向 new */
-        if(ns_rb_parent(&repl[r].node) != old_parent) return 1;
-        if(repl[r].node.rb_left &&
-           ns_rb_parent(repl[r].node.rb_left) != &repl[r].node) return 1;
-        if(repl[r].node.rb_right &&
-           ns_rb_parent(repl[r].node.rb_right) != &repl[r].node) return 1;
-
-        if(validate_tree(&tree) != 0) return 1;
-        if(count_nodes(&tree) != 9) return 1;
-        if(expect_order(&tree, order, 9) != 0) return 1;
-    }
 
     return 0;
 }
@@ -911,7 +849,6 @@ int main(void)
     if(test_match_find() != 0) return 1;
     if(test_next_match() != 0) return 1;
     if(test_find_new_add() != 0) return 1;
-    if(test_replace_node() != 0) return 1;
     if(test_erase_color_wrapper() != 0) return 1;
     if(test_postorder_gaps() != 0) return 1;
     if(test_last_and_next_empty() != 0) return 1;
