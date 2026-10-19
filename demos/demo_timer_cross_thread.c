@@ -56,12 +56,12 @@ int main(void)
     /* 创建两个 loop */
     ns_loop_config_t main_cfg = NS_LOOP_CONFIG_DEFAULT();
     main_cfg.debug_name = "main-loop";
-    rc = ns_loop_init(&main_loop, &main_cfg);
+    rc = ns_loop_create(&main_loop, &main_cfg);
     if(rc != NS_OK) goto out_done_signal;
 
     ns_loop_config_t worker_cfg = NS_LOOP_CONFIG_DEFAULT();
     worker_cfg.debug_name = "worker-loop";
-    rc = ns_loop_init(&worker_loop, &worker_cfg);
+    rc = ns_loop_create(&worker_loop, &worker_cfg);
     if(rc != NS_OK) goto out_main_loop;
 
     /* timer: 100ms repeat */
@@ -104,9 +104,9 @@ out_tick_conn:
 out_timer:
     (void)ns_timer_deinit(&timer);
 out_worker_loop:
-    (void)ns_loop_deinit(worker_loop);
+    (void)ns_loop_destroy(worker_loop);
 out_main_loop:
-    (void)ns_loop_deinit(main_loop);
+    (void)ns_loop_destroy(main_loop);
 out_done_signal:
     (void)ns_signal_deinit(&g_done);
 out_shutdown:

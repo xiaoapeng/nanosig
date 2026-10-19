@@ -40,7 +40,7 @@ extern "C" {
  * @brief Test thread handle.
  *
  * The entry function runs on a worker thread. It is expected to:
- *   1. Initialize the resource under test (e.g. ns_loop_init).
+ *   1. Initialize the resource under test (e.g. ns_loop_create).
  *   2. Store the resource in @c arg (or in @c state if caller allocated).
  *   3. Set @c ready to 1 via test_thread_signal_ready().
  *   4. Run until told to stop (e.g. ns_loop_run blocks until quit).

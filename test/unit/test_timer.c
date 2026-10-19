@@ -86,7 +86,7 @@ static int test_oneshot_broker_fires_signal(void)
     ctx.loop = NULL;
     ctx.seen = 0;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
     EXPECT_OK(ns_timer_init(&timer, 1000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
     EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
@@ -100,7 +100,7 @@ static int test_oneshot_broker_fires_signal(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -114,7 +114,7 @@ static int test_repeat_timer_rearms_after_fire(void)
 
     ctx.loop = NULL;
     ctx.seen = 0;
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
     EXPECT_OK(ns_timer_init(&timer, 50000u, NS_TIMER_ATTR_REPEAT) == NS_OK);
     EXPECT_OK(ns_signal_connect(&timer.signal, timer_slot, loop, &ctx, &conn) == NS_OK);
@@ -126,7 +126,7 @@ static int test_repeat_timer_rearms_after_fire(void)
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -145,7 +145,7 @@ static int test_repeat_timer_reload_from_now(void)
     ctx.loop = NULL;
     ctx.seen = 0;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* REPEAT | RELOAD_FROM_NOW */
@@ -160,7 +160,7 @@ static int test_repeat_timer_reload_from_now(void)
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -196,7 +196,7 @@ static int test_repeat_timer_multiple(void)
     ctx.count = 0;
     ctx.target = 5;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* 50ms repeat timer — should fire 5 times in ~250ms */
@@ -211,7 +211,7 @@ static int test_repeat_timer_multiple(void)
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -238,7 +238,7 @@ static int test_timer_microsecond_interval(void)
 
     g_us_timer_called = 0;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
     /* 1μs oneshot — very short interval, verify no crash */
     EXPECT_OK(ns_timer_init(&timer, 1u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
@@ -254,7 +254,7 @@ static int test_timer_microsecond_interval(void)
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -286,7 +286,7 @@ static int test_restart_while_running(void)
     ctx.loop = NULL;
     ctx.seen = 0;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* 200ms oneshot — long enough to restart before it fires */
@@ -326,7 +326,7 @@ static int test_restart_while_running(void)
     EXPECT_OK(ns_timer_cancel(&timer) == NS_OK);
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -346,7 +346,7 @@ static int test_restart_idle_timer(void)
     ctx.loop = NULL;
     ctx.seen = 0;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     EXPECT_OK(ns_timer_init(&timer, 10000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
@@ -362,7 +362,7 @@ static int test_restart_idle_timer(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     return 0;
 }
@@ -573,7 +573,7 @@ static int test_fire_expired_partial(void)
     fire_counter_ctx_t ctx = { 0, 0 };
     ns_platform_time_us_t timeout = 0u;
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
     /* short: 1μs oneshot — expires immediately. long: 10s — nowhere close. */
     EXPECT_OK(ns_timer_init(&t_short, 1u,        NS_TIMER_ATTR_ONESHOT) == NS_OK);
@@ -629,7 +629,7 @@ static int test_fire_expired_partial(void)
     EXPECT_OK(ns_signal_disconnect(&conn_long)  == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_short) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_long)  == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     return 0;
 }
 
@@ -684,7 +684,7 @@ static int test_mixed_attrs_concurrent(void)
     ns_loop_t *loop = NULL;
     mixed_ctx_t ctx = { NULL, 0, 0, 0, 5 };
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* ONESHOT @ 10ms — should fire exactly 1. */
@@ -722,7 +722,7 @@ static int test_mixed_attrs_concurrent(void)
     EXPECT_OK(ns_timer_deinit(&t_one) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_rep) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_rel) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     return 0;
 }
 
@@ -762,7 +762,7 @@ static int test_broker_delivers_three_timers(void)
     ns_loop_t *loop = NULL;
     concurrent_ctx_t ctx = { NULL, 0, 0, 0 };
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* Three oneshot timers scheduled 10 / 20 / 30 ms. All must be delivered
@@ -792,7 +792,7 @@ static int test_broker_delivers_three_timers(void)
     EXPECT_OK(ns_timer_deinit(&t_a) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_b) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_c) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     return 0;
 }
 
@@ -826,7 +826,7 @@ static int test_cancel_peers_then_fire_leftmost(void)
     ns_loop_t *loop = NULL;
     sole_ctx_t ctx = { NULL, 0 };
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     EXPECT_OK(ns_timer_init(&t_short, 10000u, NS_TIMER_ATTR_ONESHOT) == NS_OK);
@@ -853,7 +853,7 @@ static int test_cancel_peers_then_fire_leftmost(void)
     EXPECT_OK(ns_timer_deinit(&t_short) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_mid)   == NS_OK);
     EXPECT_OK(ns_timer_deinit(&t_long)  == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     return 0;
 }
 
@@ -875,7 +875,7 @@ static int test_repeated_restart_same_leftmost(void)
 
     ctx.loop = NULL;
     ctx.seen = 0;
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
     ctx.loop = loop;
 
     /* 30ms oneshot — will be restarted repeatedly before firing. */
@@ -895,7 +895,7 @@ static int test_repeated_restart_same_leftmost(void)
 
     EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     return 0;
 }
 

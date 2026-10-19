@@ -136,7 +136,7 @@ static int scenario_random_chaos(void)
     EXPECT_OK(ns_signal_disconnect(&g_rc_conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&g_rc_signal) == NS_OK);
 
-    EXPECT_OK(ns_loop_deinit(g_rc_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_rc_loop) == NS_OK);
     g_rc_loop = NULL;
 
     integration_verify_clean_shutdown();

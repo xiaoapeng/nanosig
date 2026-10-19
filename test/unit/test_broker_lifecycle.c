@@ -83,7 +83,7 @@ static int broker_worker_entry(void *arg)
     broker_test_ctx_t *ctx = (broker_test_ctx_t *)arg;
     int rc;
 
-    rc = ns_loop_init(&ctx->loop, NULL);
+    rc = ns_loop_create(&ctx->loop, NULL);
     if(rc != NS_OK){
         test_thread_signal_failed(&g_broker_thread, rc);
         return rc;
@@ -91,7 +91,7 @@ static int broker_worker_entry(void *arg)
 
     test_thread_signal_ready(&g_broker_thread);
     rc = ns_loop_run(ctx->loop);
-    (void)ns_loop_deinit(ctx->loop);
+    (void)ns_loop_destroy(ctx->loop);
     ctx->loop = NULL;
     return rc;
 }
@@ -369,7 +369,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     EXPECT_OK(rc == 0);
     EXPECT_OK(test_thread_wait_ready(&g_broker_thread) == 0);
 
-    EXPECT_OK(ns_loop_init(&test_loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&test_loop, NULL) == NS_OK);
 
     raw = test_create_raw_waitable();
     EXPECT_OK(test_raw_waitable_is_valid(raw));
@@ -408,7 +408,7 @@ static int test_broker_remove_does_not_retract_enqueued(void)
     EXPECT_OK(ns_watcher_deinit(&testee.watcher) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&testee.signal) == NS_OK);
     test_destroy_raw_waitable(raw);
-    EXPECT_OK(ns_loop_deinit(test_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(test_loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 }

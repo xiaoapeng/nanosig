@@ -1,6 +1,6 @@
 /**
  * @file test_loop_reuse.c
- * @brief Gap test: ns_loop_init → ns_loop_deinit → ns_loop_init on the same slot.
+ * @brief Gap test: ns_loop_create → ns_loop_destroy → ns_loop_create on the same slot.
  * @date 2026-06-28
  *
  * The loop handle holds internal OS resources (epoll fd / kqueue fd /
@@ -18,18 +18,18 @@ static int test_loop_init_deinit_init_reuse(void)
 
     EXPECT_OK(ns_init() == NS_OK);
 
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     /* Reuse the storage slot for a fresh loop. */
     loop = NULL;
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     /* Three-cycle check for deep state accumulation. */
     loop = NULL;
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
 
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
