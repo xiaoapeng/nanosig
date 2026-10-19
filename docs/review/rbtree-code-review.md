@@ -276,48 +276,6 @@ test/unit/test_ds_rbtree.c:598
 ---
 
 <a id="RBTREE-015"></a>
-### RBTREE-015: `ns_rb_replace_node` 未把 victim 置回空节点状态，残留链接导致后续删除丢失真实节点
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`*new = *victim;`（src/ds/ns_rbtree.c:596）只做结构体整体复制，victim 自身字段分毫未动：`parent_and_color` 仍指向原父节点，`rb_left` / `rb_right` 仍指向原子树。于是 victim 处于"已脱离树、但对外观感仍像已链接"的状态——`ns_rbtree_node_is_empty(victim)` 返回 0（false）。任何以该宏判断"是否在树中"的调用方都会误判，`ns_rbtree_del(victim)` 更会按 victim 的陈旧父子指针在树里删掉**另一个真实节点**。
-
-（与 RBTREE-011 不重复：RBTREE-011 是声明面问题，本条是 victim 状态复位缺失，修复点在函数体末尾。）
-
-
-#### review 建议
-在 `ns_rb_replace_node` 末尾把 victim 复位为空节点，与 `ns_rbtree_del` 末尾（src/ds/ns_rbtree.c:515）同一约定：
-
-```c
-ns_rbtree_node_init(victim);
-```
-
-这样 victim 立即回到"未链接"语义，重复删除被 RBTREE-001 里提到的 `ns_rbtree_node_is_empty` 前置判断挡住。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* 树中已有 key 0,10,20,30,40,50,60,70（8 个节点） */
-item_t fresh; fresh.key = 20u; ns_rbtree_node_init(&fresh.node);
-ns_rb_replace_node(&items[2].node, &fresh.node, &tree);   /* 替换 key 20 */
-ns_rbtree_node_is_empty(&items[2].node);                  /* 实测 0：victim 自称"已链接" */
-ns_rbtree_del(&items[2].node, &tree);                     /* 删的不是 fresh，而是按陈旧指针删错 */
-/* 实测结果：树内元素变为 0 10 30 40 50 60 70 —— key 20（属于 fresh）静默消失，
-   节点数 8 → 7，fresh 被孤立，调用方无从察觉 */
-```
-
-#### 定位
-src/ds/ns_rbtree.c:590
-src/ds/ns_rbtree.c:596
-src/ds/ns_rbtree.c:603
-src/ds/ns_rbtree.c:515
-
----
 
 <a id="RBTREE-016"></a>
 ### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
@@ -427,6 +385,14 @@ cmake/ApiCompileChecks.cmake:38
 
 ## 现在关闭的问题
 
+---
+### RBTREE-015: `ns_rb_replace_node` 未把 victim 置回空节点状态，残留链接导致后续删除丢失真实节点
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`ns_rb_replace_node` 是内部非公共 API，不在 `include/nanosig/nanosig_rbtree.h` 声明，仅供测试通过 `extern` 手动引用。调用方需自行理解函数语义，在替换 leftmost 节点后自行维护 `rb_leftmost` 缓存及 victim 状态复位。库内部其他代码不调用此函数，正常构建路径不会触发。
+- **关闭日期**: 2026-10-19
 <a id="RBTREE-011"></a>
 ---
 ### RBTREE-017: `ns_rbtree_find_new_add` 的"cmp 与 match 偏序必须一致"约束文档在移植中丢失（RBTREE-003 回归）
