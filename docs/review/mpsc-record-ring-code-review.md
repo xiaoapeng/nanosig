@@ -3,39 +3,25 @@ review_schema: "nanosig-review-v1"
 entries:
   - id: "MPSC-001"
     module: "mpsc-record-ring"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-001"
-  - id: "MPSC-004"
-    module: "mpsc-record-ring"
-    status: "unknown"
-    severity: "unknown"
-    type: "bug"
-    section: "fixed-history"
-    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-004"
   - id: "MPSC-002"
     module: "mpsc-record-ring"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-002"
-  - id: "MPSC-011"
-    module: "mpsc-record-ring"
-    status: "closed-fixed"
-    severity: "low"
-    type: "doc"
-    section: "open"
-    closed_date: "2026-08-02"
-    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-011"
   - id: "MPSC-012"
     module: "mpsc-record-ring"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-012"
   - id: "MPSC-013"
     module: "mpsc-record-ring"
@@ -44,6 +30,13 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-013"
+    locations:
+      - "src/ds/ns_mpsc_record_ring.c:51"
+      - "src/ds/ns_mpsc_record_ring.c:61"
+      - "src/ds/ns_mpsc_record_ring.c:115"
+      - "src/ds/ns_mpsc_record_ring.c:326"
+      - "src/ds/ns_mpsc_record_ring.c:454"
+      - "include/nanosig/nanosig_mpsc_record_ring.h:120"
   - id: "MPSC-014"
     module: "mpsc-record-ring"
     status: "open"
@@ -51,12 +44,20 @@ entries:
     type: "doc"
     section: "open"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-014"
+    locations:
+      - "docs/MPSC_MEMORY_ORDER.md:35"
+      - "docs/MPSC_MEMORY_ORDER.md:36"
+      - "docs/MPSC_MEMORY_ORDER.md:107"
+      - "src/ds/ns_mpsc_record_ring.c:372"
+      - "src/ds/ns_mpsc_record_ring.c:380"
+      - "src/ds/ns_mpsc_record_ring.c:383"
   - id: "MPSC-003"
     module: "mpsc-record-ring"
     status: "closed-rejected"
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-003"
   - id: "MPSC-005"
     module: "mpsc-record-ring"
@@ -64,6 +65,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-005"
   - id: "MPSC-006"
     module: "mpsc-record-ring"
@@ -71,6 +73,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-006"
   - id: "MPSC-007"
     module: "mpsc-record-ring"
@@ -78,6 +81,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-007"
   - id: "MPSC-008"
     module: "mpsc-record-ring"
@@ -85,6 +89,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-008"
   - id: "MPSC-009"
     module: "mpsc-record-ring"
@@ -92,6 +97,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-009"
   - id: "MPSC-010"
     module: "mpsc-record-ring"
@@ -99,15 +105,17 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-010"
   - id: "MPSC-004"
     module: "mpsc-record-ring"
     status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-004"
 ---
+
 # MPSC Record Ring 代码审查报告
 
 **日期**: 2026-07-04
@@ -124,12 +132,6 @@ entries:
 - **修复说明**: MSVC 不定义 `__SIZEOF_SIZE_T__`，64 位 MSVC 选错 32 位布局。改用标准 `SIZE_MAX` 宏，兼容 GCC/Clang/MSVC。
 - **来源**: 深度代码审查 3.1
 
-<a id="MPSC-004"></a>
-### MPSC-004: 文档与实现不一致：`part_count == 0`
-
-- **修复 commit**: 当前 diff
-- **修复说明**: 头文件 `@param part_count` 从"必须大于 0"改为"允许为 0（推送零大小记录）"；`@retval NS_E_INVAL` 删除 `part_count 为 0` 的表述。文档与实现统一：`part_count == 0` 允许，行为等价于 `ns_mpsc_record_ring_try_push(ring, NULL, 0u)`。
-
 <a id="MPSC-002"></a>
 ### MPSC-002: 注释语法问题 "perform 3 step"
 
@@ -137,37 +139,21 @@ entries:
 - **修复说明**: 英语语法问题随注释整体改写解决。
 - **来源**: 深度代码审查 7.2
 
+<a id="MPSC-004"></a>
+### MPSC-004: 文档与实现不一致：`part_count == 0`
+
+- **修复 commit**: 当前 diff
+- **修复说明**: 头文件 `@param part_count` 从"必须大于 0"改为"允许为 0（推送零大小记录）"；`@retval NS_E_INVAL` 删除 `part_count 为 0` 的表述。文档与实现统一：`part_count == 0` 允许，行为等价于 `ns_mpsc_record_ring_try_push(ring, NULL, 0u)`。
+
+---
+
+<a id="MPSC-004"></a>
+
+---
+
 ---
 
 ## 现在打开的问题
-
-<a id="MPSC-011"></a>
-### MPSC-011: `MPSC_MEMORY_ORDER.md` 描述已删除的固定容量 MPSC 队列，未文档化 record ring 的内存序协议
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-`docs/MPSC_MEMORY_ORDER.md` 描述的是已删除的固定容量 MPSC 队列（`nanosig_mpsc.h`），包括 `ns_mpsc_try_push` / `ns_mpsc_try_pop` 等已不存在的函数。当前仓库只有 MPSC record ring，其内存序协议（reserve_pos CAS + valid-bit release + consumer acquire）仅在内联代码注释中描述，无独立文档。
-
-#### review 建议
-创建 `docs/MPSC_RECORD_RING_MEMORY_ORDER.md` 或更新 `MPSC_MEMORY_ORDER.md` 添加 record ring 章节，文档化三阶段发布链。
-
-#### 作者建议
-已重写 `docs/MPSC_MEMORY_ORDER.md`，删除旧版固定容量 MPSC 队列描述，替换为 MPSC record ring 的三阶段发布链（reserve → write → commit）和完整内存序协议文档。
-→ 关闭-已修复
-
-#### 关闭原因
-`docs/MPSC_MEMORY_ORDER.md` 已重写为 record ring 内存序协议文档。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已修复
-
-#### 定位
-docs/MPSC_MEMORY_ORDER.md（全文）
-
-<a id="MPSC-012"></a>
 
 <a id="MPSC-013"></a>
 ### MPSC-013: 32 位构建下 meta 的 16 位 stride 字段会静默截断大记录
@@ -248,6 +234,7 @@ src/ds/ns_mpsc_record_ring.c:383
 
 <a id="MPSC-003"></a>
 ---
+<a id="MPSC-012"></a>
 ### MPSC-012: 生产者死在 reserve 与 commit 之间会永久卡死整个环
 
 - **状态**: 关闭-已拒绝
@@ -255,6 +242,7 @@ src/ds/ns_mpsc_record_ring.c:383
 - **类型**: bug
 - **关闭原因**: 合同前提保护：生产者线程必须在 `reserve` 与 `commit` 之间保持存活，属调用方文档化前提。环卡死仅在调用方违反该前提时发生（线程取消/abort/永久不调度），不属库缺陷。已在 `include/nanosig/nanosig_mpsc_record_ring.h` 的 `try_push/try_pushv` docstring 中补写 `@pre` 前置条件。
 - **关闭日期**: 2026-10-19
+<a id="MPSC-003"></a>
 ### MPSC-003: `try_pushv` CAS 重试循环未刷新 `read_pos`
 
 - **状态**: 关闭-已拒绝
@@ -349,10 +337,3 @@ C 语言限制。C 原子变量不可声明为 const 但物理上可修改。`fr
 
 #### 关闭日期
 2026-07-04
-
-### MPSC-004: 文档与实现不一致：`part_count == 0`
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: 头文件文档统一：`@param part_count` 改为"允许为 0（推送零大小记录）"，`@retval NS_E_INVAL` 删除 `part_count 为 0` 的表述。
-- **关闭日期**: 2026-07-04

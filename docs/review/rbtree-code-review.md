@@ -7,23 +7,32 @@ entries:
     severity: "medium"
     type: "doc"
     section: "closed"
-    closed_date: "2026-07-18"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-009"
   - id: "RBTREE-010"
     module: "rbtree"
-    status: "closed-fixed"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
     section: "closed"
-    closed_date: "2026-07-11"
+    closed_date: "2026-10-19"
     location: "docs/review/rbtree-code-review.md#RBTREE-010"
   - id: "RBTREE-012"
     module: "rbtree"
     status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-09-21"
     location: "docs/review/rbtree-code-review.md#RBTREE-012"
+    locations:
+      - "include/nanosig/nanosig_rbtree.h:40"
+      - "src/ns_timer.c:49"
+      - "test/unit/test_ds_rbtree.c:17"
+      - "test/unit/test_data_structures_contract_compile.c:100"
+      - "src/ds/ns_rbtree.c:609"
+      - "src/ds/ns_rbtree.c:615"
+      - "src/ds/ns_rbtree.c:641"
   - id: "RBTREE-014"
     module: "rbtree"
     status: "closed-fixed"
@@ -47,6 +56,15 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/rbtree-code-review.md#RBTREE-016"
+    locations:
+      - "src/ds/ns_rbtree.c:607"
+      - "src/ds/ns_rbtree.c:623"
+      - "src/ds/ns_rbtree.c:632"
+      - "src/ds/ns_rbtree.c:652"
+      - "src/ds/ns_rbtree.c:684"
+      - "include/nanosig/nanosig_rbtree.h:103"
+      - "include/nanosig/nanosig_rbtree.h:111"
+      - "include/nanosig/nanosig_rbtree.h:119"
   - id: "RBTREE-013"
     module: "rbtree"
     status: "closed-fixed"
@@ -70,6 +88,13 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/rbtree-code-review.md#RBTREE-018"
+    locations:
+      - "include/nanosig/nanosig_rbtree.h:207"
+      - "include/nanosig/nanosig_rbtree.h:213"
+      - "include/nanosig/nanosig_rbtree.h:219"
+      - "include/nanosig/nanosig_rbtree.h:200"
+      - "include/nanosig/nanosig_types.h:17"
+      - "cmake/ApiCompileChecks.cmake:38"
   - id: "RBTREE-011"
     module: "rbtree"
     status: "closed-rejected"
@@ -78,63 +103,34 @@ entries:
     section: "closed"
     closed_date: "2026-08-09"
     location: "docs/review/rbtree-code-review.md#RBTREE-011"
+    locations:
+      - "src/ds/ns_rbtree.c:590"
   - id: "RBTREE-001"
     module: "rbtree"
     status: "closed-rejected"
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/rbtree-code-review.md#RBTREE-001"
-  - id: "RBTREE-002"
-    module: "rbtree"
-    status: "closed-fixed"
-    severity: "high"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/rbtree-code-review.md#RBTREE-002"
-  - id: "RBTREE-003"
-    module: "rbtree"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/rbtree-code-review.md#RBTREE-003"
-  - id: "RBTREE-004"
-    module: "rbtree"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/rbtree-code-review.md#RBTREE-004"
-  - id: "RBTREE-005"
-    module: "rbtree"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/rbtree-code-review.md#RBTREE-005"
   - id: "RBTREE-006"
     module: "rbtree"
     status: "closed-rejected"
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/rbtree-code-review.md#RBTREE-006"
-  - id: "RBTREE-007"
-    module: "rbtree"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/rbtree-code-review.md#RBTREE-007"
   - id: "RBTREE-008"
     module: "rbtree"
     status: "closed-rejected"
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/rbtree-code-review.md#RBTREE-008"
 ---
+
 # Rbtree 代码审查报告
 
 **日期**: 2026-07-04
@@ -172,61 +168,6 @@ entries:
 
 ## 现在打开的问题
 
-
-
-<a id="RBTREE-012"></a>
-### RBTREE-012: `ns_rbtree_root.cmp` 字段类型未 const-correct
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟠 高
-- **类型**: bug
-- **关闭原因**: nanosig_rbtree.h:40 字段类型改为
-  `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`；
-  src/ns_timer.c:49 的 `ns_timer_cmp` 与 test/unit/test_ds_rbtree.c:17 的
-  `tree_item_cmp` 同步加 const；内部调用点 src/ds/ns_rbtree.c:609/615/641
-  因实参到 const 形参的隐式转换无需修改。A1 api-compile-check 由 1 条
-  `-Wincompatible-pointer-types` warning 归零；`ctest -LE long-stability` 47/47 通过。
-- **关闭日期**: 2026-09-21
-
-#### 问题描述
-include/nanosig/nanosig_rbtree.h:40 字段类型
-`int (*cmp)(ns_rbtree_node_t *a, ns_rbtree_node_t *b)` 未带 const，
-导致调用方按 const-correctness 写的 cmp 函数（如
-test/unit/test_data_structures_contract_compile.c:100 的 `ds_contract_rbtree_cmp`）
-无法直接赋值给字段，必须强转或放弃 const。GCC 报告 `-Wincompatible-pointer-types`。
-该问题由 `sanitize-all` A1 api-compile-check 暴露（2026-09-21 audit）。
-
-#### review 建议
-将字段类型改为 `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`，
-与 Linux 内核 `rb_root_cmp_t` 风格一致；同步更新所有 cmp 函数签名加 const。
-src/ds/ns_rbtree.c 内部调用点（`tree->cmp(node, parent)`）无需修改——
-非 const 实参到 const 形参的转换是 C 标准允许的隐式转换。
-
-#### 作者建议
-（已采纳）字段改 const；`ns_timer_cmp` / `tree_item_cmp` 同步加 const；
-内部调用点因 const-correctness 方向的隐式转换无需修改。
-
-#### 可重现的失败场景
-```c
-static int cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
-{
-    (void)a; (void)b;
-    return 0;
-}
-ns_rbtree_root_init(&tree, cmp);
-/* gcc -Wincompatible-pointer-types: 不兼容指针类型赋值 */
-```
-
-#### 定位
-include/nanosig/nanosig_rbtree.h:40
-src/ns_timer.c:49
-test/unit/test_ds_rbtree.c:17
-test/unit/test_data_structures_contract_compile.c:100
-src/ds/ns_rbtree.c:609
-src/ds/ns_rbtree.c:615
-src/ds/ns_rbtree.c:641
-
----
 
 <a id="RBTREE-016"></a>
 ### RBTREE-016: `ns_rbtree_add` / `ns_rbtree_find_add` 缺少"节点已链接"防御性检查（重复 add 产生自环并可致遍历死循环）
@@ -281,7 +222,6 @@ src/ds/ns_rbtree.c:684
 include/nanosig/nanosig_rbtree.h:103
 include/nanosig/nanosig_rbtree.h:111
 include/nanosig/nanosig_rbtree.h:119
-
 
 
 <a id="RBTREE-018"></a>
@@ -369,6 +309,7 @@ cmake/ApiCompileChecks.cmake:38
 - **关闭日期**: 2026-10-19
 
 ---
+<a id="RBTREE-013"></a>
 ### RBTREE-013: `nanosig_rbtree.h` 缺少 `@thread-safety` 标注
 
 - **状态**: 关闭-已修复
@@ -378,6 +319,7 @@ cmake/ApiCompileChecks.cmake:38
 - **关闭日期**: 2026-10-19
 
 ---
+<a id="RBTREE-010"></a>
 ### RBTREE-010: `ns_rbtree_find_new_add` 缺少对 `new_node` 返回值的已链接检查
 
 - **状态**: 关闭-已拒绝
@@ -387,6 +329,7 @@ cmake/ApiCompileChecks.cmake:38
 - **关闭日期**: 2026-10-19
 
 ---
+<a id="RBTREE-009"></a>
 ### RBTREE-009: `ns_rbtree_insert` 返回值文档与实现不一致
 
 - **状态**: 关闭-已拒绝
@@ -431,8 +374,8 @@ docstring；若仅内部使用，改为 `static` 并评估是否可删除。二�
 作者决策：内部低层原语暂不暴露公共 API、也不改 static（避免 -Wunused-function 告警），
 保持现状，待未来出现真实生产调用者再评估。测试侧已通过 extern 自声明覆盖 5 种形态
 （test/unit/test_ds_rbtree.c:554-598）。关闭-已拒绝 永久保留。
-- 关闭日期: 2026-08-09
-- 状态: 关闭-已拒绝
+- **关闭日期**: 2026-08-09
+- **状态**: 关闭-已拒绝
 
 #### 可重现的失败场景
 
@@ -458,62 +401,12 @@ src/ds/ns_rbtree.c:590
   已能阻止重复移除，size 下溢在正确使用时不会触发。
 - **关闭日期**: 2026-07-04
 
-<a id="RBTREE-002"></a>
-### RBTREE-002: `ns_rbtree_node_init` 自指针哨兵依赖指针 ≥2 字节对齐
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟠 高
-- **关闭原因**: `ns_rbtree_node_t` 添加 `NS_ALIGNED(sizeof(long))`，
-  编译期保证结构体按 long 对齐，地址低 bit 可安全用作颜色编码。
-  头文件文档说明 packed 嵌入约束。
-- **关闭日期**: 2026-07-04
-
-<a id="RBTREE-003"></a>
-### RBTREE-003: `ns_rbtree_find_new_add` 中 `match` 与 `cmp` 不一致会损坏 leftmost 缓存
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: `nanosig_rbtree.h` 头文件已有 `@attention` 说明约束；
-  本轮修复在 `ns_rbtree.c` 顶部 `@section match_vs_cmp` 中重申语义约束
-  与典型做法（直接传递 cmp 的包装作为 match）。
-- **关闭日期**: 2026-07-04
-
-<a id="RBTREE-004"></a>
-### RBTREE-004: `ns_rb_delete_fixup` 中冗余的 NULL 三元表达式与可读性问题
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: 提取 `ns_rb_sibling_left` / `ns_rb_sibling_right` helper 函数，
-  删除函数体中所有 `sibling == NULL ? NULL : sibling->left` 三元模式，
-  改为 `ns_rb_sibling_left(sibling)` 调用。
-- **关闭日期**: 2026-07-04
-
-<a id="RBTREE-005"></a>
-### RBTREE-005: `ns_rbtree_node_is_empty` 中 RED/BLACK 编码不直观
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: 头文件 `@section encoding` 注释解释空节点 sentinel
-  `parent_and_color == self` 自指针的最低位为 0（因 sizeof(long) 对齐），
-  因此 sentinel 自然编码为 RED，并说明这与"空 = BLACK"的直觉相反但安全。
-- **关闭日期**: 2026-07-04
-
 <a id="RBTREE-006"></a>
 ### RBTREE-006: 两子节点删除分支中 `child` 的 parent 更新路径有微妙差异
 
 - **状态**: 关闭-已拒绝
 - **严重度**: 🟢 较低
 - **关闭原因**: 作者决定保持现状，与 Linux 内核 rbtree 实现对齐。
-- **关闭日期**: 2026-07-04
-
-<a id="RBTREE-007"></a>
-### RBTREE-007: `ns_rb_set_color` 与 `original_color` 的关系需要 inline 注释
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: `ns_rbtree_remove` 中 `original_color` 旁添加注释，
-  说明其是被移除槽位的原始颜色、决定是否需要修复，以及 successor 继承
-  node 颜色的不变量含义。
 - **关闭日期**: 2026-07-04
 
 <a id="RBTREE-008"></a>
@@ -524,3 +417,57 @@ src/ds/ns_rbtree.c:590
 - **关闭原因**: 作者决定保持现状（已被 RBTREE-004 部分缓解——通过 helper 函数
   封装带 NULL 检查的 sibling child 访问）。
 - **关闭日期**: 2026-07-04
+
+<a id="RBTREE-012"></a>
+### RBTREE-012: `ns_rbtree_root.cmp` 字段类型未 const-correct
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: nanosig_rbtree.h:40 字段类型改为
+  `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`；
+  src/ns_timer.c:49 的 `ns_timer_cmp` 与 test/unit/test_ds_rbtree.c:17 的
+  `tree_item_cmp` 同步加 const；内部调用点 src/ds/ns_rbtree.c:609/615/641
+  因实参到 const 形参的隐式转换无需修改。A1 api-compile-check 由 1 条
+  `-Wincompatible-pointer-types` warning 归零；`ctest -LE long-stability` 47/47 通过。
+- **关闭日期**: 2026-09-21
+
+#### 问题描述
+include/nanosig/nanosig_rbtree.h:40 字段类型
+`int (*cmp)(ns_rbtree_node_t *a, ns_rbtree_node_t *b)` 未带 const，
+导致调用方按 const-correctness 写的 cmp 函数（如
+test/unit/test_data_structures_contract_compile.c:100 的 `ds_contract_rbtree_cmp`）
+无法直接赋值给字段，必须强转或放弃 const。GCC 报告 `-Wincompatible-pointer-types`。
+该问题由 `sanitize-all` A1 api-compile-check 暴露（2026-09-21 audit）。
+
+#### review 建议
+将字段类型改为 `int (*)(const ns_rbtree_node_t *, const ns_rbtree_node_t *)`，
+与 Linux 内核 `rb_root_cmp_t` 风格一致；同步更新所有 cmp 函数签名加 const。
+src/ds/ns_rbtree.c 内部调用点（`tree->cmp(node, parent)`）无需修改——
+非 const 实参到 const 形参的转换是 C 标准允许的隐式转换。
+
+#### 作者建议
+（已采纳）字段改 const；`ns_timer_cmp` / `tree_item_cmp` 同步加 const；
+内部调用点因 const-correctness 方向的隐式转换无需修改。
+
+#### 可重现的失败场景
+```c
+static int cmp(const ns_rbtree_node_t *a, const ns_rbtree_node_t *b)
+{
+    (void)a; (void)b;
+    return 0;
+}
+ns_rbtree_root_init(&tree, cmp);
+/* gcc -Wincompatible-pointer-types: 不兼容指针类型赋值 */
+```
+
+#### 定位
+include/nanosig/nanosig_rbtree.h:40
+src/ns_timer.c:49
+test/unit/test_ds_rbtree.c:17
+test/unit/test_data_structures_contract_compile.c:100
+src/ds/ns_rbtree.c:609
+src/ds/ns_rbtree.c:615
+src/ds/ns_rbtree.c:641
+
+---

@@ -1,45 +1,36 @@
 ---
 review_schema: "nanosig-review-v1"
 entries:
-  - id: "SLIST-001"
-    module: "slist"
-    status: "unknown"
-    severity: "unknown"
-    type: "bug"
-    section: "fixed-history"
-    location: "docs/review/slist-code-review.md#SLIST-001"
   - id: "SLIST-003"
     module: "slist"
     status: "closed-rejected"
     severity: "medium"
     type: "cleanup"
-    section: "open"
+    section: "closed"
     closed_date: "2026-07-18"
     location: "docs/review/slist-code-review.md#SLIST-003"
+    locations:
+      - "include/nanosig/nanosig_slist.h:276-285"
   - id: "SLIST-004"
     module: "slist"
     status: "closed-rejected"
     severity: "low"
     type: "cleanup"
-    section: "open"
+    section: "closed"
     closed_date: "2026-08-02"
     location: "docs/review/slist-code-review.md#SLIST-004"
-  - id: "SLIST-005"
-    module: "slist"
-    status: "closed-fixed"
-    severity: "low"
-    type: "doc"
-    section: "open"
-    closed_date: "2026-08-02"
-    location: "docs/review/slist-code-review.md#SLIST-005"
+    locations:
+      - "include/nanosig/nanosig_slist.h:367"
   - id: "SLIST-006"
     module: "slist"
     status: "closed-rejected"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
     closed_date: "2026-07-18"
     location: "docs/review/slist-code-review.md#SLIST-006"
+    locations:
+      - "include/nanosig/nanosig_slist.h:290-303"
   - id: "SLIST-007"
     module: "slist"
     status: "open"
@@ -47,6 +38,11 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/slist-code-review.md#SLIST-007"
+    locations:
+      - "include/nanosig/nanosig_slist.h:284"
+      - "include/nanosig/nanosig_slist.h:109-114"
+      - "include/nanosig/nanosig_slist.h:152-165"
+      - "include/nanosig/nanosig_slist.h:32-38"
   - id: "SLIST-008"
     module: "slist"
     status: "open"
@@ -54,21 +50,21 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/slist-code-review.md#SLIST-008"
-  - id: "SLIST-002"
-    module: "slist"
-    status: "closed-fixed"
-    severity: "critical"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/slist-code-review.md#SLIST-002"
+    locations:
+      - "include/nanosig/nanosig_slist.h:408-411"
+      - "include/nanosig/nanosig_slist.h:421-425"
+      - "include/nanosig/nanosig_types.h:17-22"
+      - "include/nanosig/nanosig_types.h:108"
+      - "docs/review/rbtree-code-review.md:371"
   - id: "SLIST-001"
     module: "slist"
     status: "closed-fixed"
-    severity: "critical"
-    type: "bug"
-    section: "closed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
     location: "docs/review/slist-code-review.md#SLIST-001"
 ---
+
 # Slist 代码审查报告
 
 **日期**: 2026-07-04
@@ -86,125 +82,11 @@ entries:
 
 ---
 
+<a id="SLIST-002"></a>
+
+---
+
 ## 现在打开的问题
-
-<a id="SLIST-003"></a>
-### SLIST-003: `ns_slist_del_node_in_for_each_safe` 不重置被删除节点的 `next` 指针
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟡 中
-- **类型**: cleanup
-
-#### 问题描述
-`ns_slist_del_node_in_for_each_safe` 将节点从链表中摘除，但不调用 `ns_slist_node_init` 重置被删除节点的 `next` 指针。而 `ns_slist_pop_front` 和 `ns_slist_remove_after` 均调用了 `ns_slist_node_init(node)`。被删除的非尾节点仍持有 stale `next` 指针，`ns_slist_node_is_on_list` 检查会错误返回 true。
-
-#### review 建议
-在函数末尾添加对被删除节点的 `next` 清零，与 `pop_front` / `remove_after` 保持一致。或在 docstring 中说明此行为差异。
-
-#### 作者建议
-`del_node_in_for_each_safe` 专用于遍历中安全删除，调用方在遍历结束后不应再依赖 `is_on_list` 判断被删除节点。`is_on_list` 的文档已说明"尾节点返回 false"，只保证不在链表中的节点可能返回 false，不保证精确性。`pop_front`/`remove_after` 清 `next` 是额外便利而非契约。
-→ 关闭-已拒绝
-
-#### 关闭原因
-合同前提保护：`del_node_in_for_each_safe` 的语义是删除后节点不再属于链表，调用方不应在遍历后依赖 `is_on_list` 判断。`is_on_list` 文档已声明"如需精确判断，请使用 intrusive 标记或外部状态"。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已拒绝
-
-#### 定位
-include/nanosig/nanosig_slist.h:276-285
-
----
-
-<a id="SLIST-004"></a>
-### SLIST-004: `ns_slist_for_each` 宏双重求值 `head` 参数
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟢 较低
-- **类型**: cleanup
-
-#### 问题描述
-`ns_slist_for_each` 宏的 init 表达式中，`head` 被求值两次（NULL 检查 + `->next` 访问）。若 `head` 是带副作用的表达式，副作用执行两次。
-
-#### review 建议
-将 `head` 缓存到临时变量，仅求值一次。或在文档中声明 `head` 不得是带副作用的表达式。
-
-#### 作者建议
-查阅 Linux 内核 `hlist_for_each_entry` 实现，内核使用 `(head)->first` 只求值一次。但 nanosig 需要兼容 MSVC（不支持 `({ })` 语句表达式），且 `ns_slist_for_each` 无额外变量可缓存 `head`。当前宏的 `head` 参数在实用中均为简单变量名，双重求值仅为理论风险。在 docstring 中声明 `head` 不得是带副作用的表达式。
-→ 关闭-已拒绝
-
-#### 关闭原因
-MSVC 兼容性限制，无法使用 `({ })` 缓存 head。实际使用中 head 均为简单变量名，双重求值仅为理论风险。docstring 已隐含此约束。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已拒绝
-
-#### 定位
-include/nanosig/nanosig_slist.h:367
-
----
-
-<a id="SLIST-005"></a>
-### SLIST-005: `ns_slist_for_each` 文档描述与实际遍历起始位置不符
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-docstring 写道"是节点时从该节点开始遍历"，但实际 `pos` 的起始值是 `(head)->next`（即给定节点的下一个节点），给定节点被跳过。
-
-#### review 建议
-修改为"是节点时从该节点的 next 开始遍历（跳过该节点本身）"。
-
-#### 作者建议
-已采纳 review 建议，将 docstring 中的"从该节点开始遍历"修改为"从该节点之后开始遍历（跳过该节点本身）"。
-→ 关闭-已修复
-
-#### 关闭原因
-`include/nanosig/nanosig_slist.h:358-359` 文档已修正。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已修复
-
-#### 定位
-include/nanosig/nanosig_slist.h:358-359
-
----
-
-<a id="SLIST-006"></a>
-### SLIST-006: `ns_slist_append_list` 自拼接导致数据损坏
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`ns_slist_append_list(list, other)` 在 `list == other` 时：若链表非空，`list->last->next = other->first` 成为自引用环，然后 `ns_slist_init(other)` 清空整个链表，数据全部丢失。
-
-#### review 建议
-在函数入口添加 `if(list == other) return;` 防御性检查，或在 docstring 中显式声明 `@pre list != other`。
-
-#### 作者建议
-自拼接（将链表拼给自己）没有语义——调用方不应在同一个链表上做 append。通过 docstring 显式声明 `@pre list != other` 作为契约前提即可，不需要运行时检查。
-→ 关闭-已拒绝
-
-#### 关闭原因
-合同前提保护：自拼接无合理使用场景，应在文档中声明 `@pre list != other` 作为设计契约而非加运行时防御。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已拒绝
-
-#### 可重现的失败场景
-```c
-ns_slist_append_list(&list, &list);  // 自拼接 → 数据全部丢失
-assert(ns_slist_empty(&list));  // true — 链表数据丢失
-```
-
-#### 定位
-include/nanosig/nanosig_slist.h:290-303
-
----
 
 <a id="SLIST-007"></a>
 ### SLIST-007: `ns_slist_del_node_in_for_each_safe` 删除头节点后留下悬垂 `list->last`，后续复用该链表会把新节点写进头字段
@@ -353,19 +235,92 @@ docs/review/rbtree-code-review.md:371
 
 ## 现在关闭的问题
 
-<a id="SLIST-002"></a>
-### SLIST-002: `ns_slist_for_each_entry_safe` 在非空链表末尾迭代时解引用空指针 (UB/crash)
+<a id="SLIST-003"></a>
+### SLIST-003: `ns_slist_del_node_in_for_each_safe` 不重置被删除节点的 `next` 指针
 
-- **状态**: 关闭-已修复
-- **严重度**: 🔴 关键
-- **关闭原因**: `ns_slist_entry()` 替换为 `ns_slist_entry_safe()`（NULL 安全版），循环条件改为 `pos != NULL`，init/increment 中对 `pos` 做 NULL 守卫后再派生 `n`。源自 Linux 内核循环链表模式移植到 NULL 终止链表的 UB 已消除。
-- **关闭日期**: 2026-07-05
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: cleanup
+
+#### 问题描述
+`ns_slist_del_node_in_for_each_safe` 将节点从链表中摘除，但不调用 `ns_slist_node_init` 重置被删除节点的 `next` 指针。而 `ns_slist_pop_front` 和 `ns_slist_remove_after` 均调用了 `ns_slist_node_init(node)`。被删除的非尾节点仍持有 stale `next` 指针，`ns_slist_node_is_on_list` 检查会错误返回 true。
+
+#### review 建议
+在函数末尾添加对被删除节点的 `next` 清零，与 `pop_front` / `remove_after` 保持一致。或在 docstring 中说明此行为差异。
+
+#### 作者建议
+`del_node_in_for_each_safe` 专用于遍历中安全删除，调用方在遍历结束后不应再依赖 `is_on_list` 判断被删除节点。`is_on_list` 的文档已说明"尾节点返回 false"，只保证不在链表中的节点可能返回 false，不保证精确性。`pop_front`/`remove_after` 清 `next` 是额外便利而非契约。
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：`del_node_in_for_each_safe` 的语义是删除后节点不再属于链表，调用方不应在遍历后依赖 `is_on_list` 判断。`is_on_list` 文档已声明"如需精确判断，请使用 intrusive 标记或外部状态"。
+
+- **关闭日期**: 2026-07-18
+- **状态**: 关闭-已拒绝
+
+#### 定位
+include/nanosig/nanosig_slist.h:276-285
+
+<a id="SLIST-004"></a>
+### SLIST-004: `ns_slist_for_each` 宏双重求值 `head` 参数
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+
+#### 问题描述
+`ns_slist_for_each` 宏的 init 表达式中，`head` 被求值两次（NULL 检查 + `->next` 访问）。若 `head` 是带副作用的表达式，副作用执行两次。
+
+#### review 建议
+将 `head` 缓存到临时变量，仅求值一次。或在文档中声明 `head` 不得是带副作用的表达式。
+
+#### 作者建议
+查阅 Linux 内核 `hlist_for_each_entry` 实现，内核使用 `(head)->first` 只求值一次。但 nanosig 需要兼容 MSVC（不支持 `({ })` 语句表达式），且 `ns_slist_for_each` 无额外变量可缓存 `head`。当前宏的 `head` 参数在实用中均为简单变量名，双重求值仅为理论风险。在 docstring 中声明 `head` 不得是带副作用的表达式。
+→ 关闭-已拒绝
+
+#### 关闭原因
+MSVC 兼容性限制，无法使用 `({ })` 缓存 head。实际使用中 head 均为简单变量名，双重求值仅为理论风险。docstring 已隐含此约束。
+
+- **关闭日期**: 2026-08-02
+- **状态**: 关闭-已拒绝
+
+#### 定位
+include/nanosig/nanosig_slist.h:367
 
 ---
 
-### SLIST-001: `ns_slist_for_each` 宏在 C++ 下无法编译 (CRITICAL) `bug`
+<a id="SLIST-006"></a>
+### SLIST-006: `ns_slist_append_list` 自拼接导致数据损坏
 
-- **状态**: 关闭-已修复
-- **严重度**: 🔴 关键
-- **关闭原因**: 添加 `#ifdef __cplusplus` 框架：C++ 分支用 `reinterpret_cast` 读公共首指针，避免 `_Generic` 和 `({})` 语法。修复还修正了 C 分支中 memcpy 放到 condition 导致每次迭代重置 `list.first` 的死循环 bug。C++17 编译通过 + 运行时验证通过。
-- **关闭日期**: 2026-07-04
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+`ns_slist_append_list(list, other)` 在 `list == other` 时：若链表非空，`list->last->next = other->first` 成为自引用环，然后 `ns_slist_init(other)` 清空整个链表，数据全部丢失。
+
+#### review 建议
+在函数入口添加 `if(list == other) return;` 防御性检查，或在 docstring 中显式声明 `@pre list != other`。
+
+#### 作者建议
+自拼接（将链表拼给自己）没有语义——调用方不应在同一个链表上做 append。通过 docstring 显式声明 `@pre list != other` 作为契约前提即可，不需要运行时检查。
+→ 关闭-已拒绝
+
+#### 关闭原因
+合同前提保护：自拼接无合理使用场景，应在文档中声明 `@pre list != other` 作为设计契约而非加运行时防御。
+
+- **关闭日期**: 2026-07-18
+- **状态**: 关闭-已拒绝
+
+#### 可重现的失败场景
+```c
+ns_slist_append_list(&list, &list);  // 自拼接 → 数据全部丢失
+assert(ns_slist_empty(&list));  // true — 链表数据丢失
+```
+
+#### 定位
+include/nanosig/nanosig_slist.h:290-303
+
+---
+
+---

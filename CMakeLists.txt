@@ -386,6 +386,18 @@ endif()
 # encoding). Runs only when NANOSIG_ENABLE_ASAN / TSAN / UBSAN is ON.
 nanosig_configure_sanitize_all()
 
+# review-docs-check — 校验 docs/review 的 frontmatter、分区、锚点与定位。
+find_program(NANOSIG_PYTHON3 python3)
+if(NANOSIG_PYTHON3)
+    add_custom_target(review-docs-check
+        COMMAND ${NANOSIG_PYTHON3}
+                ${CMAKE_CURRENT_SOURCE_DIR}/cmake/scripts/review_docs.py validate
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Validating review documents"
+        VERBATIM
+    )
+endif()
+
 # ── Coverage report ──────────────────────────────────────────────────
 if(NANOSIG_ENABLE_COVERAGE)
     find_program(LCOV lcov)

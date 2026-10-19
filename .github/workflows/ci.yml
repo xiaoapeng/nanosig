@@ -19,6 +19,9 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
         run: ctest --preset ${{ matrix.preset }} -LE nightly
+      - name: Review docs
+        if: matrix.preset == 'linux-release'
+        run: python3 cmake/scripts/review_docs.py validate
       - name: Audits
         run: cmake --build --preset ${{ matrix.preset }} --target sanitize-all
 

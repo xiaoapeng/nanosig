@@ -28,7 +28,12 @@
   - `section`: `open` / `closed` / `fixed-history`（条目所在分区，必填）
   - `opened_date`: 首次出现日期 `yyyy-mm-dd`（可选）
   - `closed_date`: 关闭日期 `yyyy-mm-dd`（已关闭时必填）
-  - `location`: 条目所在 `file_path:line`（必填）
+  - `location`: 条目文档锚点，固定为 `docs/review/<文件名>#<ID>`（必填）
+  - `locations`: 源码定位数组，由正文 `#### 定位` 派生（必填，至少一项）
+
+`locations` 每项写法只有三种：`path`、`path:line`、`path:start-end`。路径一律使用
+仓库根相对路径，不带 `./` 前缀，不加反引号。正文 `#### 定位` 每行一条，与
+`locations` 保持同序同值；frontmatter 是派生索引，以正文为唯一事实来源。
 
 示例：
 ```yaml
@@ -42,20 +47,45 @@ entries:
     type: "bug"
     section: "closed"
     closed_date: "2026-10-19"
-    location: "docs/review/rbtree-code-review.md:447"
+    location: "docs/review/rbtree-code-review.md#RBTREE-016"
+    locations:
+      - "src/ds/ns_rbtree.c:447"
+      - "include/nanosig/nanosig_rbtree.h:153"
   - id: "RBTREE-015"
     module: "rbtree"
     status: "open"
     severity: "high"
     type: "bug"
     section: "open"
-    location: "docs/review/rbtree-code-review.md:153"
+    location: "docs/review/rbtree-code-review.md#RBTREE-015"
+    locations:
+      - "src/ds/ns_rbtree.c:153"
 ---
 ```
 
 新条目由 review agent 创建时直接在 frontmatter 中填写；现有条目由 review agent 渐进式补齐（每次修改该文档时顺手加，或批量补齐）。
 
-### 1.1 Review 内容边界
+### 1.1 机器接口与校验
+
+完整用法（查询、写入、批量、归档、常见问题）见 `docs/review/README.md`。
+`cmake/scripts/review_docs.py` 是唯一的读写入口，禁止再用正则脚本直接改 frontmatter：
+
+```sh
+python3 cmake/scripts/review_docs.py list --status open --severity high
+python3 cmake/scripts/review_docs.py show RBTREE-016 --json
+python3 cmake/scripts/review_docs.py locate RBTREE-016
+python3 cmake/scripts/review_docs.py validate
+python3 cmake/scripts/review_docs.py normalize --apply
+python3 cmake/scripts/review_docs.py sync --apply
+python3 cmake/scripts/review_docs.py close RBTREE-016 --status closed-fixed --reason "..."
+python3 cmake/scripts/review_docs.py move RBTREE-016 --to closed --apply
+python3 cmake/scripts/review_docs.py archive --before 2026-09-20 --apply
+```
+
+所有写操作默认 dry-run，只有加 `--apply` 才落盘。批量操作使用 `batch --file ops.jsonl`。
+`validate` 在 CI 中以 `review-docs-check` 目标执行；error 必须为 0，warning 仅允许归档类。
+
+### 1.2 Review 内容边界
 
 **所有 review 相关内容必须写在 `docs/review/` 下。**
 - Review 文档（本章规范下的全部文件）只位于 `docs/review/`，不得散布到 `docs/` 其他地方或其他目录

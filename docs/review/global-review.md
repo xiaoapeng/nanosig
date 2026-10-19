@@ -2,36 +2,60 @@
 review_schema: "nanosig-review-v1"
 entries:
   - id: "GLOBAL-001"
-    module: "global-review.md"
+    module: "global-review"
     status: "closed-rejected"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
     closed_date: "2026-07-18"
     location: "docs/review/global-review.md#GLOBAL-001"
+    locations:
+      - "include/nanosig/nanosig_rbtree.h:106-114"
   - id: "GLOBAL-003"
-    module: "global-review.md"
+    module: "global-review"
     status: "closed-fixed"
     severity: "low"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-09-21"
     location: "docs/review/global-review.md#GLOBAL-003"
   - id: "GLOBAL-006"
-    module: "global-review.md"
+    module: "global-review"
     status: "open"
     severity: "low"
     type: "doc"
     section: "open"
     location: "docs/review/global-review.md#GLOBAL-006"
+    locations:
+      - "docs/ARCHITECTURE.md:271"
+      - "platform/windows/port.c:256"
   - id: "GLOBAL-007"
-    module: "global-review.md"
+    module: "global-review"
     status: "open"
     severity: "low"
     type: "design"
     section: "open"
-    closed_date: "2026-10-18"
     location: "docs/review/global-review.md#GLOBAL-007"
+    locations:
+      - "include/nanosig/nanosig_port.h:67"
+      - "include/nanosig/nanosig_port.h:70"
+      - "platform/windows/nanosig_platform_port.h:22"
+  - id: "GLOBAL-004"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
+    location: "docs/review/global-review.md#GLOBAL-004"
+  - id: "GLOBAL-005"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
+    location: "docs/review/global-review.md#GLOBAL-005"
 ---
+
 # 全局视角 Review（跨模块问题）
 
 **日期**: 2026-07-05
@@ -60,6 +84,8 @@ entries:
   A3 header audit 暴露 nanosig_rbtree.h 缺 `@thread-safety` 标注，
   已作为 RBTREE-013 打开（详见 rbtree-code-review.md）。
 
+<a id="GLOBAL-004"></a>
+<a id="GLOBAL-005"></a>
 ### 2026-10-11 — 空 waitset 无限等待封顶统一 + max_completions 契约（GLOBAL-004 / GLOBAL-005）
 
 - **GLOBAL-004**: `ns_platform_waitset_wait` 在"空 waitset + `NS_PLATFORM_WAIT_INFINITE_US`"
@@ -84,77 +110,6 @@ entries:
 ---
 
 ## 现在打开的问题
-
-<a id="GLOBAL-001"></a>
-### GLOBAL-001: `ns_rbtree_insert` 头文件文档与实现不一致，影响 timer 模块正确性假设
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-`include/nanosig/nanosig_rbtree.h:108-114` 文档声称："如果插入后该节点成为最左节点，返回值即为该节点；否则返回 NULL"。
-
-实际实现（`src/ds/ns_rbtree.c:342-374`）在成功时**始终返回被插入的节点**（第 374 行 `return node;`），仅在输入无效（NULL tree/node 或已链接节点）时返回 NULL。
-
-`ns_timer_start_locked`（`src/ns_timer.c:125`）的 `insert == NULL` 检查依赖的是**实现语义**（NULL = 错误），而非**文档语义**（NULL = 非最左）。当前代码正确，但如果 rbtree 实现被修改为匹配文档，`start_locked` 会对所有非最紧急的插入返回 `NS_E_CORRUPT`。
-
-此问题同时属于 rbtree 模块（RBTREE-009）和 timer 模块的文档依赖，记入全局 review。
-
-#### review 建议
-统一 rbtree 文档与实现语义。推荐将文档改为"成功插入返回该节点；输入无效或节点已链接时返回 NULL"，与实现一致。参见 RBTREE-009。
-
-#### 作者建议
-与 RBTREE-009 同源误读。`ns_rbtree_add` 返回值实际为 `leftmost ? node : NULL`（`src/ds/ns_rbtree.c:628`），与文档完全一致。Timer 调用的是 `ns_rbtree_add`，其 leftmost 语义正确，不存在"文档-代码不一致"问题。
-→ 关闭-已拒绝
-
-#### 关闭原因
-与 RBTREE-009 相同——reviewer 误读代码。`ns_rbtree_add` 实现与文档一致，timer 依赖正确。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已拒绝
-
-#### 定位
-`include/nanosig/nanosig_rbtree.h:106-114`（文档），`src/ds/ns_rbtree.c:374`（实现），`src/ns_timer.c:125`（依赖方）
-
----
-
-<a id="GLOBAL-003"></a>
-### GLOBAL-003: `共识计划.md` 仍引用已删除的 `ns_platform_wakeup_get_waitable`
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **类型**: doc
-- **关闭原因**: 已更新 docs/plans/共识计划.md:122 的当前实现快照引用为 `ns_platform_event_*`；历史段落（:613/:641/:988）保留不动。
-- **关闭日期**: 2026-09-21
-
-#### 问题描述
-
-本次 event 重构移除了平台接口 `ns_platform_wakeup_get_waitable`（由
-`ns_platform_event_*` 取代），但 `docs/plans/共识计划.md:122` 在"当前实现快照"
-段仍将其列为"平台层新增"接口。该文档被 AGENTS.md 指定为需与当前实现决策保持
-同步。其余引用（:613、:641、:988）位于 P5b 设计段与 Iter 记录，属历史快照，
-可不改。
-
-#### review 建议
-
-更新 `docs/plans/共识计划.md:122`：把 `ns_platform_wakeup_get_waitable` 替换为
-`ns_platform_event_*`（或注明该接口已被 event 原语取代）。历史段落
-（:613、:641、:988）保留不动。
-
-#### 作者建议
-
-（2026-09-21 作者决定：直接修文档。）仅更新 `共识计划.md:122` 的当前实现快照引用为 `ns_platform_event_*`，历史段落（:613/:641/:988）保留不动。
-
-#### 可重现的失败场景
-
-`grep -rn "ns_platform_wakeup_get_waitable" docs/plans/共识计划.md`
-→ 4 命中，其中 :122 与当前平台接口面不一致。
-
-#### 定位
-docs/plans/共识计划.md:122
-
----
 
 <a id="GLOBAL-006"></a>
 ### GLOBAL-006: `docs/ARCHITECTURE.md` 平台表格仍写 `CreateThread`（实现是 `_beginthreadex`）
@@ -217,8 +172,8 @@ include/nanosig/nanosig_port.h 现按 include 顺序 + 前置声明 + 平台后�
 `extern "C"` 排列：平台 SDK 头（Windows 的 `<windows.h>`）不再被 C 链接包围。
 macos-release 52/52、api-compile-checks（含 cpp_compat）通过。
 
-- 关闭日期: 2026-10-18
-- 状态: 关闭-已修复
+- **关闭日期**: 2026-10-18
+- **状态**: 关闭-已修复
 
 #### 可重现的失败场景
 Windows + MSVC：一个 C++ TU 只 `#include <nanosig/nanosig.h>`（间接包含
@@ -235,3 +190,73 @@ platform/windows/nanosig_platform_port.h:22
 ## 现在关闭的问题
 
 (无)
+
+<a id="GLOBAL-001"></a>
+### GLOBAL-001: `ns_rbtree_insert` 头文件文档与实现不一致，影响 timer 模块正确性假设
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中
+- **类型**: doc
+
+#### 问题描述
+`include/nanosig/nanosig_rbtree.h:108-114` 文档声称："如果插入后该节点成为最左节点，返回值即为该节点；否则返回 NULL"。
+
+实际实现（`src/ds/ns_rbtree.c:342-374`）在成功时**始终返回被插入的节点**（第 374 行 `return node;`），仅在输入无效（NULL tree/node 或已链接节点）时返回 NULL。
+
+`ns_timer_start_locked`（`src/ns_timer.c:125`）的 `insert == NULL` 检查依赖的是**实现语义**（NULL = 错误），而非**文档语义**（NULL = 非最左）。当前代码正确，但如果 rbtree 实现被修改为匹配文档，`start_locked` 会对所有非最紧急的插入返回 `NS_E_CORRUPT`。
+
+此问题同时属于 rbtree 模块（RBTREE-009）和 timer 模块的文档依赖，记入全局 review。
+
+#### review 建议
+统一 rbtree 文档与实现语义。推荐将文档改为"成功插入返回该节点；输入无效或节点已链接时返回 NULL"，与实现一致。参见 RBTREE-009。
+
+#### 作者建议
+与 RBTREE-009 同源误读。`ns_rbtree_add` 返回值实际为 `leftmost ? node : NULL`（`src/ds/ns_rbtree.c:628`），与文档完全一致。Timer 调用的是 `ns_rbtree_add`，其 leftmost 语义正确，不存在"文档-代码不一致"问题。
+→ 关闭-已拒绝
+
+#### 关闭原因
+与 RBTREE-009 相同——reviewer 误读代码。`ns_rbtree_add` 实现与文档一致，timer 依赖正确。
+
+- **关闭日期**: 2026-07-18
+- **状态**: 关闭-已拒绝
+
+#### 定位
+include/nanosig/nanosig_rbtree.h:106-114
+
+<a id="GLOBAL-003"></a>
+### GLOBAL-003: `共识计划.md` 仍引用已删除的 `ns_platform_wakeup_get_waitable`
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **关闭原因**: 已更新 docs/plans/共识计划.md:122 的当前实现快照引用为 `ns_platform_event_*`；历史段落（:613/:641/:988）保留不动。
+- **关闭日期**: 2026-09-21
+
+#### 问题描述
+
+本次 event 重构移除了平台接口 `ns_platform_wakeup_get_waitable`（由
+`ns_platform_event_*` 取代），但 `docs/plans/共识计划.md:122` 在"当前实现快照"
+段仍将其列为"平台层新增"接口。该文档被 AGENTS.md 指定为需与当前实现决策保持
+同步。其余引用（:613、:641、:988）位于 P5b 设计段与 Iter 记录，属历史快照，
+可不改。
+
+#### review 建议
+
+更新 `docs/plans/共识计划.md:122`：把 `ns_platform_wakeup_get_waitable` 替换为
+`ns_platform_event_*`（或注明该接口已被 event 原语取代）。历史段落
+（:613、:641、:988）保留不动。
+
+#### 作者建议
+
+（2026-09-21 作者决定：直接修文档。）仅更新 `共识计划.md:122` 的当前实现快照引用为 `ns_platform_event_*`，历史段落（:613/:641/:988）保留不动。
+
+#### 可重现的失败场景
+
+`grep -rn "ns_platform_wakeup_get_waitable" docs/plans/共识计划.md`
+→ 4 命中，其中 :122 与当前平台接口面不一致。
+
+#### 定位
+
+---
+
+---

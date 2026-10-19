@@ -17,14 +17,6 @@ entries:
     section: "fixed-history"
     closed_date: "2026-10-11"
     location: "docs/review/zephyr-code-review.md#ZEPHYR-002"
-  - id: "ZEPHYR-003"
-    module: "zephyr"
-    status: "closed-fixed"
-    severity: "low"
-    type: "test"
-    section: "fixed-history"
-    closed_date: "2026-10-11"
-    location: "docs/review/zephyr-code-review.md#ZEPHYR-003"
   - id: "ZEPHYR-004"
     module: "zephyr"
     status: "closed-fixed"
@@ -33,39 +25,8 @@ entries:
     section: "fixed-history"
     closed_date: "2026-10-11"
     location: "docs/review/zephyr-code-review.md#ZEPHYR-004"
-  - id: "ZEPHYR-005"
-    module: "zephyr"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "test"
-    section: "fixed-history"
-    closed_date: "2026-10-11"
-    location: "docs/review/zephyr-code-review.md#ZEPHYR-005"
-  - id: "ZEPHYR-006"
-    module: "zephyr"
-    status: "closed-fixed"
-    severity: "low"
-    type: "test"
-    section: "fixed-history"
-    closed_date: "2026-10-11"
-    location: "docs/review/zephyr-code-review.md#ZEPHYR-006"
-  - id: "ZEPHYR-007"
-    module: "zephyr"
-    status: "closed-fixed"
-    severity: "low"
-    type: "cleanup"
-    section: "fixed-history"
-    closed_date: "2026-10-11"
-    location: "docs/review/zephyr-code-review.md#ZEPHYR-007"
-  - id: "ZEPHYR-004-fix"
-    module: "zephyr"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "test"
-    section: "fixed-history"
-    closed_date: "2026-10-16"
-    location: "docs/review/zephyr-code-review.md#ZEPHYR-004-fix"
 ---
+
 # Zephyr Backend 代码审查报告
 
 **日期**: 2026-10-11
@@ -133,6 +94,7 @@ entries:
 - **修复日期**: 2026-10-11
 
 <a id="ZEPHYR-004-fix"></a>
+<a id="ZEPHYR-004"></a>
 ### 2026-10-16 — ZEPHYR-004 用例修正（CI 首次真实运行暴露）
 
 ZEPHYR-004 新增的 `test_wait_truncates_completions` 在 native_sim CI（PR #9）首次

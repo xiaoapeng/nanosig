@@ -1,36 +1,21 @@
 ---
 review_schema: "nanosig-review-v1"
 entries:
-  - id: "CORE-010"
-    module: "nanosig-core"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "open"
-    closed_date: "2026-07-18"
-    location: "docs/review/nanosig-core-code-review.md#CORE-010"
-  - id: "CORE-011"
-    module: "nanosig-core"
-    status: "closed-fixed"
-    severity: "low"
-    type: "doc"
-    section: "open"
-    closed_date: "2026-08-02"
-    location: "docs/review/nanosig-core-code-review.md#CORE-011"
   - id: "CORE-012"
     module: "nanosig-core"
-    status: "unknown"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
-    closed_date: "2026-08-08"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/nanosig-core-code-review.md#CORE-012"
   - id: "CORE-015"
     module: "nanosig-core"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/nanosig-core-code-review.md#CORE-015"
   - id: "CORE-016"
     module: "nanosig-core"
@@ -39,6 +24,13 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/nanosig-core-code-review.md#CORE-016"
+    locations:
+      - "src/nanosig.c:65"
+      - "src/nanosig.c:423"
+      - "src/nanosig.c:442"
+      - "src/nanosig.c:444"
+      - "include/nanosig/nanosig_loop.h:42"
+      - "include/nanosig/nanosig_signal.h:363"
   - id: "CORE-017"
     module: "nanosig-core"
     status: "open"
@@ -46,12 +38,19 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/nanosig-core-code-review.md#CORE-017"
+    locations:
+      - "src/nanosig.c:130"
+      - "src/nanosig.c:140"
+      - "src/nanosig.c:156"
+      - "src/nanosig.c:159"
+      - "include/nanosig/nanosig_loop.h:74"
   - id: "CORE-001"
     module: "nanosig-core"
     status: "closed-rejected"
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-001"
   - id: "CORE-002"
     module: "nanosig-core"
@@ -59,6 +58,7 @@ entries:
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-002"
   - id: "CORE-003"
     module: "nanosig-core"
@@ -66,6 +66,7 @@ entries:
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-003"
   - id: "CORE-004"
     module: "nanosig-core"
@@ -73,6 +74,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-004"
   - id: "CORE-005"
     module: "nanosig-core"
@@ -80,6 +82,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-005"
   - id: "CORE-006"
     module: "nanosig-core"
@@ -87,6 +90,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-006"
   - id: "CORE-007"
     module: "nanosig-core"
@@ -94,6 +98,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-007"
   - id: "CORE-008"
     module: "nanosig-core"
@@ -101,6 +106,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-008"
   - id: "CORE-009"
     module: "nanosig-core"
@@ -108,6 +114,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/nanosig-core-code-review.md#CORE-009"
   - id: "CORE-013"
     module: "nanosig-core"
@@ -117,6 +124,12 @@ entries:
     section: "closed"
     closed_date: "2026-10-19"
     location: "docs/review/nanosig-core-code-review.md#CORE-013"
+    locations:
+      - "src/nanosig.c:296"
+      - "src/nanosig.c:307"
+      - "src/nanosig.c:281"
+      - "include/nanosig/nanosig_loop.h:140"
+      - "test/unit/test_loop.c:397"
   - id: "CORE-014"
     module: "nanosig-core"
     status: "closed-rejected"
@@ -125,7 +138,15 @@ entries:
     section: "closed"
     closed_date: "2026-10-18"
     location: "docs/review/nanosig-core-code-review.md#CORE-014"
+    locations:
+      - "src/nanosig.c:184"
+      - "src/nanosig.c:190"
+      - "src/nanosig.c:218"
+      - "src/nanosig.c:220"
+      - "include/nanosig/nanosig_loop.h:97"
+      - "include/nanosig/nanosig_loop.h:133"
 ---
+
 # Nanosig Core 代码审查报告
 
 **日期**: 2026-07-04
@@ -140,133 +161,6 @@ entries:
 ---
 
 ## 现在打开的问题
-
-<a id="CORE-010"></a>
-### CORE-010: `ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 失败时泄漏 loop 内存
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`ns_loop_deinit` 在 `ns_platform_wakeup_destroy` 返回错误时提前返回（第 162 行），未调用 `ns_platform_free(loop)`。这导致 loop 结构体及其内嵌的 MPSC ring 存储区域泄漏。调用方无法重试——wakeup 句柄可能处于未定义状态，而 loop 指针指向的内存已不可恢复。
-
-#### review 建议
-无论 `ns_platform_wakeup_destroy` 是否成功，都应释放 loop 内存：
-```c
-rc = ns_platform_wakeup_destroy(loop->wakeup);
-ns_platform_free(loop);
-return rc;
-```
-
-#### 作者建议
-当前代码（`src/nanosig.c:171-177`）已实现 review 建议——无论 wakeup_destroy 是否失败，都打印日志后 fall through 到 `ns_platform_free(loop)`。问题已修复，review 文档未同步更新。→ 关闭-已修复
-
-#### 关闭原因
-代码已修复：`src/nanosig.c:172-177` 在 wakeup_destroy 失败时先记日志，然后始终执行 `ns_platform_free(loop)`。
-
-- 关闭日期: 2026-07-18
-- 状态: 关闭-已修复
-
-#### 可重现的失败场景
-1. 调用 `ns_loop_init(&loop, NULL)` 成功创建 loop。
-2. 平台层 `ns_platform_wakeup_destroy` 因某种原因返回错误。
-3. `ns_loop_deinit(loop)` 返回错误码，但 `loop` 指向的内存未被释放。
-4. 调用方丢弃 loop 指针，内存永久泄漏。
-
-#### 定位
-src/nanosig.c:161-165
-
----
-
-<a id="CORE-011"></a>
-### CORE-011: `ns_signal_connect` 缺少"禁止重复连接"前置条件文档
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-`ns_signal_connect` 未文档化"connection 必须处于未连接状态"这一前置条件。如果调用方对一个已经连接到某个 signal 的 `ns_connection_t` 再次调用 `ns_signal_connect`（未先 disconnect），`ns_list_init` 将 `signal_node` 重置为自引用，但不更新原链表中前后节点的指针，导致原 signal 的 slot_list 断链。
-
-#### review 建议
-在 `nanosig_signal.h` 的 `ns_signal_connect` docstring 中添加 `@pre` 前置条件。可在实现中添加防御性检查：如果 `connection->signal_node` 不是自引用状态，返回 `NS_E_INVAL`。
-
-#### 作者建议
-已采纳 review 建议，在 docstring 中添加 `@pre connection 必须处于未连接状态` 和 `@warning 重复连接会导致原 signal 的 slot_list 损坏`。
-→ 关闭-已修复
-
-#### 关闭原因
-`include/nanosig/nanosig_signal.h:290-313` 已添加 `@pre` 和 `@warning` 文档。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已修复
-
-#### 可重现的失败场景
-1. `ns_signal_connect(&sig_a, ...)` 将 conn 连接到 sig_a。
-2. `ns_signal_connect(&sig_b, ...)` 将 conn 连接到 sig_b（未先 disconnect）。
-3. sig_a 的 slot_list 断链：遍历 sig_a 时无法到达原后继节点。
-
-#### 定位
-src/nanosig.c:337-342（实现）
-include/nanosig/nanosig_signal.h:290-313（docstring）
-
----
-
-<a id="CORE-012"></a>
-<a id="CORE-015"></a>
-### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_loop_dispatch_pending`（src/nanosig.c:194-199）把交付给 slot 的 payload 指针设为 `record + sizeof(ns_slot_call_t)`，即记录起始 + 24 字节。record ring 的头部/记录粒度是 `NS_MPSC_RECORD_RING_ALIGNMENT`（= `sizeof(size_t)` = 8，include/nanosig/nanosig_mpsc_record_ring.h:28），记录头 8 字节，因此 payload 起始地址只保证 **8 字节对齐**。
-
-公开 API 不对 payload 类型提出任何对齐要求：`ns_signal_init(signal, payload_type)`（include/nanosig/nanosig_signal.h:258）与 `ns_signal_init_raw` 接受任意类型，`ns_slot_fn`（include/nanosig/nanosig_signal.h:57）以 `const void *` 交付。当 payload 类型带 `_Alignof >= 16`（SIMD 向量类型、含 `_Atomic` 成员或 `aligned(16)` 的结构体）时，slot 内对该指针的正常解引用即为未对齐访问——C11 未定义行为，在 aarch64 的向量载入、TSAN/UBSAN 或带对齐检查的代码生成下会实际出问题。文档中没有任何"payload 类型对齐上限"的说明可供调用方规避。
-
-#### review 建议
-二选一：
-1. 把 ring 的对齐粒度与 payload 交付对齐提升到 `_Alignof(max_align_t)`（会改变 record ring 头部与记录布局，须与 mpsc-record-ring 模块同步评估）；
-2. 在 `nanosig_signal.h` 文档化"payload 类型的对齐不得超过 `sizeof(size_t)`"，并给 `ns_signal_init` 宏/`ns_signal_init_raw` 加编译期检查（如基于 `_Alignof` 的 `NS_STATIC_ASSERT`），把问题从运行期 UB 提前到编译期。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-typedef struct __attribute__((aligned(16))) vec4 { unsigned char b[16]; } vec4_t;
-static unsigned long g_sum;
-static void slot_vec(void *ud, const vec4_t *p){ (void)ud; g_sum += (unsigned long)p->b[0]; }
-
-ns_loop_init(&loop, NULL);
-ns_signal_init(&sig, vec4_t);
-ns_signal_connect_typed(sig, slot_vec, vec4_t, loop, NULL, &conn);
-for(i = 0; i < 3; i++) (void)ns_signal_emit_raw(&sig, &pl, sizeof(pl));
-ns_loop_quit(loop);
-ns_loop_run(loop);
-```
-以 `-fsanitize=alignment,undefined -fno-sanitize-recover=all` 构建库与用例，观测：
-```
-runtime error: member access within misaligned address 0x00010290e3f8 for type 'const vec4_t'
-(aka 'const struct vec4'), which requires 16 byte alignment
-SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior
-```
-对照观察（同一 loop 内连续 emit 3 次、`_Alignof(payload) == 1` 的普通结构体，`sizeof` 分别为 8 / 24）：
-```
-plain 8        sizeof=  8 align= 1  payload mod16/32 -> 0/0 8/8 0/16
-plain 24       sizeof= 24 align= 1  payload mod16/32 -> 0/0 8/24 0/16
-```
-第 2 条记录的 payload 地址 `mod 16 == 8`，证明 16 字节对齐不在保证范围内。
-
-#### 定位
-src/nanosig.c:194
-src/nanosig.c:196
-include/nanosig/nanosig_signal.h:57
-include/nanosig/nanosig_signal.h:258
-
----
 
 <a id="CORE-016"></a>
 ### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
@@ -360,7 +254,19 @@ include/nanosig/nanosig_loop.h:74
 ---
 
 ## 现在关闭的问题
+
+<a id="CORE-015"></a>
+### CORE-015: slot 收到的 payload 指针只保证 8 字节对齐，`_Alignof > 8` 的 payload 类型触发未对齐访问
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: commit `7326c27` 把对齐超限从运行期 UB 提前到编译期报错：新增 `NS_SIGNAL_PAYLOAD_ALIGN_MAX`（= `sizeof(size_t)`）与 `NS_SIGNAL_PAYLOAD_ALIGN_CHECK`，`ns_signal_init`、`ns_signal_connect_typed` 均带该断言；`src/nanosig.c:50-53` 增加静态断言，保证记录起点与 payload 偏移都满足上限；底层 `ns_signal_init_raw` 的调用方责任已在头文件 `@note` 文档化。需要更高对齐时改为传指针。
+- **关闭日期**: 2026-10-19
+
 ---
+
+<a id="CORE-012"></a>
 ### CORE-012: `ns_loop_quit` 在 loop 被 `ns_loop_deinit` 释放后写入 → heap-use-after-free `bug`
 
 - **状态**: 关闭-已拒绝
@@ -519,8 +425,8 @@ include/nanosig/nanosig_loop.h:74
 
 复现口径修正：实测（macOS release）确认的是 start 守卫失效（自停 rc=-3，随后 `ns_loop_start` 返回 0）；场景 2 的 deinit 在"worker 仍处于 slot 内"时被 `running` 守卫拦下（rc=-3），该路径未被本次复现观测到。两条路径同根因，修复后均不再成立。
 
-- 关闭日期: 2026-10-19
-- 状态: 关闭-已修复
+- **关闭日期**: 2026-10-19
+- **状态**: 关闭-已修复
 
 #### 可重现的失败场景
 slot 内调用 `ns_loop_stop`（返回错误），随后主线程 `ns_loop_start` 返回 `NS_OK` 而旧 worker 仍存活。实测输出（macOS release）：
@@ -592,8 +498,5 @@ include/nanosig/nanosig_loop.h:133
 保留口径记录：include/nanosig/nanosig_loop.h:97 的表述（"直到收到 ns_loop_quit 请求"）
 与现状存在语义差距，如需可另开 doc 条目收窄。
 
-- 关闭日期: 2026-10-18
-- 状态: 关闭-已拒绝
-
----
-
+- **关闭日期**: 2026-10-18
+- **状态**: 关闭-已拒绝
