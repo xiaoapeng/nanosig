@@ -1,36 +1,28 @@
 ---
 review_schema: "nanosig-review-v1"
 entries:
-  - id: "PLATFORM-012"
-    module: "platform-ports"
-    status: "unknown"
-    severity: "unknown"
-    type: "bug"
-    section: "fixed-history"
-    location: "docs/review/platform-ports-code-review.md#PLATFORM-012"
-  - id: "PLATFORM-013"
-    module: "platform-ports"
-    status: "unknown"
-    severity: "unknown"
-    type: "bug"
-    section: "fixed-history"
-    location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
   - id: "PORT-018"
     module: "platform-ports"
     status: "open"
     severity: "high"
     type: "bug"
     section: "open"
-    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-018"
+    locations:
+      - "platform/windows/nanosig_platform_port.h:42"
+      - "platform/windows/port.c:315"
+      - "include/nanosig/nanosig_port.h:109"
+      - "include/nanosig/nanosig_broker.h:147"
   - id: "PORT-019"
     module: "platform-ports"
     status: "open"
     severity: "high"
     type: "bug"
     section: "open"
-    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-019"
+    locations:
+      - "platform/linux/port.c:528"
+      - "platform/linux/port.c:532"
   - id: "PORT-021"
     module: "platform-ports"
     status: "open"
@@ -38,29 +30,45 @@ entries:
     type: "doc"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-021"
+    locations:
+      - "platform/README.md:93"
+      - "platform/README.md:102"
+      - "docs/agents/platform/AGENTS.md:67"
+      - "docs/agents/platform/AGENTS.md:69"
+      - "docs/ARCHITECTURE.md:271"
   - id: "PORT-022"
     module: "platform-ports"
     status: "open"
     severity: "low"
     type: "cleanup"
     section: "open"
-    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-022"
+    locations:
+      - "platform/windows/port.c:302"
+      - "platform/linux/port.c:399"
+      - "platform/macos/port.c:411"
   - id: "PORT-014"
     module: "platform-ports"
     status: "closed-deferred"
     severity: "medium"
     type: "design"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/platform-ports-code-review.md#PORT-014"
+    locations:
+      - "platform/macos/port.c:522-543"
+      - "include/nanosig/nanosig_port.h:432-451"
   - id: "PORT-015"
     module: "platform-ports"
     status: "closed-rejected"
     severity: "low"
     type: "bug"
-    section: "open"
+    section: "closed"
     closed_date: "2026-08-02"
     location: "docs/review/platform-ports-code-review.md#PORT-015"
+    locations:
+      - "platform/windows/port.c:38"
+      - "platform/linux/port.c:141"
   - id: "PORT-016"
     module: "platform-ports"
     status: "open"
@@ -68,13 +76,21 @@ entries:
     type: "test"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-016"
+    locations:
+      - "test/unit/test_platform_backend.c:690-714"
   - id: "PORT-017"
     module: "platform-ports"
     status: "closed-fixed"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-09-21"
     location: "docs/review/platform-ports-code-review.md#PORT-017"
+    locations:
+      - "include/nanosig/nanosig_port.h:316-346"
+      - "platform/linux/port.c:199-219"
+      - "platform/macos/port.c:240-266"
+      - "platform/windows/port.c:151-170"
   - id: "PORT-023"
     module: "platform-ports"
     status: "open"
@@ -82,6 +98,10 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-023"
+    locations:
+      - "platform/linux/port.c:30-47"
+      - "platform/linux/port.c:132-169"
+      - "src/ns_broker.c:239"
   - id: "PORT-024"
     module: "platform-ports"
     status: "open"
@@ -89,6 +109,14 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-024"
+    locations:
+      - "platform/macos/port.c:448"
+      - "platform/macos/port.c:463"
+      - "platform/macos/port.c:470"
+      - "platform/macos/port.c:489"
+      - "platform/macos/port.c:505"
+      - "platform/macos/port.c:515"
+      - "src/ns_broker.c:336"
   - id: "PORT-025"
     module: "platform-ports"
     status: "open"
@@ -96,6 +124,14 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-025"
+    locations:
+      - "platform/macos/port.c:479"
+      - "platform/macos/port.c:492"
+      - "platform/macos/port.c:508"
+      - "platform/linux/port.c:439"
+      - "platform/windows/port.c:331"
+      - "include/nanosig/nanosig_port.h:503"
+      - "platform/README.md:41"
   - id: "PORT-026"
     module: "platform-ports"
     status: "open"
@@ -103,6 +139,15 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-026"
+    locations:
+      - "platform/windows/port.c:323"
+      - "platform/windows/port.c:438"
+      - "platform/windows/port.c:447"
+      - "platform/linux/port.c:402"
+      - "platform/macos/port.c:419"
+      - "include/nanosig/nanosig_port.h:506"
+      - "platform/README.md:109"
+      - "test/unit/test_broker_event.c:221"
   - id: "PORT-027"
     module: "platform-ports"
     status: "open"
@@ -110,6 +155,15 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-027"
+    locations:
+      - "platform/macos/port.c:249"
+      - "platform/macos/port.c:256"
+      - "platform/macos/port.c:271"
+      - "platform/macos/port.c:281"
+      - "include/nanosig/nanosig_port.h:18"
+      - "include/nanosig/nanosig_port.h:307"
+      - "platform/linux/port.c:205"
+      - "platform/windows/port.c:152"
   - id: "PORT-028"
     module: "platform-ports"
     status: "open"
@@ -117,6 +171,13 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-028"
+    locations:
+      - "platform/macos/port.c:529"
+      - "platform/macos/port.c:530"
+      - "platform/linux/port.c:420"
+      - "platform/windows/port.c:438"
+      - "include/nanosig/nanosig_port.h:77"
+      - "include/nanosig/nanosig_broker.h:55"
   - id: "PORT-029"
     module: "platform-ports"
     status: "open"
@@ -124,12 +185,18 @@ entries:
     type: "doc"
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-029"
+    locations:
+      - "platform/README.md:72"
+      - "platform/README.md:225"
+      - "platform/windows/nanosig_platform_port.h:44"
+      - "platform/windows/port.c:443"
   - id: "PLATFORM-001"
     module: "platform-ports"
     status: "closed-rejected"
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-001"
   - id: "PLATFORM-002"
     module: "platform-ports"
@@ -137,6 +204,7 @@ entries:
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-002"
   - id: "PLATFORM-003"
     module: "platform-ports"
@@ -144,6 +212,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-003"
   - id: "PLATFORM-004"
     module: "platform-ports"
@@ -151,6 +220,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-004"
   - id: "PLATFORM-005"
     module: "platform-ports"
@@ -158,6 +228,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-005"
   - id: "PLATFORM-006"
     module: "platform-ports"
@@ -165,6 +236,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-006"
   - id: "PLATFORM-007"
     module: "platform-ports"
@@ -172,6 +244,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-007"
   - id: "PLATFORM-008"
     module: "platform-ports"
@@ -179,6 +252,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-008"
   - id: "PLATFORM-009"
     module: "platform-ports"
@@ -186,6 +260,7 @@ entries:
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-009"
   - id: "PLATFORM-010"
     module: "platform-ports"
@@ -193,6 +268,7 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-010"
   - id: "PLATFORM-011"
     module: "platform-ports"
@@ -200,29 +276,32 @@ entries:
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/platform-ports-code-review.md#PLATFORM-011"
-  - id: "PLATFORM-012"
-    module: "platform-ports"
-    status: "closed-fixed"
-    severity: "unknown"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/platform-ports-code-review.md#PLATFORM-012"
-  - id: "PLATFORM-013"
-    module: "platform-ports"
-    status: "closed-fixed"
-    severity: "unknown"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
   - id: "PORT-020"
     module: "platform-ports"
     status: "closed-fixed"
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/platform-ports-code-review.md#PORT-020"
+  - id: "PLATFORM-012"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-012"
+  - id: "PLATFORM-013"
+    module: "platform-ports"
+    status: "closed-fixed"
+    severity: "unknown"
+    type: "unknown"
+    section: "fixed-history"
+    location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
 ---
+
 # Platform Ports 代码审查报告
 
 **日期**: 2026-07-04
@@ -238,6 +317,10 @@ entries:
 - **修复**: 当前工作树（未提交）—— `->primitive.handle` 补全
 - **日期**: 2026-07-04
 
+---
+
+<a id="PLATFORM-013"></a>
+
 <a id="PLATFORM-013"></a>
 ### PLATFORM-013: Windows 平台 `CreateThread` 改用 `_beginthreadex`
 
@@ -246,7 +329,13 @@ entries:
 
 ---
 
-## 现在打开的问题（2026-07-05 review；PORT-018…022、PORT-024…029 来自 2026-10-18 review）
+<a id="PLATFORM-012"></a>
+
+---
+
+---
+
+## 现在打开的问题
 
 <a id="PORT-018"></a>
 ### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
@@ -290,8 +379,8 @@ entries:
 排除 `NULL` 与 `INVALID_HANDLE_VALUE`；`platform/windows/port.c` 的私有判定已删除
 （改为直接调用公共谓词的 `ns_waitable_is_invalid`），两处判据不再可能漂移。
 
-- 关闭日期: 2026-10-18
-- 状态: 关闭-已修复
+- **关闭日期**: 2026-10-18
+- **状态**: 关闭-已修复
 
 #### 可重现的失败场景
 Windows：
@@ -345,8 +434,8 @@ platform/linux/port.c 的 timerfd sentinel 分支在 `timer_armed` 时改为 `co
 电平触发与边沿触发两条路径行为一致。未新增测试：稳定复现需要把 timer 到期与 fd 就绪
 压进同一轮 `epoll_wait`，时序不可控，按代码走查 + 注释说明处置。
 
-- 关闭日期: 2026-10-18
-- 状态: 关闭-已修复
+- **关闭日期**: 2026-10-18
+- **状态**: 关闭-已修复
 
 #### 可重现的失败场景
 1. 两个 waitable 以 `edge_triggered = 1` 注册，broker 以有限超时（如 50ms）等待；
@@ -427,8 +516,8 @@ platform/windows/port.c 的 `ns_platform_waitset_deinit` 改为
 `return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;`，
 关闭失败不再被吞掉，三后端失败语义一致。
 
-- 关闭日期: 2026-10-18
-- 状态: 关闭-已修复
+- **关闭日期**: 2026-10-18
+- **状态**: 关闭-已修复
 
 #### 可重现的失败场景
 timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit` 返回 `NS_OK`，
@@ -438,58 +527,6 @@ timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit`
 platform/windows/port.c:302
 platform/linux/port.c:399
 platform/macos/port.c:411
-
----
-
-<a id="PORT-014"></a>
-### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
-
-- **状态**: 关闭-延期
-- **严重度**: 🟡 中
-- **类型**: design
-
-#### 问题描述
-macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执行合并逻辑（同 waitable 只产生一个 completion），Linux 和 Windows 依赖平台隐式合并。三平台当前结果一致，但建议在 `nanosig_port.h` 中将"同一 waitable 最多产生一个 completion"固化为契约。
-
-#### review 建议
-在 `nanosig_port.h` 的 `ns_platform_waitset_wait` Doxygen 注释中补充一句声明。
-
-#### 作者建议
-暂时不修。当前三平台行为一致，无实际影响。后续若出现平台不兼容再处理。
-→ 关闭-延期
-
-#### 定位
-platform/macos/port.c:522-543
-include/nanosig/nanosig_port.h:432-451
-
----
-
-<a id="PORT-015"></a>
-### PORT-015: Windows `ns_windows_timeout_ms` 在超大 timeout_us 下有 uint64 加法溢出
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🟢 较低
-- **类型**: bug
-
-#### 问题描述
-`platform/windows/port.c:38` 中 `(timeout_us + 999u) / 1000u`，当 `timeout_us` 接近 `UINT64_MAX` 时加法溢出。Linux 路径有同样风险。实际触发条件极不常见，但作为平台原语应正确处理。
-
-#### review 建议
-改用不溢出的等价算术：`timeout_ms = timeout_us / 1000u + (timeout_us % 1000u != 0u ? 1u : 0u);`
-
-#### 作者建议
-不考虑这种情况，场景不可能。`timeout_us` 在实际使用中不会接近 UINT64_MAX。
-→ 关闭-已拒绝
-
-#### 关闭原因
-场景不可能。实际使用中 timeout_us 为微秒级超时值，不会接近 UINT64_MAX。
-
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已拒绝
-
-#### 定位
-platform/windows/port.c:38
-platform/linux/port.c:141
 
 ---
 
@@ -509,67 +546,14 @@ platform/linux/port.c:141
 #### 作者建议
 （待作者补充）
 
-#### 定位
-test/unit/test_platform_backend.c:690-714
-
----
-
-<a id="PORT-017"></a>
-### PORT-017: `ns_platform_event_*` 生命周期契约不完整（重复 init 泄漏 / 未初始化调用）
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **类型**: doc
-- **关闭原因**: 已按"文档保护"处置：include/nanosig/nanosig_port.h:316-346 的 event 文档块补 `@warning`（重复 init 泄漏底层 fd/HANDLE）与 `@pre`（signal/drain/deinit 前须成功 init，deinit 另需已 waitset_remove）。无代码改动，未加运行时守卫。
-- **关闭日期**: 2026-09-21
-
-#### 问题描述
-
-`ns_platform_event_t` 是本次 event 重构新增的 caller-owned 平台原语。其公共文档块
-include/nanosig/nanosig_port.h:316-346 只描述字段语义与四条"硬语义"，未声明两条
-生命周期前提：
-
-1. **init 非幂等**：对同一 event 重复调用 `ns_platform_event_init` 而不先 `deinit`
-   会覆盖 `waitable` / `signal_handle`，泄漏第一次分配的资源（Linux `eventfd`
-   一个 fd、macOS `pipe` 两个 fd、Windows `CreateEvent` 一个 HANDLE）。三个后端
-   init 都是"无条件新建资源、不检查旧状态"，见 platform/linux/port.c:199-219、
-   platform/macos/port.c:240-266、platform/windows/port.c:151-170。
-2. **未初始化调用**：在未成功 `init` 的对象上调用 `signal` / `drain` / `deinit`
-   会读取未初始化的 `waitable.registered_waitset` 与 `signal_handle`，属未定义行为，
-   但头文件未声明 `@pre`。
-
-仓库对同类问题（signal / watcher 重复 init）在审计处置中选择"文档免责 +
-头文件 `@warning`"（见 P9 F1/F2），本问题应与之一致处置。
-
-#### review 建议
-
-在 `nanosig_port.h` 的 event 文档块补充生命周期约束：
-
-- `@pre`：`signal` / `drain` / `deinit` 前必须已成功 `init`；`deinit` 另需已
-  `ns_platform_waitset_remove`（后者已在硬语义条目中）。
-- `@warning`：对同一 event 重复 `init` 而未 `deinit` 会泄漏底层 fd / HANDLE；
-  需 `init` 一次、`deinit` 一次。
-
-#### 作者建议
-
-（2026-09-21 作者决定：文档保护，不加运行时守卫。）理由：① 与 P9 F1/F2（signal / watcher 重复 init）的处置保持一致；② `ns_platform_event_t` 是 caller-owned 且不要求清零，运行时守卫无法可靠区分"未初始化垃圾句柄"与"已初始化合法句柄"，可靠检测需强制 zero-init 或新增 magic/状态字段，代价与收益不成比例；③ 重复 init 仅在调用方违规时发生，对正常路径无正确性影响。处置方式：仅补 `@warning` + `@pre` 文档。
-
 #### 可重现的失败场景
 
-```c
-ns_platform_event_t e;
-ns_platform_event_init(&e, "x");   /* 分配 eventfd / pipe / CreateEvent #1 */
-ns_platform_event_init(&e, "x");   /* 覆盖句柄，资源 #1 永久泄漏 */
-```
-
-`grep -nE "@pre|@warning" include/nanosig/nanosig_port.h`（event 段落 :316-346）
-→ 仅硬语义条目，无 init 配对与前置条件声明。
+test/unit/test_platform_backend.c 的 test_waitset_events_zero 被
+`#if defined(__linux__) || defined(__APPLE__)` 包裹，Windows 构建不编译该测试，
+waitset events=0 路径无覆盖。
 
 #### 定位
-include/nanosig/nanosig_port.h:316-346
-platform/linux/port.c:199-219
-platform/macos/port.c:240-266
-platform/windows/port.c:151-170
+test/unit/test_platform_backend.c:690-714
 
 ---
 
@@ -1194,18 +1178,6 @@ platform/windows/port.c:443
 #### 关闭日期
 2026-07-04
 
-### PLATFORM-012: Windows port `ns_platform_waitset_wait` 编译错误
-
-- **状态**: 关闭-已修复
-- **关闭原因**: 补上 `->primitive.handle` 前缀，当前工作树（未提交），对应 `platform/windows/port.c:385`
-- **关闭日期**: 2026-07-04
-
-### PLATFORM-013: Windows 平台 `CreateThread` 改用 `_beginthreadex`
-
-- **状态**: 关闭-已修复
-- **关闭原因**: 替换为 `_beginthreadex` + 线程函数签名匹配 `unsigned __stdcall(void *)` + 添加 `#include <process.h>`，当前工作树（未提交）
-- **关闭日期**: 2026-07-04
-
 <a id="PORT-020"></a>
 ### PORT-020: Zephyr `ns_platform_alloc` 对所有内部分配强制内核栈对齐
 
@@ -1234,3 +1206,116 @@ review 建议的 `ns_platform_alloc_aligned` 未采用：对 loop/broker 而言�
 
 #### 关闭日期
 2026-10-19
+
+<a id="PORT-014"></a>
+### PORT-014: macOS `ns_platform_waitset_from_kevent` 合并同 waitable 多事件行为与 Linux/Windows 不一致
+
+- **状态**: 关闭-延期
+- **严重度**: 🟡 中
+- **类型**: design
+- **关闭原因**: 作者决定延期，三平台当前行为一致，见作者建议。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+macOS `ns_platform_waitset_wait` 对同一 waitable 的多个 kevent 事件执行合并逻辑（同 waitable 只产生一个 completion），Linux 和 Windows 依赖平台隐式合并。三平台当前结果一致，但建议在 `nanosig_port.h` 中将"同一 waitable 最多产生一个 completion"固化为契约。
+
+#### review 建议
+在 `nanosig_port.h` 的 `ns_platform_waitset_wait` Doxygen 注释中补充一句声明。
+
+#### 作者建议
+暂时不修。当前三平台行为一致，无实际影响。后续若出现平台不兼容再处理。
+→ 关闭-延期
+
+#### 定位
+platform/macos/port.c:522-543
+include/nanosig/nanosig_port.h:432-451
+
+<a id="PORT-015"></a>
+### PORT-015: Windows `ns_windows_timeout_ms` 在超大 timeout_us 下有 uint64 加法溢出
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低
+- **类型**: bug
+
+#### 问题描述
+`platform/windows/port.c:38` 中 `(timeout_us + 999u) / 1000u`，当 `timeout_us` 接近 `UINT64_MAX` 时加法溢出。Linux 路径有同样风险。实际触发条件极不常见，但作为平台原语应正确处理。
+
+#### review 建议
+改用不溢出的等价算术：`timeout_ms = timeout_us / 1000u + (timeout_us % 1000u != 0u ? 1u : 0u);`
+
+#### 作者建议
+不考虑这种情况，场景不可能。`timeout_us` 在实际使用中不会接近 UINT64_MAX。
+→ 关闭-已拒绝
+
+#### 关闭原因
+场景不可能。实际使用中 timeout_us 为微秒级超时值，不会接近 UINT64_MAX。
+
+- **关闭日期**: 2026-08-02
+- **状态**: 关闭-已拒绝
+
+#### 定位
+platform/windows/port.c:38
+platform/linux/port.c:141
+
+---
+
+<a id="PORT-017"></a>
+### PORT-017: `ns_platform_event_*` 生命周期契约不完整（重复 init 泄漏 / 未初始化调用）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 已按"文档保护"处置：include/nanosig/nanosig_port.h:316-346 的 event 文档块补 `@warning`（重复 init 泄漏底层 fd/HANDLE）与 `@pre`（signal/drain/deinit 前须成功 init，deinit 另需已 waitset_remove）。无代码改动，未加运行时守卫。
+- **关闭日期**: 2026-09-21
+
+#### 问题描述
+
+`ns_platform_event_t` 是本次 event 重构新增的 caller-owned 平台原语。其公共文档块
+include/nanosig/nanosig_port.h:316-346 只描述字段语义与四条"硬语义"，未声明两条
+生命周期前提：
+
+1. **init 非幂等**：对同一 event 重复调用 `ns_platform_event_init` 而不先 `deinit`
+   会覆盖 `waitable` / `signal_handle`，泄漏第一次分配的资源（Linux `eventfd`
+   一个 fd、macOS `pipe` 两个 fd、Windows `CreateEvent` 一个 HANDLE）。三个后端
+   init 都是"无条件新建资源、不检查旧状态"，见 platform/linux/port.c:199-219、
+   platform/macos/port.c:240-266、platform/windows/port.c:151-170。
+2. **未初始化调用**：在未成功 `init` 的对象上调用 `signal` / `drain` / `deinit`
+   会读取未初始化的 `waitable.registered_waitset` 与 `signal_handle`，属未定义行为，
+   但头文件未声明 `@pre`。
+
+仓库对同类问题（signal / watcher 重复 init）在审计处置中选择"文档免责 +
+头文件 `@warning`"（见 P9 F1/F2），本问题应与之一致处置。
+
+#### review 建议
+
+在 `nanosig_port.h` 的 event 文档块补充生命周期约束：
+
+- `@pre`：`signal` / `drain` / `deinit` 前必须已成功 `init`；`deinit` 另需已
+  `ns_platform_waitset_remove`（后者已在硬语义条目中）。
+- `@warning`：对同一 event 重复 `init` 而未 `deinit` 会泄漏底层 fd / HANDLE；
+  需 `init` 一次、`deinit` 一次。
+
+#### 作者建议
+
+（2026-09-21 作者决定：文档保护，不加运行时守卫。）理由：① 与 P9 F1/F2（signal / watcher 重复 init）的处置保持一致；② `ns_platform_event_t` 是 caller-owned 且不要求清零，运行时守卫无法可靠区分"未初始化垃圾句柄"与"已初始化合法句柄"，可靠检测需强制 zero-init 或新增 magic/状态字段，代价与收益不成比例；③ 重复 init 仅在调用方违规时发生，对正常路径无正确性影响。处置方式：仅补 `@warning` + `@pre` 文档。
+
+#### 可重现的失败场景
+
+```c
+ns_platform_event_t e;
+ns_platform_event_init(&e, "x");   /* 分配 eventfd / pipe / CreateEvent #1 */
+ns_platform_event_init(&e, "x");   /* 覆盖句柄，资源 #1 永久泄漏 */
+```
+
+`grep -nE "@pre|@warning" include/nanosig/nanosig_port.h`（event 段落 :316-346）
+→ 仅硬语义条目，无 init 配对与前置条件声明。
+
+#### 定位
+include/nanosig/nanosig_port.h:316-346
+platform/linux/port.c:199-219
+platform/macos/port.c:240-266
+platform/windows/port.c:151-170
+
+---
+
+---

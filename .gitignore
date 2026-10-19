@@ -9,6 +9,7 @@ build-linux*
 .vscode/
 .clawbench/
 .codex
+__pycache__/
 Testing/
 build-coverage/
 build-freertos/

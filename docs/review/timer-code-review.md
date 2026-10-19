@@ -3,14 +3,14 @@ review_schema: "nanosig-review-v1"
 entries:
   - id: "TIMER-001"
     module: "timer"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/timer-code-review.md#TIMER-001"
   - id: "TIMER-018"
     module: "timer"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
@@ -20,37 +20,24 @@ entries:
     status: "closed-rejected"
     severity: "low"
     type: "cleanup"
-    section: "open"
-    closed_date: "2026-07-18"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/timer-code-review.md#TIMER-019"
   - id: "TIMER-020"
     module: "timer"
     status: "closed-fixed"
     severity: "low"
     type: "doc"
-    section: "open"
-    closed_date: "2026-08-02"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/timer-code-review.md#TIMER-020"
-  - id: "TIMER-018"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "high"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-018"
-  - id: "TIMER-002"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "critical"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-002"
   - id: "TIMER-003"
     module: "timer"
     status: "closed-rejected"
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-003"
   - id: "TIMER-004"
     module: "timer"
@@ -58,99 +45,34 @@ entries:
     severity: "high"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-004"
-  - id: "TIMER-016"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "high"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-016"
   - id: "TIMER-005"
     module: "timer"
     status: "closed-rejected"
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-005"
-  - id: "TIMER-006"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-006"
-  - id: "TIMER-007"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-007"
-  - id: "TIMER-008"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-008"
-  - id: "TIMER-009"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-009"
   - id: "TIMER-010"
     module: "timer"
     status: "closed-rejected"
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-010"
-  - id: "TIMER-011"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-011"
-  - id: "TIMER-012"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-012"
-  - id: "TIMER-013"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-013"
-  - id: "TIMER-014"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-014"
-  - id: "TIMER-015"
-    module: "timer"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/timer-code-review.md#TIMER-015"
   - id: "TIMER-017"
     module: "timer"
     status: "closed-rejected"
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-017"
 ---
+
 # Timer 代码审查报告
 
 **日期**: 2026-07-04
@@ -193,11 +115,9 @@ entries:
 ## 现在打开的问题
 
 
-
 ## 现在关闭的问题
 
-### TIMER-018: `ns_timer_cancel_locked` 返回 `NS_E_INVAL`，语义应是 `NS_E_CORRUPT` (HIGH) `bug`
----
+<a id="TIMER-020"></a>
 ### TIMER-020: `fire_expired` 文档中关于槽位回调死锁的描述不准确
 
 - **状态**: 关闭-已修复
@@ -207,6 +127,7 @@ entries:
 - **关闭日期**: 2026-10-19
 
 ---
+<a id="TIMER-019"></a>
 ### TIMER-019: `fire_expired` 和 `restart` 中 `ns_rbtree_insert` 返回值未检查，与 `start_locked` 不一致
 
 - **状态**: 关闭-已拒绝
@@ -219,22 +140,6 @@ entries:
 - **严重度**: 🟠 高
 - **关闭原因**: `src/ns_timer.c:142` 中 `NS_E_INVAL` 改为 `NS_E_CORRUPT`，与 `ns_timer_start_locked` 风格一致。
 - **关闭日期**: 2026-07-04
-
-<a id="TIMER-002"></a>
-### TIMER-002: `ns_timer_validate_created` 无锁读取 `timer->signal.mutex`
-
-- **状态**: 关闭-已修复
-- **严重度**: 🔴 关键
-- **关闭原因**: `nanosig_timer.h` 所有 public API 添加 `@attention` 说明
-  `init`/`deinit`/`start`/`cancel`/`restart` 不是线程安全的，调用方需保证
-  同一 timer 对象无并发操作。已文档化为设计约束。
-- **关闭日期**: 2026-07-04
-
-#### 定位
-
-`src/ns_timer.c:85`
-
----
 
 <a id="TIMER-003"></a>
 ### TIMER-003: `ns_timer_mgr_notify` 中 `notify_ctx` 的数据竞争
@@ -259,20 +164,6 @@ entries:
 
 ---
 
-<a id="TIMER-016"></a>
-### TIMER-016: 所有 rbtree insert/remove 返回值被 `(void)` 静默丢弃
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟠 高
-- **关闭原因**: 7 处 `(void)` 强制转换全部移除：
-  - `cancel_locked`：返回 `remove != NULL ? NS_OK : NS_E_INVAL`
-  - `start_locked`：insert 返回 NULL 时返回 `NS_E_CORRUPT`
-  - `shutdown` drain 循环：remove 返回 NULL 时 break
-  - `fire_expired`/`restart`：放开返回值以供后续检查
-- **关闭日期**: 2026-07-04
-
----
-
 <a id="TIMER-005"></a>
 ### TIMER-005: `ns_timer_deinit` 在 cancel 失败时泄漏信号互斥锁
 
@@ -285,110 +176,12 @@ entries:
 
 ---
 
-<a id="TIMER-006"></a>
-### TIMER-006: `ns_timer_restart` 在时钟验证前移除定时器
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: `nanosig_timer.h` 中 `ns_timer_restart` 文档已标注
-  失败时 timer 从"运行中"变为"已停止"的状态变更。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-007"></a>
-### TIMER-007: `fire_expired` 中缓存的 `now` 在信号发射后过期
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: `ns_timer.c` 中 `fire_expired` 上方注释说明 `ns_signal_emit_raw`
-  是非阻塞 MPSC 队列推送，不会阻塞。槽位回调本身应保持简短。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-008"></a>
-### TIMER-008: `ns_timer_mgr_global_init` 双重初始化竞态
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: `ns_timer.c` 中 `ns_timer_mgr_global_init` 上方添加
-  `@note` 注释说明本函数不是线程安全的，调用方必须在单线程上下文中使用。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-009"></a>
-### TIMER-009: Global shutdown 遗留未清理的定时器信号资源
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: `ns_timer.c` 中 `g_timer_mgr` 和 `ns_timer_mgr_global_init` 上方
-  注释添加生命周期规则：调用方必须在 shutdown 前完成所有 timer 的 deinit。
-- **关闭日期**: 2026-07-04
-
----
-
 <a id="TIMER-010"></a>
 ### TIMER-010: `ns_timer_remaining_us` 实现定义转换
 
 - **状态**: 关闭-已拒绝
 - **严重度**: 🟡 中
 - **关闭原因**: 作者决定先不考虑。所有现代平台（补码）正确产生期望的负值。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-011"></a>
-### TIMER-011: 信号发射在锁下进行，缺少文档约束
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: `ns_timer.c` 中 `fire_expired` 上方添加文档，说明 emit 在
-  `g_timer_mgr.mutex` 下进行，槽位回调中不得调用 timer API，否则死锁。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-012"></a>
-### TIMER-012: `ns_timer_cancel_locked` 始终返回 `NS_OK`
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: 改为 `return (ns_rbtree_remove(...) != NULL) ? NS_OK : NS_E_INVAL;`
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-013"></a>
-### TIMER-013: `initialized = 0` 在第 166 行和第 182 行各设置一次
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: 移除第 182 行冗余赋值（第 166 行已在 shutdown 入口处设置一次）。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-014"></a>
-### TIMER-014: 注释"新入者"违反注释规范
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: "新入者" 改写为 "every new caller to ns_timer_mgr_lock() will see
-  initialized == 0 and return NS_E_SHUTDOWN immediately"。
-- **关闭日期**: 2026-07-04
-
----
-
-<a id="TIMER-015"></a>
-### TIMER-015: `fire_expired` 仅记录第一个 emit 失败，后续失败静默丢弃
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟢 较低
-- **关闭原因**: `ns_timer.c` 中 `fire_expired` 上方添加注释说明
-  first-error-only 是有意取舍：批量触发场景下报告第一个错误，避免通过
-  累积错误码增加 API 复杂度。
 - **关闭日期**: 2026-07-04
 
 ---

@@ -123,6 +123,7 @@ cmake --build <build-dir> --target sanitize-all
 ## Review 工作硬性约束（强化版）
 
 任何 review 工作必须先读 `docs/review/AGENTS.md`。三个核心规则：
+工具用法（查询、写入、归档、校验）见 `docs/review/README.md`。
 
 1. **每个 review agent 只能 review 自己负责的模块**——禁止跨模块 review
 2. **review 文档三大分区**：`## 修复历史` / `## 现在打开的问题` / `## 现在关闭的问题`

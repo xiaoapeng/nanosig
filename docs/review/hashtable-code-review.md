@@ -3,67 +3,78 @@ review_schema: "nanosig-review-v1"
 entries:
   - id: "HASHTABLE-002"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-002"
   - id: "HASHTABLE-003"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-003"
   - id: "HASHTABLE-004"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-004"
   - id: "HASHTABLE-006"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-006"
   - id: "HASHTABLE-007"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-007"
   - id: "HASHTABLE-008"
     module: "hashtable"
-    status: "unknown"
+    status: "closed-fixed"
     severity: "unknown"
     type: "bug"
     section: "fixed-history"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-008"
   - id: "HASHTBL-101"
     module: "hashtable"
-    status: "unknown"
-    severity: "unknown"
+    status: "closed-fixed"
+    severity: "low"
     type: "bug"
-    section: "fixed-history"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/hashtable-code-review.md#HASHTBL-101"
+    locations:
+      - "include/nanosig/nanosig_hashtbl.h:284"
+      - "src/ds/ns_hashtbl.c:342"
   - id: "HASHTBL-102"
     module: "hashtable"
-    status: "unknown"
-    severity: "unknown"
+    status: "closed-fixed"
+    severity: "low"
     type: "bug"
-    section: "fixed-history"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/hashtable-code-review.md#HASHTBL-102"
+    locations:
+      - "src/ds/ns_hashtbl.c:178"
+      - "src/ds/ns_hashtbl.c:333"
   - id: "HASHTBL-103"
     module: "hashtable"
-    status: "unknown"
-    severity: "unknown"
+    status: "closed-fixed"
+    severity: "low"
     type: "bug"
-    section: "fixed-history"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/hashtable-code-review.md#HASHTBL-103"
+    locations:
+      - "src/ds/ns_hashtbl.c:366"
   - id: "HASHTBL-104"
     module: "hashtable"
     status: "open"
@@ -71,6 +82,16 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/hashtable-code-review.md#HASHTBL-104"
+    locations:
+      - "src/ds/ns_hashtbl.c:229"
+      - "src/ds/ns_hashtbl.c:234"
+      - "src/ds/ns_hashtbl.c:235"
+      - "src/ds/ns_hashtbl.c:238"
+      - "src/ds/ns_hashtbl.c:83"
+      - "src/ds/ns_hashtbl.c:269"
+      - "src/ds/ns_hashtbl.c:318"
+      - "include/nanosig/nanosig_hashtbl.h:66"
+      - "include/nanosig/nanosig_hashtbl.h:161"
   - id: "HASHTBL-105"
     module: "hashtable"
     status: "open"
@@ -78,6 +99,21 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/hashtable-code-review.md#HASHTBL-105"
+    locations:
+      - "include/nanosig/nanosig_hashtbl.h:255"
+      - "include/nanosig/nanosig_hashtbl.h:274"
+      - "include/nanosig/nanosig_hashtbl.h:293"
+      - "src/ds/ns_hashtbl.c:96"
+      - "src/ds/ns_hashtbl.c:103"
+      - "src/ds/ns_hashtbl.c:109"
+      - "src/ds/ns_hashtbl.c:119"
+      - "src/ds/ns_hashtbl.c:123"
+      - "src/ds/ns_hashtbl.c:127"
+      - "src/ds/ns_hashtbl.c:261"
+      - "src/ds/ns_hashtbl.c:269"
+      - "src/ds/ns_hashtbl.c:293"
+      - "src/ds/ns_hashtbl.c:305"
+      - "src/ds/ns_hashtbl.c:318"
   - id: "HASHTBL-106"
     module: "hashtable"
     status: "open"
@@ -85,6 +121,9 @@ entries:
     type: "cleanup"
     section: "open"
     location: "docs/review/hashtable-code-review.md#HASHTBL-106"
+    locations:
+      - "include/nanosig/nanosig_hashtbl.h:60"
+      - "include/nanosig/nanosig_hashtbl.h:62"
   - id: "HASHTBL-107"
     module: "hashtable"
     status: "open"
@@ -92,6 +131,8 @@ entries:
     type: "doc"
     section: "open"
     location: "docs/review/hashtable-code-review.md#HASHTBL-107"
+    locations:
+      - "include/nanosig/nanosig_hashtbl.h:22"
   - id: "HASHTBL-108"
     module: "hashtable"
     status: "open"
@@ -99,6 +140,12 @@ entries:
     type: "bug"
     section: "open"
     location: "docs/review/hashtable-code-review.md#HASHTBL-108"
+    locations:
+      - "src/ds/ns_hashtbl.c:73"
+      - "src/ds/ns_hashtbl.c:78"
+      - "src/ds/ns_hashtbl.c:83"
+      - "src/ds/ns_hashtbl.c:99"
+      - "src/ds/ns_hashtbl.c:261"
   - id: "HT-010"
     module: "hashtable"
     status: "closed-rejected"
@@ -107,49 +154,28 @@ entries:
     section: "closed"
     closed_date: "2026-08-02"
     location: "docs/review/hashtable-code-review.md#HT-010"
-  - id: "HASHTBL-103"
-    module: "hashtable"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/hashtable-code-review.md#HASHTBL-103"
-  - id: "HASHTBL-102"
-    module: "hashtable"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/hashtable-code-review.md#HASHTBL-102"
-  - id: "HASHTBL-101"
-    module: "hashtable"
-    status: "closed-fixed"
-    severity: "low"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/hashtable-code-review.md#HASHTBL-101"
-  - id: "HASHTABLE-009"
-    module: "hashtable"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "bug"
-    section: "closed"
-    location: "docs/review/hashtable-code-review.md#HASHTABLE-009"
   - id: "HASHTABLE-001"
     module: "hashtable"
     status: "closed-rejected"
     severity: "medium"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-001"
+    locations:
+      - "src/ds/ns_hashtbl.c:73"
   - id: "HASHTABLE-005"
     module: "hashtable"
     status: "closed-rejected"
     severity: "low"
     type: "bug"
     section: "closed"
+    closed_date: "2026-07-04"
     location: "docs/review/hashtable-code-review.md#HASHTABLE-005"
+    locations:
+      - "include/nanosig/nanosig_hashtbl.h:90"
 ---
+
 # Hashtable 代码审查报告
 
 **日期**: 2026-07-04
@@ -165,7 +191,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: `ns_hashtable_node_init` 入口添加 `if(key == NULL) return;` 静默返回，与 `node == NULL` 处理风格一致。
-- **影响文件**: `src/ds/ns_hashtable.c`
+- **影响文件**: `src/ds/ns_hashtbl.c`
 
 <a id="HASHTABLE-003"></a>
 ### HASHTABLE-003: `ns_hash_string` 中 cursor 在 NULL 检查前赋值
@@ -173,7 +199,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: 将 `if(key == NULL) return 0u;` 移到 cursor 赋值之前。
-- **影响文件**: `src/ds/ns_hashtable.c`
+- **影响文件**: `src/ds/ns_hashtbl.c`
 
 <a id="HASHTABLE-004"></a>
 ### HASHTABLE-004: `--table->size` 在 size_t 下可能下溢
@@ -181,7 +207,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: `--table->size` 之前添加 `assert(table->size > 0u);` 防御性断言。
-- **影响文件**: `src/ds/ns_hashtable.c`
+- **影响文件**: `src/ds/ns_hashtbl.c`
 
 <a id="HASHTABLE-006"></a>
 ### HASHTABLE-006: `ns_hashtable_clear` 使用非惯用的预先 pop 循环模式
@@ -189,7 +215,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: 改为 do-while 模式 `do { node = pop_front(); } while(node != NULL);`。
-- **影响文件**: `src/ds/ns_hashtable.c`
+- **影响文件**: `src/ds/ns_hashtbl.c`
 
 <a id="HASHTABLE-007"></a>
 ### HASHTABLE-007: `.c` 文件违反 IWYU 原则
@@ -197,7 +223,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: 显式 include `<assert.h>`、`<stddef.h>`、`<stdint.h>`。
-- **影响文件**: `src/ds/ns_hashtable.c`
+- **影响文件**: `src/ds/ns_hashtbl.c`
 
 <a id="HASHTABLE-008"></a>
 ### HASHTABLE-008: 公共头未声明线程不安全约束
@@ -205,7 +231,7 @@ entries:
 - **修复日期**: 2026-07-04
 - **修复 commit**: working tree (待提交)
 - **修复方式**: 在 `nanosig_hashtable.h` 文件顶部添加 `@warning` 文档说明线程不安全约束。
-- **影响文件**: `include/nanosig/nanosig_hashtable.h`
+- **影响文件**: `include/nanosig/nanosig_hashtbl.h`
 
 <a id="HASHTBL-101"></a>
 ### HASHTBL-101: `ns_hashtbl_for_each_with_string_safe` 前缀匹配假阳性
@@ -565,7 +591,7 @@ src/ds/ns_hashtbl.c:261
 `docs/review/hashtable-code-review.md` 的修复历史中记录 HASHTABLE-004 已于 2026-07-04 修复（添加 `assert(table->size > 0u);`），但当前代码中 `ns_hashtable_remove` 函数（第 135-138 行）在 `--table->size` 之前没有该 assert。修复要么从未实际应用，要么在后续 commit 中被回退。
 
 #### review 建议
-在 `src/ds/ns_hashtable.c:137` 的 `--table->size` 之前添加 `assert(table->size > 0u);`。
+在 `src/ds/ns_hashtbl.c:137` 的 `--table->size` 之前添加 `assert(table->size > 0u);`。
 
 #### 作者建议
 正常调用 API 时调用方保证 remove 前 size > 0，不需要防御性 assert。与 HASHTABLE-004 同理。
@@ -574,15 +600,18 @@ src/ds/ns_hashtbl.c:261
 #### 关闭原因
 正常调用 API 时调用方保证 remove 前 size > 0，不需要防御性 assert。
 
-- 关闭日期: 2026-08-02
-- 状态: 关闭-已拒绝
+- **关闭日期**: 2026-08-02
+- **状态**: 关闭-已拒绝
 
 #### 定位
+<a id="HASHTBL-103"></a>
 ### HASHTBL-103: 极小 load_factor 时 `threshold == 0` 导致每次 insert 都 resize `perf`
 
 - **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: perf
+- **关闭原因**: 作者已修复，见作者建议。
+- **关闭日期**: 2026-10-19
 
 #### 问题描述
 `0 < load_factor < 1/16` 时，`(unsigned)(16 * load_factor)` 截断为 0，`count + 1 >= 0` 恒真，每次 insert 都触发扩容（O(n) per insert，表无界增长）。不产生数据丢失，但性能病态。上游 `eh_hashtbl` 行为相同。`create` 的 NaN/上限钳制守卫未覆盖此下限。
@@ -599,11 +628,14 @@ src/ds/ns_hashtbl.c:366
 ---
 
 
+<a id="HASHTBL-102"></a>
 ### HASHTBL-102: 字符串工厂/查找无 NULL 键守卫 `bug`
 
 - **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: bug
+- **关闭原因**: 作者已修复，见作者建议。
+- **关闭日期**: 2026-10-19
 
 #### 问题描述
 `ns_hashtbl_node_new_with_string_refresh` 和 `ns_hashtbl_find_with_string` 将键直接传入 `fnv1a_str`，`key == NULL` 时会解引用崩溃。上游 `eh_hashtbl` 行为相同（仅 `ns_hash_string` 在移植时补了 NULL 守卫）。未文档化的输入 UB，与 C API 惯例一致。
@@ -621,11 +653,14 @@ src/ds/ns_hashtbl.c:333
 ---
 
 
+<a id="HASHTBL-101"></a>
 ### HASHTBL-101: `ns_hashtbl_for_each_with_string_safe` 前缀匹配假阳性 `bug`
 
 - **状态**: 关闭-已修复
 - **严重度**: 🟢 较低
 - **类型**: bug
+- **关闭原因**: 作者已修复，见作者建议。
+- **关闭日期**: 2026-10-19
 
 #### 问题描述
 `ns_hashtbl_for_each_with_string_safe` 的过滤条件是 `strncmp(node_key, string, node_key_len)`——只比较节点的键长度。搜索较长字符串时，会匹配键是其严格前缀的节点（如搜索 "abcd" 会遍历到键为 "abc" 的节点）。专用查找 `ns_hashtbl_find_with_string` 用 `memcmp` 按搜索串长度比较，无此问题；仅遍历宏存在此行为。
@@ -637,19 +672,11 @@ src/ds/ns_hashtbl.c:333
 （2026-08-09 作者修复：遍历宏过滤条件改为精确匹配——`ns_hashtbl_node_key_len(node) == strlen(string) && memcmp(...) == 0`，长度 O(1) 短路在前、memcmp 块比较在后，与 ns_hashtbl_find_with_string / for_each_with_key_safe 语义一致，消除前缀假阳性且比较更快。头文件 @brief 已更新为"精确匹配，不做前缀匹配"。回归用例：键 "aa" 与搜索串 "aaz" 的 FNV-1a 哈希在各掩码下均同桶，修复前遍历 "aaz" 误出 "aa"（已反向验证用例可抓 bug）。）
 
 #### 定位
-include/nanosig/nanosig_hashtbl.h:284（宏定义）
-src/ds/ns_hashtbl.c:342（find_with_string，无此问题，对比参考）
+include/nanosig/nanosig_hashtbl.h:284
+src/ds/ns_hashtbl.c:342
 
 ---
 
-
-<a id="HASHTABLE-009"></a>
-### HASHTABLE-009: `ns_hashtable_node_init` 在 `key==NULL` 时留 struct 未初始化 (MEDIUM) `bug`
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **关闭原因**: 头文件 `ns_hashtable_node_init` 补 `@note` 文档："当 key 为 NULL 时，本函数不初始化任何字段，直接返回。调用者有责任在后续操作前检查 key 是否为 NULL。"
-- **关闭日期**: 2026-07-04
 
 <a id="HASHTABLE-001"></a>
 ### HASHTABLE-001: `ns_hashtable_insert` 使用缓存的 `node->hash` 而非从 key 重算
@@ -658,7 +685,7 @@ src/ds/ns_hashtbl.c:342（find_with_string，无此问题，对比参考）
 - **严重度**: 🟡 中
 
 #### 定位
-`src/ds/ns_hashtable.c:73`
+src/ds/ns_hashtbl.c:73
 
 #### 问题描述
 `ns_hashtable_insert` 直接使用 `node->hash` 进行分桶和重复检查，而非从 key 重新计算。如果调用者手动初始化节点（绕过 `ns_hashtable_node_init`），或在 `ns_hashtable_node_init` 后修改 `node->key` 而不更新 `node->hash`，则：
@@ -694,7 +721,7 @@ index = (size_t)ns_hash_string(node->key) % table->bucket_count;
 - **严重度**: 🟢 较低
 
 #### 定位
-`include/nanosig/nanosig_hashtable.h:90`
+include/nanosig/nanosig_hashtbl.h:90
 
 #### 问题描述
 ```c
