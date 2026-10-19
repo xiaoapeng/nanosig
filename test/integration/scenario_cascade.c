@@ -72,7 +72,7 @@ static int scenario_cascade(void)
         EXPECT_OK(ns_signal_disconnect(&g_cascade_conns[i]) == NS_OK);
         EXPECT_OK(ns_timer_deinit(&g_cascade_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_deinit(g_cascade_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_cascade_loop) == NS_OK);
     g_cascade_loop = NULL;
 
     integration_verify_clean_shutdown();

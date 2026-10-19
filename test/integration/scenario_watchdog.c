@@ -112,7 +112,7 @@ static int scenario_watchdog(void)
         test_destroy_raw_waitable(g_wd_raw[i]);
     }
 
-    EXPECT_OK(ns_loop_deinit(g_wd_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_wd_loop) == NS_OK);
     g_wd_loop = NULL;
 
     integration_verify_clean_shutdown();

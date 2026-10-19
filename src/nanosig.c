@@ -127,7 +127,7 @@ int ns_is_initialized(void)
     return ns_runtime_is_initialized();
 }
 
-int ns_loop_init(ns_loop_t **out_loop, const ns_loop_config_t *config)
+int ns_loop_create(ns_loop_t **out_loop, const ns_loop_config_t *config)
 {
     ns_loop_t *loop;
     ns_loop_config_t local_config;
@@ -172,7 +172,7 @@ out_free:
     return rc;
 }
 
-int ns_loop_deinit(ns_loop_t *loop)
+int ns_loop_destroy(ns_loop_t *loop)
 {
     int rc;
 

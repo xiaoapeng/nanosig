@@ -51,7 +51,7 @@ static int scenario_idle(void)
     INTEGRATION_PHASE("idle: loop exited, cleaning up");
     EXPECT_OK(ns_signal_disconnect(&exit_conn) == NS_OK);
     EXPECT_OK(ns_timer_deinit(&exit_timer) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(g_idle_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_idle_loop) == NS_OK);
     g_idle_loop = NULL;
 
     integration_verify_clean_shutdown();

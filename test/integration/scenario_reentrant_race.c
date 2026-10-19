@@ -143,7 +143,7 @@ static int scenario_reentrant_race(void)
     EXPECT_OK(ns_signal_disconnect(&g_rr_conn) == NS_OK);
     EXPECT_OK(ns_signal_deinit_raw(&g_rr_signal) == NS_OK);
 
-    EXPECT_OK(ns_loop_deinit(g_rr_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_rr_loop) == NS_OK);
     g_rr_loop = NULL;
 
     integration_verify_clean_shutdown();

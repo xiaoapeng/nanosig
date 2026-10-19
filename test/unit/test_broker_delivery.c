@@ -70,7 +70,7 @@ static int test_handler_emit_reaches_loop(void)
 
     EXPECT_OK(ns_platform_event_init(&g_ctx.ev, "delivery-ev") == NS_OK);
     EXPECT_OK(ns_signal_init(&g_ctx.wakeup, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&g_ctx.loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&g_ctx.loop, NULL) == NS_OK);
 
     EXPECT_OK(ns_signal_connect_typed(g_ctx.wakeup, delivery_slot, ns_no_payload_t,
                                       g_ctx.loop, &g_ctx, &slot_conn) == NS_OK);
@@ -99,7 +99,7 @@ static int test_handler_emit_reaches_loop(void)
     (void)ns_watcher_deinit(&g_ctx.watcher);
     (void)ns_signal_disconnect(&slot_conn);
     (void)ns_signal_deinit(&g_ctx.wakeup);
-    (void)ns_loop_deinit(g_ctx.loop);
+    (void)ns_loop_destroy(g_ctx.loop);
     g_ctx.loop = NULL;
     (void)ns_platform_event_deinit(&g_ctx.ev);
     (void)ns_shutdown();

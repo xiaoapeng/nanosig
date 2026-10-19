@@ -87,7 +87,7 @@ static int scenario_timer_precision(void)
         EXPECT_OK(ns_signal_disconnect(&g_tp_conns[i]) == NS_OK);
         EXPECT_OK(ns_timer_deinit(&g_tp_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_deinit(g_tp_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_tp_loop) == NS_OK);
     g_tp_loop = NULL;
 
     integration_verify_clean_shutdown();

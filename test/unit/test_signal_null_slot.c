@@ -20,7 +20,7 @@ static int test_signal_connect_null_slot(void)
 
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_init(&loop, NULL) == NS_OK);
+    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
 
     /* Connecting with NULL slot_fn must fail cleanly. The implementation
      * is free to pick any negative status code, but it must not return
@@ -33,7 +33,7 @@ static int test_signal_connect_null_slot(void)
 
     EXPECT_OK(ns_signal_disconnect_all(&sig) == NS_OK);
     EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_deinit(loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
     EXPECT_OK(ns_shutdown() == NS_OK);
     return 0;
 }

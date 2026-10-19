@@ -73,7 +73,7 @@ static int scenario_timer_storm(void)
         EXPECT_OK(ns_signal_disconnect(&g_storm_conns[i]) == NS_OK);
         EXPECT_OK(ns_timer_deinit(&g_storm_timers[i]) == NS_OK);
     }
-    EXPECT_OK(ns_loop_deinit(g_storm_loop) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(g_storm_loop) == NS_OK);
     g_storm_loop = NULL;
 
     integration_verify_clean_shutdown();
