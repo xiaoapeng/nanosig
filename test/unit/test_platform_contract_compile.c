@@ -13,8 +13,11 @@
 #include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig_atomic.h>
 
-#ifndef NANOSIG_PLATFORM_HEADER
-#error "NANOSIG_PLATFORM_HEADER must be injected by the build system (platform selection)"
+/* 平台后端头按固定名 `nanosig_platform_port.h` 由 include 路径提供；它必须已经
+   被 nanosig_port.h 引入（否则下面的平台类型根本不存在）。用 ABI 探针确认
+   "确实引入了某个平台后端头"，而不是"碰巧编过了"。 */
+#ifndef NS_PLATFORM_ABI_PROBE
+#error "platform backend header (nanosig_platform_port.h) must be reachable via the include path"
 #endif
 
 #if NS_PLATFORM_WAIT_INFINITE_US != UINT64_MAX

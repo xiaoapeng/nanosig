@@ -6,10 +6,9 @@
  * 本文件集中平台原语类型（由构建系统注入的平台后端头提供）、waitable 事件
  * 描述符、平台抽象层函数声明。
  *
- * 本文件**不含任何平台判定宏**：平台类型与 ABI 探针全部由
- * `NANOSIG_PLATFORM_HEADER` 指向的平台后端头（`platform/<os>/nanosig_platform_port.h`）
- * 提供。各平台类型都是该平台内核原语的**透明别名**，且全部为调用方拥有存储
- * ——平台层不再为平台对象分配内存。
+ * 本文件**不含任何平台判定宏**：平台类型与 ABI 探针全部由固定名的平台后端头
+ * `nanosig_platform_port.h`（`platform/<os>/`）提供。各平台类型都是该平台内核
+ * 原语的**透明别名**，且全部为调用方拥有存储——平台层不再为平台对象分配内存。
  *
  * @thread-safety
  * 平台对象的存储由调用方拥有，库不分配也不保护其生命周期（唯一例外：Zephyr 后端的
@@ -50,11 +49,10 @@ struct ns_platform_waitable;
 /* ================================================================== */
 
 /**
- * 构建系统必须在平台选择的同一处注入本宏（例如 CMake
- * `target_compile_definitions(nanosig PUBLIC
- * NANOSIG_PLATFORM_HEADER=\"nanosig_platform_port.h\")`），并把
- * `platform/<os>/` 加入 include 路径。缺任一者都会在编译期立刻失败，
- * 而不会静默退化为错误的平台类型。
+ * 构建系统只需把 `platform/<os>/` 加入 include 路径，本文件按固定名
+ * `nanosig_platform_port.h` 引入平台后端头（各后端头同名，由 include 路径
+ * 决定选中哪一个）。缺这条 include 路径会在编译期立刻失败，而不会静默
+ * 退化为错误的平台类型。
  *
  * 平台后端头提供的符号：
  * - `ns_waitable_handle_t` 及其谓词 `ns_waitable_handle_is_valid(h)`；
@@ -65,7 +63,7 @@ struct ns_platform_waitable;
  * 本 include 有意置于 `extern "C"` 之前：Windows 后端头直接包含 `<windows.h>`，
  * 若被 C 链接包围会把 Win32 的 C++ 声明（重载/模板）一并带入 C 链接。
  */
-#include NANOSIG_PLATFORM_HEADER
+#include <nanosig_platform_port.h>
 
 #ifdef __cplusplus
 extern "C" {

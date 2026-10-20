@@ -33,10 +33,12 @@ primitives + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE`).
   types are transparent aliases of kernel primitives defined per platform in
   `nanosig_platform_port.h`, and the API is `*_init` / `*_deinit` (never create/destroy
   with allocation). `ns_platform_thread_join` keeps the `join` name because it blocks.
-- The build system injects `NANOSIG_PLATFORM_HEADER` (defining the header name) and the
-  platform include dir; `nanosig_port.h` has no platform-detection macros. Top-level
-  `CMakeLists.txt` sets `NANOSIG_PLATFORM_DIR` + `NANOSIG_PLATFORM_HEADER_DEFINE` as
-  PUBLIC; Zephyr uses `zephyr/CMakeLists.txt`.
+- The platform include dir is the **only** platform-selection injection point: all five backend
+  headers share the fixed name `nanosig_platform_port.h`, and `nanosig_port.h` includes it by
+  that name (`#include <nanosig_platform_port.h>`) with no platform-detection macros. Top-level
+  `CMakeLists.txt` sets `NANOSIG_PLATFORM_DIR` and propagates that dir as a PUBLIC include path;
+  Zephyr uses `zephyr/CMakeLists.txt`. A missing include path fails at compile time
+  ("cannot find nanosig_platform_port.h") rather than silently selecting the wrong types.
 - Platform headers are build-in (never installed) and may pull in platform SDK headers
   (`pthread.h` / `windows.h` / `FreeRTOS.h` / `zephyr/kernel.h`).
 - Loop-only scope: single wakeup, mutex, monotonic clock, and allocation.
@@ -54,7 +56,7 @@ primitives + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE`).
 - Waitset tests use platform primitives directly, not wakeup: Windows event, Linux eventfd, and macOS kqueue user event. Tests: lifecycle, add/remove semantics, timeout, single signal, multi waitable.
 
 ### Common Patterns
-- Public core code should consume `nanosig/nanosig_port.h` without OS-specific preprocessor branches; platform identity comes only from the injected `NANOSIG_PLATFORM_HEADER`.
+- Public core code should consume `nanosig/nanosig_port.h` without OS-specific preprocessor branches; platform identity comes only from the platform include path.
 
 ## Dependencies
 

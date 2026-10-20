@@ -4,9 +4,9 @@
  * @date 2026-10-17
  *
  * 本头文件把 nanosig 平台层使用的原语类型映射为 Zephyr 原语的**透明别名**，
- * 使平台对象变为调用方拥有存储。它只装当前平台这一个后端，由构建系统经
- * `NANOSIG_PLATFORM_HEADER` 注入到 `nanosig_port.h`；`nanosig_port.h` 本身
- * 不含任何平台判定宏。
+ * 使平台对象变为调用方拥有存储。它只装当前平台这一个后端，由构建系统把
+ * `platform/<os>/` 加入 include 路径后，按固定名 `nanosig_platform_port.h`
+ * 被 `nanosig_port.h` 引入；`nanosig_port.h` 本身不含任何平台判定宏。
  *
  * @note 唯一例外是 `ns_platform_thread_t`：它内嵌内核栈（`K_KERNEL_STACK_MEMBER`），
  * 对齐要求为 `Z_KERNEL_STACK_OBJ_ALIGN`。若该类型按值内嵌，这个要求会经堆上的

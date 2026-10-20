@@ -177,15 +177,18 @@ FreeRTOS 后端：
 
 平台类型（`ns_waitable_handle_t` + wakeup / mutex / thread / waitset）定义在五个
 **构建内头** `platform/{linux,macos,windows,freertos,zephyr}/nanosig_platform_port.h`
-中，每个头只描述一个后端。构建系统通过编译定义 `NANOSIG_PLATFORM_HEADER` 指定当前
-平台的头名，`nanosig_port.h` 直接 `#include NANOSIG_PLATFORM_HEADER`，**自身不含任何
+中，每个头只描述一个后端，且**五个头同名**。构建系统把当前平台的目录加入 include
+路径，`nanosig_port.h` 按固定名 `#include <nanosig_platform_port.h>`，**自身不含任何
 平台判定宏**：
 
-- 顶层 `CMakeLists.txt` 设置 `NANOSIG_PLATFORM_DIR` + `NANOSIG_PLATFORM_HEADER_DEFINE`，
-  以 PUBLIC 方式把 include 路径与宏一起传播给库和所有消费者。
-- Zephyr 走自己的 module 入口（`zephyr/CMakeLists.txt`）设置同名宏。
+- 顶层 `CMakeLists.txt` 设置 `NANOSIG_PLATFORM_DIR`，以 PUBLIC 方式把该目录的
+  include 路径传播给库和所有消费者。
+- Zephyr 走自己的 module 入口（`zephyr/CMakeLists.txt`）加同名 include 路径。
 - 这些头**不参与安装**：`include/` 之外不新增 `install()` 规则，消费者必须经由
   构建系统（CMake target 或 Zephyr module）获得平台类型。
+
+平台选择因此**只有 include 路径一个注入点**：include 路径缺失时，公共头会在编译期
+立刻报"找不到 `nanosig_platform_port.h`"，不会静默退化为错误的平台类型。
 
 因此平台头可以传递平台 SDK 头（`pthread.h` / `windows.h` / `FreeRTOS.h` /
 `zephyr/kernel.h`）：消费者与库必须看到**同一份**类型定义。

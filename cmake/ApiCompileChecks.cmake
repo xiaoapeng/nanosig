@@ -7,8 +7,8 @@
 # _nanosig_api_c_syntax_flags(<out_var> <include_dirs> <defines>)
 #
 # C syntax-only flag set for the active compiler frontend. The platform backend
-# header (selected by NANOSIG_PLATFORM_DIR + NANOSIG_PLATFORM_HEADER_DEFINE) is
-# part of the base flag set: every public header transitively needs it.
+# header (selected by NANOSIG_PLATFORM_DIR, i.e. the include path) is part of
+# the base flag set: every public header transitively needs it.
 # <include_dirs> and <defines> are lists appended with the frontend's own
 # `-I`/`-D` (or `/I`/`/D`) prefix; each element must be unprefixed.
 function(_nanosig_api_c_syntax_flags out_var include_dirs defines)
@@ -46,15 +46,6 @@ function(_nanosig_api_c_syntax_flags out_var include_dirs defines)
             -I${PROJECT_SOURCE_DIR}
             -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
-    endif()
-
-    # NANOSIG_PLATFORM_HEADER_DEFINE is a target_compile_definitions entry
-    # (no -D), so it needs the flag prefix here. Without it the compiler reads
-    # NAME="..." as an input file.
-    if(_msvc_frontend)
-        list(APPEND _flags "/D${NANOSIG_PLATFORM_HEADER_DEFINE}")
-    else()
-        list(APPEND _flags "-D${NANOSIG_PLATFORM_HEADER_DEFINE}")
     endif()
 
     foreach(_dir IN LISTS include_dirs)
@@ -176,12 +167,6 @@ function(nanosig_add_cpp_compat_check name)
             -I${PROJECT_SOURCE_DIR}
             -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
         )
-    endif()
-
-    if(_msvc_frontend)
-        list(APPEND _syntax_flags "/D${NANOSIG_PLATFORM_HEADER_DEFINE}")
-    else()
-        list(APPEND _syntax_flags "-D${NANOSIG_PLATFORM_HEADER_DEFINE}")
     endif()
 
     add_custom_target(${name}

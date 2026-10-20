@@ -64,8 +64,8 @@
 
 /* 可配置常量（NS_ZEPHYR_WAITSET_CAP / NS_ZEPHYR_THREAD_STACK_SIZE /
    NS_ZEPHYR_THREAD_PRIORITY）与平台类型由构建内头
-   platform/zephyr/nanosig_platform_port.h 提供（由 NANOSIG_PLATFORM_HEADER
-   注入）；平台对象存储归调用方所有。 */
+   platform/zephyr/nanosig_platform_port.h 提供（按固定名由 include 路径
+   选中）；平台对象存储归调用方所有。 */
 
 /* Zephyr 后端 ABI 探针符号；宿主后端导出 ns_platform_abi_host，FreeRTOS 导出
    ns_platform_abi_freertos。非 static，供 test/zephyr 的主 TU 引用触发链接检查。 */
