@@ -16,3 +16,6 @@ build-freertos/
 build-tsan/
 *.c.gcov
 *.h.gcov
+
+# review_docs.py 的文件锁
+docs/review/.review.lock
