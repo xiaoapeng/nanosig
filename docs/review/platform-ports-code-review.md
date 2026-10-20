@@ -3,10 +3,11 @@ review_schema: "nanosig-review-v1"
 entries:
   - id: "PORT-018"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-018"
     locations:
       - "platform/windows/nanosig_platform_port.h:42"
@@ -15,10 +16,11 @@ entries:
       - "include/nanosig/nanosig_broker.h:147"
   - id: "PORT-019"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-019"
     locations:
       - "platform/linux/port.c:528"
@@ -38,10 +40,11 @@ entries:
       - "docs/ARCHITECTURE.md:271"
   - id: "PORT-022"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "cleanup"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-18"
     location: "docs/review/platform-ports-code-review.md#PORT-022"
     locations:
       - "platform/windows/port.c:302"
@@ -351,119 +354,6 @@ entries:
 
 ## 现在打开的问题
 
-<a id="PORT-018"></a>
-### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-- **关联**: BROKER-036（`ns_watcher_init` 接受 `events == 0`）与本条同源——都是
-  "无效输入未被公共层拒绝"，但本条的具体承诺来自平台谓词，记在本模块。
-
-#### 问题描述
-`ns_waitable_init` 把 `primitive` 写成全 1（`include/nanosig/nanosig_port.h:109`），
-在 Windows 上全 1 **就是** `INVALID_HANDLE_VALUE`。但
-`platform/windows/nanosig_platform_port.h:42` 的谓词只有 `((h) != NULL)`，
-于是 Windows 成为唯一一个"谓词与 `ns_waitable_init` 互相矛盾"的后端：
-
-- 违反 `ns_waitable_init` docstring"句柄型平台对应无效句柄"；
-- 违反 `nanosig_broker.h:146-148`"watcher 为 NULL 时返回全 1 哨兵，经
-  `ns_waitable_handle_is_valid` 判定为无效"；
-- `platform/windows/port.c:315-321` 自己实现了正确规则
-  （`NULL || INVALID_HANDLE_VALUE`），但私有重复，未用于公共谓词。
-
-后果：未绑定的 waitable 能通过 `ns_watcher_init`，直到 `ns_broker_add` 才失败；
-`test/test_helpers.h` 的 `test_raw_waitable_is_valid` 在 Windows 上也会把
-未绑定的 waitable 报成有效（测试假阳性）。
-
-#### review 建议
-```c
-#define ns_waitable_handle_is_valid(h) \
-    (((h) != NULL) && ((h) != INVALID_HANDLE_VALUE))
-```
-并删除 `platform/windows/port.c` 内的私有 `ns_waitable_handle_is_invalid`，
-`waitset_add` / `waitset_remove` 改用公共谓词，避免两处判据再次漂移。
-
-#### 作者建议
-采纳 review 建议：公共谓词补 `INVALID_HANDLE_VALUE` 排除，删除 `port.c` 内的私有
-副本，`waitset_add` / `waitset_remove` 改用公共谓词。→ 关闭-已修复
-
-#### 关闭原因
-`platform/windows/nanosig_platform_port.h:42` 的 `ns_waitable_handle_is_valid` 已改为
-排除 `NULL` 与 `INVALID_HANDLE_VALUE`；`platform/windows/port.c` 的私有判定已删除
-（改为直接调用公共谓词的 `ns_waitable_is_invalid`），两处判据不再可能漂移。
-
-- **关闭日期**: 2026-10-18
-- **状态**: 关闭-已修复
-
-#### 可重现的失败场景
-Windows：
-
-```c
-ns_platform_waitable_t w;
-ns_waitable_init(&w);                     /* primitive == INVALID_HANDLE_VALUE */
-ns_watcher_init(&watcher, w.primitive, NS_WAITABLE_EVENT_IN, 0, h); /* 现在返回 NS_E_INVAL */
-```
-
-#### 定位
-platform/windows/nanosig_platform_port.h:42
-platform/windows/port.c:315
-include/nanosig/nanosig_port.h:109
-include/nanosig/nanosig_broker.h:147
-
----
-
-<a id="PORT-019"></a>
-### PORT-019: Linux `waitset_wait` 在 timerfd 与 waitable 同批就绪时丢弃 completion
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-- **说明**: 既有缺陷，非 `bafb78d` 引入；按 `docs/review/AGENTS.md` 属本模块
-  打开问题（PORT-015 是无关的超时换算溢出，已关闭-已拒绝，不构成重复）。
-
-#### 问题描述
-`ns_platform_waitset_wait` 把 timerfd 永久注册进 epoll。有限超时 armed 时，
-若同一次 `epoll_wait` 中 timerfd 与某个 waitable 同时就绪、且 timer 事件在
-`events[]` 里排在前面，循环遇到 sentinel 直接 `return NS_OK`，同一批里后面的
-就绪 fd 根本不会被转换成 completion：
-
-- 电平触发（默认）：下一次 `waitset_wait` 会重新报告，可自愈；
-- 边沿触发（`edge_triggered != 0` → `EPOLLET`）：内核已把该边沿消费给本次
-  `epoll_wait`，不会再报告 → completion 永久丢失，watcher 永不 dispatch。
-
-#### review 建议
-遇到 sentinel 且 `timer_armed` 时记录"本轮已超时"并 `continue`，循环结束后
-统一返回 `NS_OK`；非 armed 路径（INFINITE/0）的 timerfd 残余 readiness drain
-保持现状。
-
-#### 作者建议
-按 review 建议修：sentinel 分支在 `timer_armed` 时不再 `return NS_OK`，改为 `continue`
-把同一批 epoll 事件里剩余的 fd 全部转成 completion，循环末尾统一返回 `NS_OK`。
-→ 关闭-已修复
-
-#### 关闭原因
-platform/linux/port.c 的 timerfd sentinel 分支在 `timer_armed` 时改为 `continue`
-（原为 `return NS_OK`），同一批 `epoll_wait` 结果里排在 timerfd 之后的就绪 fd 不再被丢弃；
-电平触发与边沿触发两条路径行为一致。未新增测试：稳定复现需要把 timer 到期与 fd 就绪
-压进同一轮 `epoll_wait`，时序不可控，按代码走查 + 注释说明处置。
-
-- **关闭日期**: 2026-10-18
-- **状态**: 关闭-已修复
-
-#### 可重现的失败场景
-1. 两个 waitable 以 `edge_triggered = 1` 注册，broker 以有限超时（如 50ms）等待；
-2. 恰好某次 timer 到期瞬间，某个 `EPOLLET` fd 变为可读；
-3. `epoll_wait` 返回 `[timerfd, fd]` → 修复前代码在 timer 分支 return，fd 的边沿被内核
-   消费但从未上报；
-4. 该 watcher 的 handler 此后不再被调用，直到用户重新触发另一条边沿。
-
-#### 定位
-platform/linux/port.c:528
-platform/linux/port.c:532
-
----
-
 <a id="PORT-021"></a>
 ### PORT-021: 平台文档仍描述重构前的原语
 
@@ -502,45 +392,6 @@ platform/README.md:102
 docs/agents/platform/AGENTS.md:67
 docs/agents/platform/AGENTS.md:69
 docs/ARCHITECTURE.md:271
-
----
-
-<a id="PORT-022"></a>
-### PORT-022: Windows `ns_platform_waitset_deinit` 丢弃 `CloseHandle` 失败
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: cleanup
-
-#### 问题描述
-`platform/windows/port.c:302` 直接 `CloseHandle(waitset->timer); return NS_OK;`，
-关闭失败被静默吞掉。Linux（`platform/linux/port.c:399`）与 macOS
-（`platform/macos/port.c:411`）都会把失败传播成 `NS_E_INVAL`，三后端行为不一致。
-
-#### review 建议
-```c
-return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;
-```
-
-#### 作者建议
-按 review 建议修，与 Linux/macOS 对齐。→ 关闭-已修复
-
-#### 关闭原因
-platform/windows/port.c 的 `ns_platform_waitset_deinit` 改为
-`return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;`，
-关闭失败不再被吞掉，三后端失败语义一致。
-
-- **关闭日期**: 2026-10-18
-- **状态**: 关闭-已修复
-
-#### 可重现的失败场景
-timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit` 返回 `NS_OK`，
-调用方误以为资源已释放，与 Linux/macOS 上的结果不同。
-
-#### 定位
-platform/windows/port.c:302
-platform/linux/port.c:399
-platform/macos/port.c:411
 
 ---
 
@@ -1386,6 +1237,139 @@ platform/freertos/port.c:394
 src/nanosig.c:315
 
 ---
+
+---
+
+<a id="PORT-018"></a>
+### PORT-018: Windows `ns_waitable_handle_is_valid` 把文档化的无效哨兵判为有效
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关联**: BROKER-036（`ns_watcher_init` 接受 `events == 0`）与本条同源——都是
+- **关闭原因**: `platform/windows/nanosig_platform_port.h:42` 的 `ns_waitable_handle_is_valid` 已改为排除 `NULL` 与 `INVALID_HANDLE_VALUE`；`platform/windows/port.c` 的私有判定已删除（改为直接调用公共谓词的 `ns_waitable_is_invalid`），两处判据不再可能漂移。
+- **关闭日期**: 2026-10-18
+  "无效输入未被公共层拒绝"，但本条的具体承诺来自平台谓词，记在本模块。
+
+#### 问题描述
+`ns_waitable_init` 把 `primitive` 写成全 1（`include/nanosig/nanosig_port.h:109`），
+在 Windows 上全 1 **就是** `INVALID_HANDLE_VALUE`。但
+`platform/windows/nanosig_platform_port.h:42` 的谓词只有 `((h) != NULL)`，
+于是 Windows 成为唯一一个"谓词与 `ns_waitable_init` 互相矛盾"的后端：
+
+- 违反 `ns_waitable_init` docstring"句柄型平台对应无效句柄"；
+- 违反 `nanosig_broker.h:146-148`"watcher 为 NULL 时返回全 1 哨兵，经
+  `ns_waitable_handle_is_valid` 判定为无效"；
+- `platform/windows/port.c:315-321` 自己实现了正确规则
+  （`NULL || INVALID_HANDLE_VALUE`），但私有重复，未用于公共谓词。
+
+后果：未绑定的 waitable 能通过 `ns_watcher_init`，直到 `ns_broker_add` 才失败；
+`test/test_helpers.h` 的 `test_raw_waitable_is_valid` 在 Windows 上也会把
+未绑定的 waitable 报成有效（测试假阳性）。
+
+#### review 建议
+```c
+#define ns_waitable_handle_is_valid(h) \
+    (((h) != NULL) && ((h) != INVALID_HANDLE_VALUE))
+```
+并删除 `platform/windows/port.c` 内的私有 `ns_waitable_handle_is_invalid`，
+`waitset_add` / `waitset_remove` 改用公共谓词，避免两处判据再次漂移。
+
+#### 作者建议
+采纳 review 建议：公共谓词补 `INVALID_HANDLE_VALUE` 排除，删除 `port.c` 内的私有
+副本，`waitset_add` / `waitset_remove` 改用公共谓词。→ 关闭-已修复
+
+#### 可重现的失败场景
+Windows：
+
+```c
+ns_platform_waitable_t w;
+ns_waitable_init(&w);                     /* primitive == INVALID_HANDLE_VALUE */
+ns_watcher_init(&watcher, w.primitive, NS_WAITABLE_EVENT_IN, 0, h); /* 现在返回 NS_E_INVAL */
+```
+
+#### 定位
+platform/windows/nanosig_platform_port.h:42
+platform/windows/port.c:315
+include/nanosig/nanosig_port.h:109
+include/nanosig/nanosig_broker.h:147
+
+---
+
+<a id="PORT-019"></a>
+### PORT-019: Linux `waitset_wait` 在 timerfd 与 waitable 同批就绪时丢弃 completion
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **说明**: 既有缺陷，非 `bafb78d` 引入；按 `docs/review/AGENTS.md` 属本模块
+- **关闭原因**: `platform/linux/port.c` 的 timerfd sentinel 分支在 `timer_armed` 时改为 `continue`（原为 `return NS_OK`），同一批 `epoll_wait` 结果里排在 timerfd 之后的就绪 fd 不再被丢弃；电平触发与边沿触发两条路径行为一致。
+- **关闭日期**: 2026-10-18
+  打开问题（PORT-015 是无关的超时换算溢出，已关闭-已拒绝，不构成重复）。
+
+#### 问题描述
+`ns_platform_waitset_wait` 把 timerfd 永久注册进 epoll。有限超时 armed 时，
+若同一次 `epoll_wait` 中 timerfd 与某个 waitable 同时就绪、且 timer 事件在
+`events[]` 里排在前面，循环遇到 sentinel 直接 `return NS_OK`，同一批里后面的
+就绪 fd 根本不会被转换成 completion：
+
+- 电平触发（默认）：下一次 `waitset_wait` 会重新报告，可自愈；
+- 边沿触发（`edge_triggered != 0` → `EPOLLET`）：内核已把该边沿消费给本次
+  `epoll_wait`，不会再报告 → completion 永久丢失，watcher 永不 dispatch。
+
+#### review 建议
+遇到 sentinel 且 `timer_armed` 时记录"本轮已超时"并 `continue`，循环结束后
+统一返回 `NS_OK`；非 armed 路径（INFINITE/0）的 timerfd 残余 readiness drain
+保持现状。
+
+#### 作者建议
+按 review 建议修：sentinel 分支在 `timer_armed` 时不再 `return NS_OK`，改为 `continue`
+把同一批 epoll 事件里剩余的 fd 全部转成 completion，循环末尾统一返回 `NS_OK`。
+→ 关闭-已修复
+
+#### 可重现的失败场景
+1. 两个 waitable 以 `edge_triggered = 1` 注册，broker 以有限超时（如 50ms）等待；
+2. 恰好某次 timer 到期瞬间，某个 `EPOLLET` fd 变为可读；
+3. `epoll_wait` 返回 `[timerfd, fd]` → 修复前代码在 timer 分支 return，fd 的边沿被内核
+   消费但从未上报；
+4. 该 watcher 的 handler 此后不再被调用，直到用户重新触发另一条边沿。
+
+#### 定位
+platform/linux/port.c:528
+platform/linux/port.c:532
+
+---
+
+<a id="PORT-022"></a>
+### PORT-022: Windows `ns_platform_waitset_deinit` 丢弃 `CloseHandle` 失败
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+- **关闭原因**: `platform/windows/port.c` 的 `ns_platform_waitset_deinit` 改为 `return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;`，关闭失败不再被吞掉，三后端失败语义一致。
+- **关闭日期**: 2026-10-18
+
+#### 问题描述
+`platform/windows/port.c:302` 直接 `CloseHandle(waitset->timer); return NS_OK;`，
+关闭失败被静默吞掉。Linux（`platform/linux/port.c:399`）与 macOS
+（`platform/macos/port.c:411`）都会把失败传播成 `NS_E_INVAL`，三后端行为不一致。
+
+#### review 建议
+```c
+return (CloseHandle(waitset->timer) != 0) ? NS_OK : NS_E_INVAL;
+```
+
+#### 作者建议
+按 review 建议修，与 Linux/macOS 对齐。→ 关闭-已修复
+
+#### 可重现的失败场景
+timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit` 返回 `NS_OK`，
+调用方误以为资源已释放，与 Linux/macOS 上的结果不同。
+
+#### 定位
+platform/windows/port.c:302
+platform/linux/port.c:399
+platform/macos/port.c:411
 
 ---
 
