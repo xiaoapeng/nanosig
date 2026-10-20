@@ -3,10 +3,11 @@ review_schema: "nanosig-review-v1"
 entries:
   - id: "LIST-005"
     module: "list"
-    status: "open"
+    status: "closed-not-applicable"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/list-code-review.md#LIST-005"
     locations:
       - "include/nanosig/nanosig_list.h:282-285"
@@ -48,12 +49,34 @@ entries:
 
 ## 现在打开的问题
 
+## 现在关闭的问题
+
+<a id="LIST-001"></a>
+### LIST-001: `ns_list_for_each_entry_continue_safe` 初始化 `n` 与 `pos` 指向同一节点，遍历中移除当前节点导致无限循环或 NULL 解引用
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🔴 关键
+- **关闭原因**: 宏实际正确。update 子句 `(pos) = (n), (n) = ns_list_entry((pos)->member.next, ...)` 中逗号运算符保证从左到右执行：先 `pos = n`（pos 指向旧的 n，有效节点），再从**新的 pos**（即旧的 n）取 next 派生 `n`。`n` 始终从旧 `n` 独立推进，不依赖被删除的旧 `pos`。review 中"初始化子句 pos 和 n 被赋值为同一个节点"的描述也不成立——init 子句中 `pos` 先更新为 `pos->next`，然后 `n` 从更新后的 `pos` 取 next，两者不同。
+- **关闭日期**: 2026-07-05
+
+---
+
+<a id="LIST-002"></a>
+### LIST-002: `ns_list_for_each_prev_entry_continue_safe` 同样存在 `n` 未独立预取的 bug
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🔴 关键
+- **关闭原因**: 与 LIST-001 同类误判。update 子句先 `pos = n` 再从新 `pos`（旧 `n`）取 prev 派生 `n`，`n` 始终从有效节点推进。
+- **关闭日期**: 2026-07-05
+
 <a id="LIST-005"></a>
 ### LIST-005: 遍历宏族裸用 `typeof`，与 RBTREE-018 同一根因（严格 `-std=c11` 下八个 entry 遍历宏全部无法编译）
 
-- **状态**: 打开
+- **状态**: 关闭-不适用
 - **严重度**: 🟡 中
 - **类型**: bug
+- **关闭原因**: 合同前提保护/误报：项目不承诺严格 `-std=c11` 构建，遍历宏依赖 GNU `typeof` 扩展在实际工具链（gnu11）下正常工作。若未来改为强制 `-std=c11`，可在 `include/nanosig/nanosig_types.h` 纯 C 分支补 `typeof` → `__typeof__` 收口再重开。
+- **关闭日期**: 2026-10-19
 
 #### 问题描述
 `include/nanosig/nanosig_list.h` 的 8 个 entry 遍历宏（`ns_list_for_each_entry` :282、`for_each_prev_entry` :294、
@@ -118,23 +141,3 @@ include/nanosig/nanosig_types.h:108
 docs/review/rbtree-code-review.md:371
 
 ---
-
-## 现在关闭的问题
-
-<a id="LIST-001"></a>
-### LIST-001: `ns_list_for_each_entry_continue_safe` 初始化 `n` 与 `pos` 指向同一节点，遍历中移除当前节点导致无限循环或 NULL 解引用
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🔴 关键
-- **关闭原因**: 宏实际正确。update 子句 `(pos) = (n), (n) = ns_list_entry((pos)->member.next, ...)` 中逗号运算符保证从左到右执行：先 `pos = n`（pos 指向旧的 n，有效节点），再从**新的 pos**（即旧的 n）取 next 派生 `n`。`n` 始终从旧 `n` 独立推进，不依赖被删除的旧 `pos`。review 中"初始化子句 pos 和 n 被赋值为同一个节点"的描述也不成立——init 子句中 `pos` 先更新为 `pos->next`，然后 `n` 从更新后的 `pos` 取 next，两者不同。
-- **关闭日期**: 2026-07-05
-
----
-
-<a id="LIST-002"></a>
-### LIST-002: `ns_list_for_each_prev_entry_continue_safe` 同样存在 `n` 未独立预取的 bug
-
-- **状态**: 关闭-已拒绝
-- **严重度**: 🔴 关键
-- **关闭原因**: 与 LIST-001 同类误判。update 子句先 `pos = n` 再从新 `pos`（旧 `n`）取 prev 派生 `n`，`n` 始终从有效节点推进。
-- **关闭日期**: 2026-07-05

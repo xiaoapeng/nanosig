@@ -25,10 +25,11 @@ entries:
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-012"
   - id: "MPSC-013"
     module: "mpsc-record-ring"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-013"
     locations:
       - "src/ds/ns_mpsc_record_ring.c:51"
@@ -39,10 +40,11 @@ entries:
       - "include/nanosig/nanosig_mpsc_record_ring.h:120"
   - id: "MPSC-014"
     module: "mpsc-record-ring"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/mpsc-record-ring-code-review.md#MPSC-014"
     locations:
       - "docs/MPSC_MEMORY_ORDER.md:35"
@@ -155,81 +157,6 @@ entries:
 
 ## 现在打开的问题
 
-<a id="MPSC-013"></a>
-### MPSC-013: 32 位构建下 meta 的 16 位 stride 字段会静默截断大记录
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-meta 的位宽随指针宽度切换：SIZE_MAX <= UINT32_MAX（32 位目标）时 stride 只有 16 位（0xFFFF），padding 8 位。但容量校验 capacity_is_valid 只要求"2 的幂、非 0、<= SIZE_MAX/2、>= 3*sizeof(header)"，完全没有约束 capacity/2 能落在 16 位 stride 里；max_record_size() = capacity/2 - align_up(sizeof(header)) 因此在 capacity >= 131072 时会超过 65535。
-
-ns_mpsc_meta_encode 用 `total_size & NS_MPSC_META_STRIDE_MASK` 无检查地截断，于是 32 位目标上：
-
-- total_size 非 65536 倍数时：消费者解出的 stride/payload_size 是错的（实测 capacity=262144、push 100000 字节 → acquire 返回 size=34464），read_pos 按错误的 stride 推进，记录内容与边界全部错位，free_capacity 长期偏小；
-- total_size 恰为 65536 的倍数时（例如 capacity=131072 时用 max_record_size() 算出的 65528 字节满记录，total_size=65536）：stride 解码为 0，try_acquire 在 stride 检查处返回 NS_E_INVAL，release 同样返回 NS_E_INVAL，read_pos 永不推进 —— 环永久不可用。
-
-头文件明确承诺 max_record_size 是"保证至少一条最大记录可以写入"的有效负载上限，32 位目标上该承诺不成立。真实触发需要 32 位编译（FreeRTOS 目标 MCXN947/Cortex-M33 是 32 位；CI 的 freertos job 跑的是 POSIX host，64 位，覆盖不到这个分支）。
-
-#### review 建议
-在 capacity_is_valid（或 init）里补一条"meta stride 可表示"的硬约束，例如要求 `((capacity / 2u) <= NS_MPSC_META_STRIDE_MASK)`（更精确地：align_up(sizeof(header) + max_record_size) <= NS_MPSC_META_STRIDE_MASK），不满足则 init 返回 NS_E_INVAL；或者在 32 位布局里重新分配位域（如 22 位 stride + 8 位 padding + 2 位 flag，上限 4 MiB），并同步更新 src 顶部的位布局注释。无论选哪种，都应在头文件 max_record_size 的 docstring 中写明 32 位目标的容量/记录上限，避免调用方按 64 位直觉选 NS_CAPACITY_262144 之类。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-把 32 位布局分支强制选中（在 64 位主机上把 src/ds/ns_mpsc_record_ring.c:43 的 `#if SIZE_MAX > UINT32_MAX` 改为 `#if 0` 后单独编译）：
-1. init(capacity=131072) → max_record_size()=65528 → try_push(payload, 65528) 返回 NS_OK → try_acquire 连续返回 NS_E_INVAL（== -3，stride 解码为 0）；此时 write_pos=65536、read_pos=0、free=65536，环永久不可用（release 也无法推进 read_pos）。
-2. init(capacity=262144) → try_push(payload, 100000) 返回 NS_OK → try_acquire 返回 NS_OK 但 out_size=34464（真实 100000），调用方按 34464 解释 payload 得到错误数据；随后 release 只释放 34464，free_capacity 停在 196608 而非 262144。
-（两个用例均为独立 harness 实测输出。）
-
-#### 定位
-src/ds/ns_mpsc_record_ring.c:51
-src/ds/ns_mpsc_record_ring.c:61
-src/ds/ns_mpsc_record_ring.c:115
-src/ds/ns_mpsc_record_ring.c:326
-src/ds/ns_mpsc_record_ring.c:454
-include/nanosig/nanosig_mpsc_record_ring.h:120
-
----
-
-<a id="MPSC-014"></a>
-### MPSC-014: MPSC_MEMORY_ORDER.md 的 reserve 阶段伪码与实现不是同一个算法
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: doc
-
-#### 问题描述
-docs/MPSC_MEMORY_ORDER.md 的"阶段 1：预留"把抢占写成基于 reserve_pos 自身：
-
-    reserve_pos = atomic_load(&ring->reserve_pos, relaxed);
-    CAS(reserve_pos, reserve_pos + publish_size)
-
-实现（src/ds/ns_mpsc_record_ring.c:372-391）加载的是 write_pos（acquire），CAS 的 expected 是 write_pos，publish_size 与记录位置也全部由基于 write_pos 的 plan_push 算出。两者语义不同：文档版本按"自己读到的 reserve_pos"继续推进，在 reserve_pos > write_pos（存在在途生产者）时会让两个生产者写到重叠区域；实现版本要求 reserve_pos == write_pos 才能抢占，即"独占整环写入"。文档 line 107 又把 reserve_pos >= write_pos 列为关键不变量，与文档 line 35-38 的伪码互相矛盾（按文档伪码，CAS 成功后两者应始终相等）。
-
-按文档伪码去"修正"实现会重新引入重叠写缺陷；这也是 MPSC-012 很难从文档侧发现的原因（文档没有描述 reserve_pos 领先且不会被回收的状态）。
-
-#### review 建议
-把文档 line 34-38 的伪码改成与实现一致：`write_pos = load(write_pos, acquire); CAS(reserve_pos, expected=write_pos, desired=write_pos+publish_size, acq_rel, relaxed)`，并补一句为什么必须基于 write_pos（抢占语义是"拿到整环的独占写入权"，而非"接在自己读到的值后面"）。同时把"reserve_pos > write_pos 表示存在在途生产者；该状态不被自动回收"写进不变量一节，作为 MPSC-012 文档化前提的落点。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-无需运行。按文档 line 36-38 重写 try_pushv 的 CAS（expected 改用 reserve_pos 的 relaxed 读值）：两个生产者 A/B 同时读到 reserve_pos=W（此时 write_pos=W），各自 CAS 成功后分别从 W 与 W+size_A 开始写自己的记录，而两者都认为自己拥有 [W, W+size_x) 的写入权 —— 后写者覆盖先写者的头部与 payload，消费者会读到字段互相矛盾的记录。现有并发测试只能偶发暴露（写入窗口极短）。
-
-#### 定位
-docs/MPSC_MEMORY_ORDER.md:35
-docs/MPSC_MEMORY_ORDER.md:36
-docs/MPSC_MEMORY_ORDER.md:107
-src/ds/ns_mpsc_record_ring.c:372
-src/ds/ns_mpsc_record_ring.c:380
-src/ds/ns_mpsc_record_ring.c:383
-
----
-
 ## 现在关闭的问题
 
 <a id="MPSC-003"></a>
@@ -337,3 +264,82 @@ C 语言限制。C 原子变量不可声明为 const 但物理上可修改。`fr
 
 #### 关闭日期
 2026-07-04
+
+<a id="MPSC-014"></a>
+### MPSC-014: MPSC_MEMORY_ORDER.md 的 reserve 阶段伪码与实现不是同一个算法
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: doc
+- **关闭原因**: 已在 docs/MPSC_MEMORY_ORDER.md 中将阶段 1 伪码改写为与实现一致的形式（`write_pos = load(write_pos, acquire)`，CAS expected 为 `write_pos`），并补了 `reserve_pos > write_pos` 表示存在在途生产者、不被自动回收的说明。文档与实现现在一致。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+docs/MPSC_MEMORY_ORDER.md 的"阶段 1：预留"把抢占写成基于 reserve_pos 自身：
+
+    reserve_pos = atomic_load(&ring->reserve_pos, relaxed);
+    CAS(reserve_pos, reserve_pos + publish_size)
+
+实现（src/ds/ns_mpsc_record_ring.c:372-391）加载的是 write_pos（acquire），CAS 的 expected 是 write_pos，publish_size 与记录位置也全部由基于 write_pos 的 plan_push 算出。两者语义不同：文档版本按"自己读到的 reserve_pos"继续推进，在 reserve_pos > write_pos（存在在途生产者）时会让两个生产者写到重叠区域；实现版本要求 reserve_pos == write_pos 才能抢占，即"独占整环写入"。文档 line 107 又把 reserve_pos >= write_pos 列为关键不变量，与文档 line 35-38 的伪码互相矛盾（按文档伪码，CAS 成功后两者应始终相等）。
+
+按文档伪码去"修正"实现会重新引入重叠写缺陷；这也是 MPSC-012 很难从文档侧发现的原因（文档没有描述 reserve_pos 领先且不会被回收的状态）。
+
+#### review 建议
+把文档 line 34-38 的伪码改成与实现一致：`write_pos = load(write_pos, acquire); CAS(reserve_pos, expected=write_pos, desired=write_pos+publish_size, acq_rel, relaxed)`，并补一句为什么必须基于 write_pos（抢占语义是"拿到整环的独占写入权"，而非"接在自己读到的值后面"）。同时把"reserve_pos > write_pos 表示存在在途生产者；该状态不被自动回收"写进不变量一节，作为 MPSC-012 文档化前提的落点。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+无需运行。按文档 line 36-38 重写 try_pushv 的 CAS（expected 改用 reserve_pos 的 relaxed 读值）：两个生产者 A/B 同时读到 reserve_pos=W（此时 write_pos=W），各自 CAS 成功后分别从 W 与 W+size_A 开始写自己的记录，而两者都认为自己拥有 [W, W+size_x) 的写入权 —— 后写者覆盖先写者的头部与 payload，消费者会读到字段互相矛盾的记录。现有并发测试只能偶发暴露（写入窗口极短）。
+
+#### 定位
+docs/MPSC_MEMORY_ORDER.md:35
+docs/MPSC_MEMORY_ORDER.md:36
+docs/MPSC_MEMORY_ORDER.md:107
+src/ds/ns_mpsc_record_ring.c:372
+src/ds/ns_mpsc_record_ring.c:380
+src/ds/ns_mpsc_record_ring.c:383
+
+<a id="MPSC-013"></a>
+### MPSC-013: 32 位构建下 meta 的 16 位 stride 字段会静默截断大记录
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: src/ds/ns_mpsc_record_ring.c 的 ns_mpsc_record_ring_capacity_is_valid 增加 32 位 stride 硬约束（capacity/2 > NS_MPSC_META_STRIDE_MASK 即拒绝，返回 NS_E_INVAL 而非静默截断）；include/nanosig/nanosig_mpsc_record_ring.h 补 @pre 说明 32 位目标的容量上限；test/unit/test_mpsc_record_ring.c 补单元测试（NS_CAPACITY_65536 成功、NS_CAPACITY_131072 被拒）。commit a7283d3。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+meta 的位宽随指针宽度切换：SIZE_MAX <= UINT32_MAX（32 位目标）时 stride 只有 16 位（0xFFFF），padding 8 位。但容量校验 capacity_is_valid 只要求"2 的幂、非 0、<= SIZE_MAX/2、>= 3*sizeof(header)"，完全没有约束 capacity/2 能落在 16 位 stride 里；max_record_size() = capacity/2 - align_up(sizeof(header)) 因此在 capacity >= 131072 时会超过 65535。
+
+ns_mpsc_meta_encode 用 `total_size & NS_MPSC_META_STRIDE_MASK` 无检查地截断，于是 32 位目标上：
+
+- total_size 非 65536 倍数时：消费者解出的 stride/payload_size 是错的（实测 capacity=262144、push 100000 字节 → acquire 返回 size=34464），read_pos 按错误的 stride 推进，记录内容与边界全部错位，free_capacity 长期偏小；
+- total_size 恰为 65536 的倍数时（例如 capacity=131072 时用 max_record_size() 算出的 65528 字节满记录，total_size=65536）：stride 解码为 0，try_acquire 在 stride 检查处返回 NS_E_INVAL，release 同样返回 NS_E_INVAL，read_pos 永不推进 —— 环永久不可用。
+
+头文件明确承诺 max_record_size 是"保证至少一条最大记录可以写入"的有效负载上限，32 位目标上该承诺不成立。真实触发需要 32 位编译（FreeRTOS 目标 MCXN947/Cortex-M33 是 32 位；CI 的 freertos job 跑的是 POSIX host，64 位，覆盖不到这个分支）。
+
+#### review 建议
+在 capacity_is_valid（或 init）里补一条"meta stride 可表示"的硬约束，例如要求 `((capacity / 2u) <= NS_MPSC_META_STRIDE_MASK)`（更精确地：align_up(sizeof(header) + max_record_size) <= NS_MPSC_META_STRIDE_MASK），不满足则 init 返回 NS_E_INVAL；或者在 32 位布局里重新分配位域（如 22 位 stride + 8 位 padding + 2 位 flag，上限 4 MiB），并同步更新 src 顶部的位布局注释。无论选哪种，都应在头文件 max_record_size 的 docstring 中写明 32 位目标的容量/记录上限，避免调用方按 64 位直觉选 NS_CAPACITY_262144 之类。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+把 32 位布局分支强制选中（在 64 位主机上把 src/ds/ns_mpsc_record_ring.c:43 的 `#if SIZE_MAX > UINT32_MAX` 改为 `#if 0` 后单独编译）：
+1. init(capacity=131072) → max_record_size()=65528 → try_push(payload, 65528) 返回 NS_OK → try_acquire 连续返回 NS_E_INVAL（== -3，stride 解码为 0）；此时 write_pos=65536、read_pos=0、free=65536，环永久不可用（release 也无法推进 read_pos）。
+2. init(capacity=262144) → try_push(payload, 100000) 返回 NS_OK → try_acquire 返回 NS_OK 但 out_size=34464（真实 100000），调用方按 34464 解释 payload 得到错误数据；随后 release 只释放 34464，free_capacity 停在 196608 而非 262144。
+（两个用例均为独立 harness 实测输出。）
+
+#### 定位
+src/ds/ns_mpsc_record_ring.c:51
+src/ds/ns_mpsc_record_ring.c:61
+src/ds/ns_mpsc_record_ring.c:115
+src/ds/ns_mpsc_record_ring.c:326
+src/ds/ns_mpsc_record_ring.c:454
+include/nanosig/nanosig_mpsc_record_ring.h:120
+
+---
+
+---

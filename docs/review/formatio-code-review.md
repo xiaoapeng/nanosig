@@ -11,10 +11,11 @@ entries:
     location: "docs/review/formatio-code-review.md#FORMATIO-012"
   - id: "FORMATIO-020"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/formatio-code-review.md#FORMATIO-020"
     locations:
       - "src/ns_formatio.c:1157"
@@ -35,20 +36,22 @@ entries:
       - "src/ns_formatio.c:705-711"
   - id: "FORMATIO-022"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/formatio-code-review.md#FORMATIO-022"
     locations:
       - "src/ns_formatio.c:416-419"
       - "src/ns_formatio.c:410-415"
   - id: "FORMATIO-023"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/formatio-code-review.md#FORMATIO-023"
     locations:
       - "src/ns_formatio.c:459-469"
@@ -242,77 +245,6 @@ entries:
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
-<a id="FORMATIO-020"></a>
-### FORMATIO-020: `ns_snprintf(NULL, 0, ...)` 把 buf 写空指针（无界哨兵与包 size==0 冲突）
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-`ns_vsnprintf` 用 `ns_stream_memory_init(&stream, buf, size)` 初始化内存流（src/ns_formatio.c:1157），
-`ns_stream_memory_init` 内部执行 `stream->end = buf + size`（include/nanosig/ns_formatio.h:115）。
-当 `buf == NULL` 且 `size == 0` 时得到 `end == NULL`，而 `end == NULL` 正是 FORMATIO-019
-为 `ns_vsprintf` 引入的"无界流"哨兵（src/ns_formatio.c:1169、src/ns_formatio.c:240、src/ns_formatio.c:269-271）。
-于是 `ns_snprintf(NULL, 0, ...)` 被误判为无界流，`streamout_in_byte` 的 MEMORY 分支
-无条件执行 `*m->pos = ch`（src/ns_formatio.c:241-243），对 NULL 解引用写入；收尾时
-`*m->pos = '\0'` 同样写 NULL（src/ns_formatio.c:269-271）。
-
-C99 明确允许 `snprintf(NULL, 0, fmt, ...)` 用于探测所需长度（size 为 0 时 buf 可以是空指针），
-公共头 include/nanosig/ns_formatio.h:70-75 没有任何 docstring 记录"buf 不得为 NULL"这一前提，
-因此不属于 §4.4 合同前提保护。FORMATIO-018 修好了 `buf != NULL, size == 0`，
-但没有覆盖 `buf == NULL, size == 0` 这一 C99 合法输入。
-
-同一根因的第二个入口：`size == 0` 的探测式调用若配合 `ns_vsnprintf` 直接传 NULL 也走同一分支。
-
-#### review 建议
-
-把"无界"与"零容量"两种状态区分开，不要共用 `end == NULL`：
-
-- 方案 A（最小改动）：在 `ns_vsnprintf` 入口对 `buf == NULL || size == 0` 走计数型丢弃路径
-  （end 指向一个内部哑缓冲，或给 stream 增加显式 `unbounded` 标志），返回值仍为应写全长；
-- 方案 B：给 `struct ns_stream_memory` 增加 `bool unbounded` 字段，`ns_vsprintf` 显式置位，
-  `streamout_in_byte` / `streamout_finish` 改为判断该标志而非 `end == NULL`；
-- 无论哪种方案，都应在 ns_formatio.h 为 `ns_snprintf` / `ns_vsnprintf` 补 docstring，
-  写明 `size == 0` 时 buf 可为 NULL、返回值为应写全长。
-
-修复后建议在测试中补 `ns_snprintf(NULL, 0, "hello %d", 42)` 与 `ns_snprintf(NULL, 0, "%f", 1.5)`
-的探测用例（期望返回应写全长且不崩溃）。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-/* ASAN 实测：SEGV on unknown address 0x000000000000，WRITE memory access */
-ns_snprintf(NULL, 0, "hello %d", 42);
-/* 崩溃栈：
- *   #0 streamout_in_byte src/ns_formatio.c:242
- *   #1 streamout_vprintf src/ns_formatio.c:944
- *   #2 ns_vsnprintf      src/ns_formatio.c:1158
- *   #3 ns_snprintf       src/ns_formatio.c:1181
- */
-```
-
-对照（已修复、不崩溃）：
-
-```c
-char buf[16];
-ns_snprintf(buf, 0, "hello %d", 42);  /* 返回 8，buf 不被写入 */
-```
-
-#### 定位
-src/ns_formatio.c:1157
-src/ns_formatio.c:241-243
-src/ns_formatio.c:269-271
-src/ns_formatio.c:1168-1169
-include/nanosig/ns_formatio.h:109-116
-
----
-
 <a id="FORMATIO-021"></a>
 ### FORMATIO-021: `%e`/`%E` 对 subnormal（0 < |x| < DBL_MIN）指数错误、数值丢失
 
@@ -384,141 +316,6 @@ ns_snprintf(buf, sizeof(buf), "%e", 1e-320);   /* 实际 "0.000000e-309"（数�
 src/ns_formatio.c:171-190
 src/ns_formatio.c:646-657
 src/ns_formatio.c:705-711
-
----
-
-<a id="FORMATIO-022"></a>
-### FORMATIO-022: `float_decentralized` 半途(tie)分支进位丢失，`%.1f` 0.95 输出 "0.10"
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-`float_decentralized`（src/ns_formatio.c:391-427）的 `remainder > 0.5` 分支在自增
-`fractional` 后会检查是否越过 `powers_of_10[precision]` 并进位到 `integral`
-（src/ns_formatio.c:410-415）；但紧随其后的 `remainder == 0.5` 分支（src/ns_formatio.c:416-419）
-只做 `++components->fractional`，**没有**同样的越界进位检查：
-
-```c
-} else if ((remainder == 0.5) &&
-           ((components->fractional == 0U) || (components->fractional & 1U))) {
-    ++components->fractional;          /* 可为 powers_of_10[precision]，无进位处理 */
-}
-```
-
-结果 `fractional` 变成等于 `powers_of_10[precision]`，输出位数比精度多一位且数值错误：
-
-实测 0.95（双精度实际值 0.94999999999999995559）在 `%.1f` 下：
-`integral=0`、`fractional=9`、`remainder=0.5` → tie 分支把 `fractional` 增到 10 →
-`fractional_valid_len = num_bit_count(10) = 2` → 输出 `"0.10"`。
-正确结果应为 `"0.9"`（libc）或按进位写成 `"1.0"`；`"0.10"` 与两者都不符，且读起来是 0.10 而非 0.9。
-
-#### review 建议
-
-在 tie 分支的 `++components->fractional` 之后补上与 `remainder > 0.5` 分支相同的进位处理，
-或把两个分支合并为"先算出按精度缩放后的四舍五入值，再做一次越界进位检查"的统一形式：
-
-```c
-if ((double)components->fractional >= powers_of_10[precision]) {
-    components->fractional = 0;
-    ++components->integral;
-}
-```
-
-修复后补 `%.1f`/`%.2f`/`%.3f` 在 0.95、0.995、0.9995、0.05、1.95、9.95 等 tie 邻域
-与 libc 的对拍用例。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-char buf[64];
-ns_snprintf(buf, sizeof(buf), "%.1f", 0.95);    /* 实际 "0.10"（n=4），libc "0.9" */
-ns_snprintf(buf, sizeof(buf), "%.2f", 0.995);   /* 实际 "0.100"（n=5），libc "0.99" */
-ns_snprintf(buf, sizeof(buf), "%.3f", 0.9995);  /* 实际 "0.1000"（n=6），libc "1.000" */
-ns_snprintf(buf, sizeof(buf), "%.1f", 1.95);    /* 实际 "1.10"（n=4），libc "1.9" */
-```
-
-#### 定位
-src/ns_formatio.c:416-419
-src/ns_formatio.c:410-415
-
----
-
-<a id="FORMATIO-023"></a>
-### FORMATIO-023: `%.0e` 半途(tie)分支把进位清零，1.5 → "1e+00"、3.5 → "3e+00"
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-
-`float_normalized_decentralized`（src/ns_formatio.c:429-470）的 tie 处理为：
-
-```c
-components->fractional = (uint64_t)scaled_remainder;
-scaled_remainder -= (double)components->fractional;
-components->fractional += (scaled_remainder >= rounding_threshold);   /* :462 */
-if (scaled_remainder == rounding_threshold) {
-    components->fractional &= ~((uint64_t)0x1);                       /* :464 把刚加上的 1 清掉 */
-}
-if ((double)components->fractional >= prec_power_of_10) { ... ++integral; }  /* :466 进不了 */
-```
-
-恰等 0.5 时先 `+1` 再用 `&= ~1` 清掉，且清尾之后 `integral` 不再变化，
-等价于"tie 时永远向下取整"（只在整数部分恰为偶数时碰巧与银行家舍入一致）。
-实测：`%.0e` 1.5 → `"1e+00"`、3.5 → `"3e+00"`、5.5 → `"5e+00"`、7.5 → `"7e+00"`，
-而 libc 分别给出 `2e+00`/`4e+00`/`6e+00`/`8e+00`（round-half-even）。
-
-同一模块内 `%.0f` 走 `float_decentralized` 的 precision==0 分支（src/ns_formatio.c:421-426），
-1.5 → `"2"`、3.5 → `"4"`，与 `%.0e` 结果自相矛盾——同一数值同一精度，
-`%f` 与 `%e` 得到不同舍入方向，可判定 `%e` 侧为缺陷而非有意权衡。
-
-注：test/unit/test_formatio.c:693-694 的黄金值把 `"2e+00"`/`"3e+00"` 固化为期望
-（注释称"银行家舍入清零奇位"），3.5 → 4 才是银行家舍入，现有黄金值是缺陷快照，需随修复更新。
-
-#### review 建议
-
-把 tie 分支改为先做尾数清位、再判断是否需要进位到 `integral`，例如：
-
-```c
-if (scaled_remainder == rounding_threshold) {
-    components->fractional &= ~((uint64_t)0x1);
-}
-if ((double)components->fractional >= prec_power_of_10) {
-    components->fractional = 0;
-    ++components->integral;
-}
-```
-
-或统一改为"按 `integral` 奇偶决定 tie 是否进位"，使其与 `%.0f` 的银行家舍入语义一致，
-并同步修正 test/unit/test_formatio.c:693-694 的黄金值。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-```c
-char buf[64];
-ns_snprintf(buf, sizeof(buf), "%.0e", 1.5);   /* 实际 "1e+00"，libc "2e+00" */
-ns_snprintf(buf, sizeof(buf), "%.0e", 3.5);   /* 实际 "3e+00"，libc "4e+00" */
-ns_snprintf(buf, sizeof(buf), "%.0e", 5.5);   /* 实际 "5e+00"，libc "6e+00" */
-ns_snprintf(buf, sizeof(buf), "%.0e", 2.5);   /* "2e+00"（碰巧正确） */
-/* 同模块内不自洽： */
-ns_snprintf(buf, sizeof(buf), "%.0f", 3.5);   /* "4"，而 %.0e 3.5 给 "3e+00" */
-```
-
-#### 定位
-src/ns_formatio.c:459-469
-src/ns_formatio.c:421-426
 
 ---
 
@@ -1050,5 +847,217 @@ ns_sprintf(buf, "%s", "hello");   /* ns_vsprintf → size = UINTPTR_MAX - (uintp
 #### 定位
 include/nanosig/ns_formatio.h:74
 include/nanosig/ns_formatio.h:118
+
+<a id="FORMATIO-020"></a>
+### FORMATIO-020: `ns_snprintf(NULL, 0, ...)` 把 buf 写空指针（无界哨兵与包 size==0 冲突）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 新增 NS_STREAM_TYPE_MEMORY_UNBOUNDED 作无界哨兵，ns_stream_memory_init 不再做空指针加法，ns_vsprintf 显式置类型；ns_snprintf(NULL, 0, ...) 的 NULL/0 行为钉成与 C99 一致。commit e4264a4。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+
+`ns_vsnprintf` 用 `ns_stream_memory_init(&stream, buf, size)` 初始化内存流（src/ns_formatio.c:1157），
+`ns_stream_memory_init` 内部执行 `stream->end = buf + size`（include/nanosig/ns_formatio.h:115）。
+当 `buf == NULL` 且 `size == 0` 时得到 `end == NULL`，而 `end == NULL` 正是 FORMATIO-019
+为 `ns_vsprintf` 引入的"无界流"哨兵（src/ns_formatio.c:1169、src/ns_formatio.c:240、src/ns_formatio.c:269-271）。
+于是 `ns_snprintf(NULL, 0, ...)` 被误判为无界流，`streamout_in_byte` 的 MEMORY 分支
+无条件执行 `*m->pos = ch`（src/ns_formatio.c:241-243），对 NULL 解引用写入；收尾时
+`*m->pos = '\0'` 同样写 NULL（src/ns_formatio.c:269-271）。
+
+C99 明确允许 `snprintf(NULL, 0, fmt, ...)` 用于探测所需长度（size 为 0 时 buf 可以是空指针），
+公共头 include/nanosig/ns_formatio.h:70-75 没有任何 docstring 记录"buf 不得为 NULL"这一前提，
+因此不属于 §4.4 合同前提保护。FORMATIO-018 修好了 `buf != NULL, size == 0`，
+但没有覆盖 `buf == NULL, size == 0` 这一 C99 合法输入。
+
+同一根因的第二个入口：`size == 0` 的探测式调用若配合 `ns_vsnprintf` 直接传 NULL 也走同一分支。
+
+#### review 建议
+
+把"无界"与"零容量"两种状态区分开，不要共用 `end == NULL`：
+
+- 方案 A（最小改动）：在 `ns_vsnprintf` 入口对 `buf == NULL || size == 0` 走计数型丢弃路径
+  （end 指向一个内部哑缓冲，或给 stream 增加显式 `unbounded` 标志），返回值仍为应写全长；
+- 方案 B：给 `struct ns_stream_memory` 增加 `bool unbounded` 字段，`ns_vsprintf` 显式置位，
+  `streamout_in_byte` / `streamout_finish` 改为判断该标志而非 `end == NULL`；
+- 无论哪种方案，都应在 ns_formatio.h 为 `ns_snprintf` / `ns_vsnprintf` 补 docstring，
+  写明 `size == 0` 时 buf 可为 NULL、返回值为应写全长。
+
+修复后建议在测试中补 `ns_snprintf(NULL, 0, "hello %d", 42)` 与 `ns_snprintf(NULL, 0, "%f", 1.5)`
+的探测用例（期望返回应写全长且不崩溃）。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+/* ASAN 实测：SEGV on unknown address 0x000000000000，WRITE memory access */
+ns_snprintf(NULL, 0, "hello %d", 42);
+/* 崩溃栈：
+ *   #0 streamout_in_byte src/ns_formatio.c:242
+ *   #1 streamout_vprintf src/ns_formatio.c:944
+ *   #2 ns_vsnprintf      src/ns_formatio.c:1158
+ *   #3 ns_snprintf       src/ns_formatio.c:1181
+ */
+```
+
+对照（已修复、不崩溃）：
+
+```c
+char buf[16];
+ns_snprintf(buf, 0, "hello %d", 42);  /* 返回 8，buf 不被写入 */
+```
+
+#### 定位
+src/ns_formatio.c:1157
+src/ns_formatio.c:241-243
+src/ns_formatio.c:269-271
+src/ns_formatio.c:1168-1169
+include/nanosig/ns_formatio.h:109-116
+
+---
+
+<a id="FORMATIO-022"></a>
+### FORMATIO-022: `float_decentralized` 半途(tie)分支进位丢失，`%.1f` 0.95 输出 "0.10"
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: float_decentralized 半途(tie)分支补进位，%.1f 的 0.95 不再输出 "0.10"。commit e4264a4。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+
+`float_decentralized`（src/ns_formatio.c:391-427）的 `remainder > 0.5` 分支在自增
+`fractional` 后会检查是否越过 `powers_of_10[precision]` 并进位到 `integral`
+（src/ns_formatio.c:410-415）；但紧随其后的 `remainder == 0.5` 分支（src/ns_formatio.c:416-419）
+只做 `++components->fractional`，**没有**同样的越界进位检查：
+
+```c
+} else if ((remainder == 0.5) &&
+           ((components->fractional == 0U) || (components->fractional & 1U))) {
+    ++components->fractional;          /* 可为 powers_of_10[precision]，无进位处理 */
+}
+```
+
+结果 `fractional` 变成等于 `powers_of_10[precision]`，输出位数比精度多一位且数值错误：
+
+实测 0.95（双精度实际值 0.94999999999999995559）在 `%.1f` 下：
+`integral=0`、`fractional=9`、`remainder=0.5` → tie 分支把 `fractional` 增到 10 →
+`fractional_valid_len = num_bit_count(10) = 2` → 输出 `"0.10"`。
+正确结果应为 `"0.9"`（libc）或按进位写成 `"1.0"`；`"0.10"` 与两者都不符，且读起来是 0.10 而非 0.9。
+
+#### review 建议
+
+在 tie 分支的 `++components->fractional` 之后补上与 `remainder > 0.5` 分支相同的进位处理，
+或把两个分支合并为"先算出按精度缩放后的四舍五入值，再做一次越界进位检查"的统一形式：
+
+```c
+if ((double)components->fractional >= powers_of_10[precision]) {
+    components->fractional = 0;
+    ++components->integral;
+}
+```
+
+修复后补 `%.1f`/`%.2f`/`%.3f` 在 0.95、0.995、0.9995、0.05、1.95、9.95 等 tie 邻域
+与 libc 的对拍用例。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%.1f", 0.95);    /* 实际 "0.10"（n=4），libc "0.9" */
+ns_snprintf(buf, sizeof(buf), "%.2f", 0.995);   /* 实际 "0.100"（n=5），libc "0.99" */
+ns_snprintf(buf, sizeof(buf), "%.3f", 0.9995);  /* 实际 "0.1000"（n=6），libc "1.000" */
+ns_snprintf(buf, sizeof(buf), "%.1f", 1.95);    /* 实际 "1.10"（n=4），libc "1.9" */
+```
+
+#### 定位
+src/ns_formatio.c:416-419
+src/ns_formatio.c:410-415
+
+---
+
+<a id="FORMATIO-023"></a>
+### FORMATIO-023: `%.0e` 半途(tie)分支把进位清零，1.5 → "1e+00"、3.5 → "3e+00"
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: %.0e 的 tie 分支改为按目标位取偶（precision==0 时看 integral 奇偶），1.5/3.5 不再输出 1e+00/3e+00（黄金值同步更新）。commit e4264a4。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+
+`float_normalized_decentralized`（src/ns_formatio.c:429-470）的 tie 处理为：
+
+```c
+components->fractional = (uint64_t)scaled_remainder;
+scaled_remainder -= (double)components->fractional;
+components->fractional += (scaled_remainder >= rounding_threshold);   /* :462 */
+if (scaled_remainder == rounding_threshold) {
+    components->fractional &= ~((uint64_t)0x1);                       /* :464 把刚加上的 1 清掉 */
+}
+if ((double)components->fractional >= prec_power_of_10) { ... ++integral; }  /* :466 进不了 */
+```
+
+恰等 0.5 时先 `+1` 再用 `&= ~1` 清掉，且清尾之后 `integral` 不再变化，
+等价于"tie 时永远向下取整"（只在整数部分恰为偶数时碰巧与银行家舍入一致）。
+实测：`%.0e` 1.5 → `"1e+00"`、3.5 → `"3e+00"`、5.5 → `"5e+00"`、7.5 → `"7e+00"`，
+而 libc 分别给出 `2e+00`/`4e+00`/`6e+00`/`8e+00`（round-half-even）。
+
+同一模块内 `%.0f` 走 `float_decentralized` 的 precision==0 分支（src/ns_formatio.c:421-426），
+1.5 → `"2"`、3.5 → `"4"`，与 `%.0e` 结果自相矛盾——同一数值同一精度，
+`%f` 与 `%e` 得到不同舍入方向，可判定 `%e` 侧为缺陷而非有意权衡。
+
+注：test/unit/test_formatio.c:693-694 的黄金值把 `"2e+00"`/`"3e+00"` 固化为期望
+（注释称"银行家舍入清零奇位"），3.5 → 4 才是银行家舍入，现有黄金值是缺陷快照，需随修复更新。
+
+#### review 建议
+
+把 tie 分支改为先做尾数清位、再判断是否需要进位到 `integral`，例如：
+
+```c
+if (scaled_remainder == rounding_threshold) {
+    components->fractional &= ~((uint64_t)0x1);
+}
+if ((double)components->fractional >= prec_power_of_10) {
+    components->fractional = 0;
+    ++components->integral;
+}
+```
+
+或统一改为"按 `integral` 奇偶决定 tie 是否进位"，使其与 `%.0f` 的银行家舍入语义一致，
+并同步修正 test/unit/test_formatio.c:693-694 的黄金值。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%.0e", 1.5);   /* 实际 "1e+00"，libc "2e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 3.5);   /* 实际 "3e+00"，libc "4e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 5.5);   /* 实际 "5e+00"，libc "6e+00" */
+ns_snprintf(buf, sizeof(buf), "%.0e", 2.5);   /* "2e+00"（碰巧正确） */
+/* 同模块内不自洽： */
+ns_snprintf(buf, sizeof(buf), "%.0f", 3.5);   /* "4"，而 %.0e 3.5 给 "3e+00" */
+```
+
+#### 定位
+src/ns_formatio.c:459-469
+src/ns_formatio.c:421-426
+
+---
 
 ---

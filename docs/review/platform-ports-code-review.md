@@ -96,10 +96,11 @@ entries:
       - "platform/windows/port.c:151-170"
   - id: "PORT-023"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/platform-ports-code-review.md#PORT-023"
     locations:
       - "platform/linux/port.c:30-47"
@@ -419,60 +420,6 @@ waitset events=0 路径无覆盖。
 
 #### 定位
 test/unit/test_platform_backend.c:690-714
-
----
-
-<a id="PORT-023"></a>
-### PORT-023: Linux `ns_linux_wakeup_drain` 失败时未消费 eventfd 计数，调用方陷入热自旋
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-- **关联**: 与 PLATFORM-006（Linux `wakeup_drain` 无上界循环，关闭-已拒绝）**不是同一问题**，
-  见下方"为何非重复"。
-
-#### 问题描述
-`ns_linux_wakeup_drain`（L30-47）只在 `read` 返回 `EAGAIN`/`EWOULDBLOCK` 时返回 `NS_OK`；
-遇到其他 errno 直接 `return NS_E_INVAL`，**此时 eventfd 计数器未被读走**。
-而 `ns_platform_wakeup_wait`（L132-169）在同一轮已从 `poll` 得到 `POLLIN`，
-drain 失败即把该错误返回给调用方。
-
-后果：调用方若按"失败即重试"处理（`src/ns_broker.c` 的 `ns_broker_wait_op_completion`
-在无限等待下正是如此），下一轮 `poll` 会**立即**再返回 `POLLIN`——因为计数器仍为正。
-这不是"重试前先阻塞一会儿"的慢自旋，而是 **100% CPU、零等待**的热自旋。
-Linux 是 CI 运行的平台。
-
-broker 侧的处置：等待失败不返回（否则会遗留仍在 `op_queue` 中的 `req`，构成
-use-after-free），只能重试，因此无法在 broker 层消除该自旋。
-
-#### review 建议
-`ns_linux_wakeup_drain` 在非 `EAGAIN`/`EINTR` 的 errno 上，先尝试一次非阻塞读以耗尽
-计数器（或显式 `read` 到 `EAGAIN` 再返回错误），使"已消费 POLLIN"与"已消费计数"
-一致；返回错误码仍保留。若认为该 errno 不可恢复，则在返回错误前把 eventfd
-计数清零，保证调用方重试时不会立即再次触发。
-
-#### 作者建议
-（待作者补充）
-
-#### 为何非重复（AGENTS.md §3.1）
-- **根因不同**：PLATFORM-006 讲的是循环上界（eventfd 是 64 位计数器，溢出需 ~1.8e19
-  次写入，不可达）；本条讲的是**错误返回路径未消费计数**。
-- **修复方向不同**：PLATFORM-006 的候选修复是"加最大读取次数上限"；本条的修复是
-  "在返回错误前消费掉计数"。
-- **可达性不同**：PLATFORM-006 的边界不可达；本条只在 `read` 返回非 `EAGAIN`/`EINTR`
-  错误时触发（如 EBADF、EIO），门槛低得多。
-
-#### 可重现的失败场景
-Linux，令 wakeup 的 eventfd 处于可读状态，`ns_platform_wakeup_wait` 走
-`poll → POLLIN → ns_linux_wakeup_drain`，drain 内的 `read` 返回 `EBADF`：
-- drain 返回 `NS_E_INVAL`，计数器未减；
-- `ns_broker_wait_op_completion` 重试 → `poll` 立即返回 `POLLIN` → 再次 `EBADF`；
-- 调用线程 100% CPU 自旋，`ns_broker_add` 永不返回。
-
-#### 定位
-platform/linux/port.c:30-47
-platform/linux/port.c:132-169
-src/ns_broker.c:239
 
 ---
 
@@ -1370,6 +1317,62 @@ timer handle 已被外部关闭或句柄损坏时，`ns_platform_waitset_deinit`
 platform/windows/port.c:302
 platform/linux/port.c:399
 platform/macos/port.c:411
+
+---
+
+<a id="PORT-023"></a>
+### PORT-023: Linux `ns_linux_wakeup_drain` 失败时未消费 eventfd 计数，调用方陷入热自旋
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关联**: 与 PLATFORM-006（Linux `wakeup_drain` 无上界循环，关闭-已拒绝）**不是同一问题**，
+  见下方"为何非重复"。
+
+#### 问题描述
+`ns_linux_wakeup_drain`（L30-47）只在 `read` 返回 `EAGAIN`/`EWOULDBLOCK` 时返回 `NS_OK`；
+遇到其他 errno 直接 `return NS_E_INVAL`，**此时 eventfd 计数器未被读走**。
+而 `ns_platform_wakeup_wait`（L132-169）在同一轮已从 `poll` 得到 `POLLIN`，
+drain 失败即把该错误返回给调用方。
+
+后果：调用方若按"失败即重试"处理（`src/ns_broker.c` 的 `ns_broker_wait_op_completion`
+在无限等待下正是如此），下一轮 `poll` 会**立即**再返回 `POLLIN`——因为计数器仍为正。
+这不是"重试前先阻塞一会儿"的慢自旋，而是 **100% CPU、零等待**的热自旋。
+Linux 是 CI 运行的平台。
+
+broker 侧的处置：等待失败不返回（否则会遗留仍在 `op_queue` 中的 `req`，构成
+use-after-free），只能重试，因此无法在 broker 层消除该自旋。
+
+#### review 建议
+`ns_linux_wakeup_drain` 在非 `EAGAIN`/`EINTR` 的 errno 上，先尝试一次非阻塞读以耗尽
+计数器（或显式 `read` 到 `EAGAIN` 再返回错误），使"已消费 POLLIN"与"已消费计数"
+一致；返回错误码仍保留。若认为该 errno 不可恢复，则在返回错误前把 eventfd
+计数清零，保证调用方重试时不会立即再次触发。
+
+#### 作者建议
+（待作者补充）
+
+#### 为何非重复（AGENTS.md §3.1）
+- **根因不同**：PLATFORM-006 讲的是循环上界（eventfd 是 64 位计数器，溢出需 ~1.8e19
+  次写入，不可达）；本条讲的是**错误返回路径未消费计数**。
+- **修复方向不同**：PLATFORM-006 的候选修复是"加最大读取次数上限"；本条的修复是
+  "在返回错误前消费掉计数"。
+- **可达性不同**：PLATFORM-006 的边界不可达；本条只在 `read` 返回非 `EAGAIN`/`EINTR`
+- **关闭原因**: Linux wakeup/event drain 的两处逐字重复实现合并为 ns_linux_eventfd_drain：先读空计数再报错；EBADF 例外只告警一次提示调用方不得热重试，调用方不再陷入 100% CPU 热自旋。commit e4264a4。
+- **关闭日期**: 2026-10-19
+  错误时触发（如 EBADF、EIO），门槛低得多。
+
+#### 可重现的失败场景
+Linux，令 wakeup 的 eventfd 处于可读状态，`ns_platform_wakeup_wait` 走
+`poll → POLLIN → ns_linux_wakeup_drain`，drain 内的 `read` 返回 `EBADF`：
+- drain 返回 `NS_E_INVAL`，计数器未减；
+- `ns_broker_wait_op_completion` 重试 → `poll` 立即返回 `POLLIN` → 再次 `EBADF`；
+- 调用线程 100% CPU 自旋，`ns_broker_add` 永不返回。
+
+#### 定位
+platform/linux/port.c:30-47
+platform/linux/port.c:132-169
+src/ns_broker.c:239
 
 ---
 

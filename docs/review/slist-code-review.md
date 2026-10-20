@@ -33,10 +33,11 @@ entries:
       - "include/nanosig/nanosig_slist.h:290-303"
   - id: "SLIST-007"
     module: "slist"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/slist-code-review.md#SLIST-007"
     locations:
       - "include/nanosig/nanosig_slist.h:284"
@@ -45,10 +46,11 @@ entries:
       - "include/nanosig/nanosig_slist.h:32-38"
   - id: "SLIST-008"
     module: "slist"
-    status: "open"
+    status: "closed-not-applicable"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-19"
     location: "docs/review/slist-code-review.md#SLIST-008"
     locations:
       - "include/nanosig/nanosig_slist.h:408-411"
@@ -87,151 +89,6 @@ entries:
 ---
 
 ## 现在打开的问题
-
-<a id="SLIST-007"></a>
-### SLIST-007: `ns_slist_del_node_in_for_each_safe` 删除头节点后留下悬垂 `list->last`，后续复用该链表会把新节点写进头字段
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-`ns_slist_del_node_in_for_each_safe`（`include/nanosig/nanosig_slist.h:276-285`）只在 `next == NULL` 时维护 `list->last`。
-删除的是头节点、且其后还有节点时，`list->last` 不会被更新。调用方按 `ns_slist_for_each_safe` 的用法逐节点删完整个链表后，
-`list->first == NULL` 但 `list->last == (ns_slist_node_t *)list` —— **恰好等于链表头对象自身的地址**。
-
-这个悬垂值是**破坏性**的，不只是"读起来不对"：
-`ns_slist_t` 的布局是 `first` 在偏移 0、`last` 在偏移 8（`include/nanosig/nanosig_slist.h:32-38`）。
-排空后继续使用该链表的**任何**路径都会把哨兵当节点用：
-- `ns_slist_push_back` / `ns_slist_add_batch_tail`：走 `else` 分支写 `list->last->next`，即 `list->first`（偏移 0 重叠）→ **已在链上的首节点从链上脱落**；
-- `ns_slist_insert(prev=tail)`：同样写 `list->first`；
-- `ns_slist_empty()` 返回 true 而 `ns_slist_last()` 返回非 NULL（`include/nanosig/nanosig_slist.h:109-114` 文档承诺空链表返回 NULL），两者自相矛盾。
-
-用文档方式遍历一个链表、把节点删光、再往同一个头里 push 是再普通不过的模式（`ns_slist_t` 是自持的静态头对象，
-`ns_slist_init` 之外没有"重建"步骤）。`ns_slist_append_list` 恰好没事，只是因为它的 `ns_slist_empty(list)` 分支直接覆写了 `last`。
-
-与 SLIST-003 的区别（那条已 `关闭-已拒绝`，本条的根因与修复方向都不同）：SLIST-003 针对的是**被删除节点自身的 `next` 没清零**（`ns_slist_node_is_on_list` 误报），
-本条是**链表头 `last` 字段被写成哨兵**并导致后续 push 丢节点；修复点是头字段的维护，不是节点自身的 `next`。
-
-#### review 建议
-在函数末尾补上头节点被删除时的 `last` 维护（只需两行，与现有 `next == NULL` 分支对称）：
-```c
-if(prev == NULL){
-    list->first = next;
-    if(next == NULL) list->last = NULL;   /* 删的是唯一节点：链表真正空了 */
-}
-```
-注意不能简单写成"删头就清 last"：删头且后面仍有节点时 `last` 必须保持原值。
-另建议在 `@note` 里写明"删除头节点且链表仍非空时，`list->last` 保持不变（仍指向原尾节点）"，
-并补一条回归用例：2 节点链表 drain 后 `ns_slist_empty(&l) == 1 && ns_slist_last(&l) == NULL`，
-再 `push_front` + `push_back` 断言链序完整。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-ns_slist_t l = NS_SLIST_INITIALIZER;
-item_t a = {.v = 1}, b = {.v = 2};
-ns_slist_push_back(&l, &a.node);
-ns_slist_push_back(&l, &b.node);
-
-ns_slist_node_t *prev, *pos, *nxt;
-ns_slist_for_each_safe(prev, pos, nxt, &l){
-    ns_slist_del_node_in_for_each_safe(&l, prev, nxt);   /* 逐节点删光 */
-}
-
-/* 排空后：l.first == NULL，但 l.last == (ns_slist_node_t *)&l（哨兵，不是 NULL） */
-ns_slist_empty(&l);   /* -> 1（非 0） */
-ns_slist_last(&l);    /* -> &l，与 docstring“空链表返回 NULL”矛盾；按 ns_slist_entry 反查会越界 */
-
-ns_slist_push_front(&l, &a.node);   /* 期望链上出现 a */
-ns_slist_push_back(&l, &b.node);    /* 期望链序 [a b] */
-
-/* 实测：push_back 走 else 分支执行 l.last->next = &b.node，
-   而 l.last 与 &l 重合 -> 该写入落到 l.first（偏移 0 与偏移 0 重叠），
-   结果 l.first 直接变成 &b.node，a 从链上脱落： */
-assert(ns_slist_first(&l) == &b.node);              /* 链上只剩 b */
-/* 若 list 头不是栈上变量而是静态/成员对象，则该写入落在头对象内部、
-   不会越界写其它内存，因此 ASan 不会报错（已实测）。 */
-```
-
-#### 定位
-include/nanosig/nanosig_slist.h:284
-include/nanosig/nanosig_slist.h:109-114
-include/nanosig/nanosig_slist.h:152-165
-include/nanosig/nanosig_slist.h:32-38
-
----
-
-<a id="SLIST-008"></a>
-### SLIST-008: 遍历宏族裸用 `typeof`，与同仓库 rbtree 的 RBTREE-018 同一根因（严格 `-std=c11` 下两个 entry 遍历宏无法编译）
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-`ns_slist_for_each_entry`（`include/nanosig/nanosig_slist.h:408-411`）与 `ns_slist_for_each_entry_safe`（`include/nanosig/nanosig_slist.h:421-425`）
-直接使用裸 `typeof`（`include/nanosig/nanosig_slist.h:409,411,422,423,425`，共 5 处）。`typeof` 是 GNU 扩展，在 `-std=c11`（非 `gnu11`）下 gcc 与 clang 均报错；本模块这两个宏在严格 C11 下不可用。
-
-复现（与 `api-compile-checks` 相同的 flag 组合 `-std=c11`，`cmake/ApiCompileChecks.cmake:37`）：
-```
-$ gcc -std=c11 -I include -fsyntax-only t.c          # t.c 含 ns_slist_for_each_entry
-.../nanosig_slist.h:409:52: error: call to undeclared function 'typeof'
-.../nanosig_types.h:108:42: note: expanded from macro 'NS_CONTAINER_OF'
-.../nanosig_slist.h:353:5: note: expanded from macro 'ns_slist_entry_safe'
-.../nanosig_slist.h:141:41: note: expanded from macro 'NS_CONTAINER_OF_SAFE'
-```
-
-**与 RBTREE-018 的重复性说明（按 §3.1 例外条款 3 显式引用历史条目并说明重提理由）**：
-同一根因已在 `docs/review/rbtree-code-review.md:371` 的 `RBTREE-018` 中记录（我不可跨模块复核该条状态，按"不假定未关闭"处理）。
-此处重新提出的理由是：**受影响面远大于 rbtree 模块**。除 `nanosig_rbtree.h` 外，本模块与 `nanosig_list.h`、
-以及可能的其它 `NS_CONTAINER_OF` 消费者都在同一路径上；RBTREE-018 只覆盖 rbtree 自己的 4 个宏，
-按"每个 agent 只 review 自己模块"的分工，本模块的复核不能由 rbtree 条目代劳。
-**建议由维护者把根因合并为一处修复**：在 `include/nanosig/nanosig_types.h` 的**纯 C** 分支
-（现仅有 `#ifdef __cplusplus` 分支，`include/nanosig/nanosig_types.h:17-22`）补 `typeof` → `__typeof__` 收口，
-六个宏与本条一起闭环；若认为严格 C11 非支持目标，则应按 §2.4 文档仲裁在公共头写明"MSVC 以外仅支持 `gnu11`"，
-本条即转为 `关闭-不适用`。
-
-#### review 建议
-1. 首选：在 `include/nanosig/nanosig_types.h` 增补纯 C 分支的 `typeof` 收口（一行 `#define`），或把这两处宏里的 `typeof` 改写为 `__typeof__`，
-   与 `CMakeLists.txt:150` 的 `target_compile_features(nanosig PUBLIC c_std_11)`（实际编译带 `C_EXTENSIONS`，即 `gnu11`）语义对齐。
-2. 次选：若明确放弃严格 C11，则在 `include/nanosig/nanosig_slist.h` 文件头注明"遍历宏依赖 GNU `typeof` 扩展"。
-3. 无论选哪条，建议让 `test/unit/test_data_structures_contract_compile.c` 的实际使用面覆盖遍历宏
-   （该 TU 目前只做 `ns_slist_push_back` / `ns_slist_pop_front`，不触碰任何 `for_each_entry`，
-   因此 `api-compile-checks` 无法发现这条路径）。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-```c
-/* t.c */
-#include <nanosig/nanosig_slist.h>
-struct s { ns_slist_node_t node; int v; };
-int f(void)
-{
-    ns_slist_t l = NS_SLIST_INITIALIZER;
-    struct s a, *p, *n;
-    ns_slist_node_init(&a.node);
-    ns_slist_push_back(&l, &a.node);
-    ns_slist_for_each_entry(p, &l, node){ p->v++; }        /* <- 编译失败 */
-    ns_slist_for_each_entry_safe(p, n, &l, node){ p->v++; } /* <- 编译失败 */
-    return a.v;
-}
-/* gcc/clang -std=c11 均报 21 条 error；改成 -std=gnu11 后两个文件都能编译通过。
-   实测：gnu11 下 slist/list 的 entry 宏均正常编译。 */
-```
-
-#### 定位
-include/nanosig/nanosig_slist.h:408-411
-include/nanosig/nanosig_slist.h:421-425
-include/nanosig/nanosig_types.h:17-22
-include/nanosig/nanosig_types.h:108
-docs/review/rbtree-code-review.md:371
-
----
 
 ## 现在关闭的问题
 
@@ -320,6 +177,155 @@ assert(ns_slist_empty(&list));  // true — 链表数据丢失
 
 #### 定位
 include/nanosig/nanosig_slist.h:290-303
+
+---
+
+<a id="SLIST-008"></a>
+### SLIST-008: 遍历宏族裸用 `typeof`，与同仓库 rbtree 的 RBTREE-018 同一根因（严格 `-std=c11` 下两个 entry 遍历宏无法编译）
+
+- **状态**: 关闭-不适用
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 合同前提保护/误报：项目不承诺严格 `-std=c11` 构建，遍历宏依赖 GNU `typeof` 扩展在实际工具链（gnu11）下正常工作。若未来改为强制 `-std=c11`，可在 `include/nanosig/nanosig_types.h` 纯 C 分支补 `typeof` → `__typeof__` 收口再重开。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+`ns_slist_for_each_entry`（`include/nanosig/nanosig_slist.h:408-411`）与 `ns_slist_for_each_entry_safe`（`include/nanosig/nanosig_slist.h:421-425`）
+直接使用裸 `typeof`（`include/nanosig/nanosig_slist.h:409,411,422,423,425`，共 5 处）。`typeof` 是 GNU 扩展，在 `-std=c11`（非 `gnu11`）下 gcc 与 clang 均报错；本模块这两个宏在严格 C11 下不可用。
+
+复现（与 `api-compile-checks` 相同的 flag 组合 `-std=c11`，`cmake/ApiCompileChecks.cmake:37`）：
+```
+$ gcc -std=c11 -I include -fsyntax-only t.c          # t.c 含 ns_slist_for_each_entry
+.../nanosig_slist.h:409:52: error: call to undeclared function 'typeof'
+.../nanosig_types.h:108:42: note: expanded from macro 'NS_CONTAINER_OF'
+.../nanosig_slist.h:353:5: note: expanded from macro 'ns_slist_entry_safe'
+.../nanosig_slist.h:141:41: note: expanded from macro 'NS_CONTAINER_OF_SAFE'
+```
+
+**与 RBTREE-018 的重复性说明（按 §3.1 例外条款 3 显式引用历史条目并说明重提理由）**：
+同一根因已在 `docs/review/rbtree-code-review.md:371` 的 `RBTREE-018` 中记录（我不可跨模块复核该条状态，按"不假定未关闭"处理）。
+此处重新提出的理由是：**受影响面远大于 rbtree 模块**。除 `nanosig_rbtree.h` 外，本模块与 `nanosig_list.h`、
+以及可能的其它 `NS_CONTAINER_OF` 消费者都在同一路径上；RBTREE-018 只覆盖 rbtree 自己的 4 个宏，
+按"每个 agent 只 review 自己模块"的分工，本模块的复核不能由 rbtree 条目代劳。
+**建议由维护者把根因合并为一处修复**：在 `include/nanosig/nanosig_types.h` 的**纯 C** 分支
+（现仅有 `#ifdef __cplusplus` 分支，`include/nanosig/nanosig_types.h:17-22`）补 `typeof` → `__typeof__` 收口，
+六个宏与本条一起闭环；若认为严格 C11 非支持目标，则应按 §2.4 文档仲裁在公共头写明"MSVC 以外仅支持 `gnu11`"，
+本条即转为 `关闭-不适用`。
+
+#### review 建议
+1. 首选：在 `include/nanosig/nanosig_types.h` 增补纯 C 分支的 `typeof` 收口（一行 `#define`），或把这两处宏里的 `typeof` 改写为 `__typeof__`，
+   与 `CMakeLists.txt:150` 的 `target_compile_features(nanosig PUBLIC c_std_11)`（实际编译带 `C_EXTENSIONS`，即 `gnu11`）语义对齐。
+2. 次选：若明确放弃严格 C11，则在 `include/nanosig/nanosig_slist.h` 文件头注明"遍历宏依赖 GNU `typeof` 扩展"。
+3. 无论选哪条，建议让 `test/unit/test_data_structures_contract_compile.c` 的实际使用面覆盖遍历宏
+   （该 TU 目前只做 `ns_slist_push_back` / `ns_slist_pop_front`，不触碰任何 `for_each_entry`，
+   因此 `api-compile-checks` 无法发现这条路径）。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+/* t.c */
+#include <nanosig/nanosig_slist.h>
+struct s { ns_slist_node_t node; int v; };
+int f(void)
+{
+    ns_slist_t l = NS_SLIST_INITIALIZER;
+    struct s a, *p, *n;
+    ns_slist_node_init(&a.node);
+    ns_slist_push_back(&l, &a.node);
+    ns_slist_for_each_entry(p, &l, node){ p->v++; }        /* <- 编译失败 */
+    ns_slist_for_each_entry_safe(p, n, &l, node){ p->v++; } /* <- 编译失败 */
+    return a.v;
+}
+/* gcc/clang -std=c11 均报 21 条 error；改成 -std=gnu11 后两个文件都能编译通过。
+   实测：gnu11 下 slist/list 的 entry 宏均正常编译。 */
+```
+
+#### 定位
+include/nanosig/nanosig_slist.h:408-411
+include/nanosig/nanosig_slist.h:421-425
+include/nanosig/nanosig_types.h:17-22
+include/nanosig/nanosig_types.h:108
+docs/review/rbtree-code-review.md:371
+
+---
+
+<a id="SLIST-007"></a>
+### SLIST-007: `ns_slist_del_node_in_for_each_safe` 删除头节点后留下悬垂 `list->last`，后续复用该链表会把新节点写进头字段
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: ns_slist_del_node_in_for_each_safe 的 list->last 判据修正：删尾节点时 last 回到 NULL 或 prev，不再留下悬垂 last 把新节点写进 first 字段。commit e4264a4。
+- **关闭日期**: 2026-10-19
+
+#### 问题描述
+`ns_slist_del_node_in_for_each_safe`（`include/nanosig/nanosig_slist.h:276-285`）只在 `next == NULL` 时维护 `list->last`。
+删除的是头节点、且其后还有节点时，`list->last` 不会被更新。调用方按 `ns_slist_for_each_safe` 的用法逐节点删完整个链表后，
+`list->first == NULL` 但 `list->last == (ns_slist_node_t *)list` —— **恰好等于链表头对象自身的地址**。
+
+这个悬垂值是**破坏性**的，不只是"读起来不对"：
+`ns_slist_t` 的布局是 `first` 在偏移 0、`last` 在偏移 8（`include/nanosig/nanosig_slist.h:32-38`）。
+排空后继续使用该链表的**任何**路径都会把哨兵当节点用：
+- `ns_slist_push_back` / `ns_slist_add_batch_tail`：走 `else` 分支写 `list->last->next`，即 `list->first`（偏移 0 重叠）→ **已在链上的首节点从链上脱落**；
+- `ns_slist_insert(prev=tail)`：同样写 `list->first`；
+- `ns_slist_empty()` 返回 true 而 `ns_slist_last()` 返回非 NULL（`include/nanosig/nanosig_slist.h:109-114` 文档承诺空链表返回 NULL），两者自相矛盾。
+
+用文档方式遍历一个链表、把节点删光、再往同一个头里 push 是再普通不过的模式（`ns_slist_t` 是自持的静态头对象，
+`ns_slist_init` 之外没有"重建"步骤）。`ns_slist_append_list` 恰好没事，只是因为它的 `ns_slist_empty(list)` 分支直接覆写了 `last`。
+
+与 SLIST-003 的区别（那条已 `关闭-已拒绝`，本条的根因与修复方向都不同）：SLIST-003 针对的是**被删除节点自身的 `next` 没清零**（`ns_slist_node_is_on_list` 误报），
+本条是**链表头 `last` 字段被写成哨兵**并导致后续 push 丢节点；修复点是头字段的维护，不是节点自身的 `next`。
+
+#### review 建议
+在函数末尾补上头节点被删除时的 `last` 维护（只需两行，与现有 `next == NULL` 分支对称）：
+```c
+if(prev == NULL){
+    list->first = next;
+    if(next == NULL) list->last = NULL;   /* 删的是唯一节点：链表真正空了 */
+}
+```
+注意不能简单写成"删头就清 last"：删头且后面仍有节点时 `last` 必须保持原值。
+另建议在 `@note` 里写明"删除头节点且链表仍非空时，`list->last` 保持不变（仍指向原尾节点）"，
+并补一条回归用例：2 节点链表 drain 后 `ns_slist_empty(&l) == 1 && ns_slist_last(&l) == NULL`，
+再 `push_front` + `push_back` 断言链序完整。
+
+#### 作者建议
+（待作者补充）
+
+#### 可重现的失败场景
+```c
+ns_slist_t l = NS_SLIST_INITIALIZER;
+item_t a = {.v = 1}, b = {.v = 2};
+ns_slist_push_back(&l, &a.node);
+ns_slist_push_back(&l, &b.node);
+
+ns_slist_node_t *prev, *pos, *nxt;
+ns_slist_for_each_safe(prev, pos, nxt, &l){
+    ns_slist_del_node_in_for_each_safe(&l, prev, nxt);   /* 逐节点删光 */
+}
+
+/* 排空后：l.first == NULL，但 l.last == (ns_slist_node_t *)&l（哨兵，不是 NULL） */
+ns_slist_empty(&l);   /* -> 1（非 0） */
+ns_slist_last(&l);    /* -> &l，与 docstring“空链表返回 NULL”矛盾；按 ns_slist_entry 反查会越界 */
+
+ns_slist_push_front(&l, &a.node);   /* 期望链上出现 a */
+ns_slist_push_back(&l, &b.node);    /* 期望链序 [a b] */
+
+/* 实测：push_back 走 else 分支执行 l.last->next = &b.node，
+   而 l.last 与 &l 重合 -> 该写入落到 l.first（偏移 0 与偏移 0 重叠），
+   结果 l.first 直接变成 &b.node，a 从链上脱落： */
+assert(ns_slist_first(&l) == &b.node);              /* 链上只剩 b */
+/* 若 list 头不是栈上变量而是静态/成员对象，则该写入落在头对象内部、
+   不会越界写其它内存，因此 ASan 不会报错（已实测）。 */
+```
+
+#### 定位
+include/nanosig/nanosig_slist.h:284
+include/nanosig/nanosig_slist.h:109-114
+include/nanosig/nanosig_slist.h:152-165
+include/nanosig/nanosig_slist.h:32-38
 
 ---
 
