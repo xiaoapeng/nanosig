@@ -109,9 +109,10 @@ else()
 endif()
 
 # ── 平台类型头选择 ──────────────────────────────────────────────
-# 平台类型（ns_waitable_handle_t + wakeup/mutex/thread/waitset）由构建系统经
-# NANOSIG_PLATFORM_HEADER 注入的平台后端头提供；nanosig_port.h 自身不含任何
-# 平台判定宏。这是平台选择的唯一注入点，库与消费者共用同一份类型定义。
+# 平台类型（ns_waitable_handle_t + wakeup/mutex/thread/waitset）由平台后端头
+# `nanosig_platform_port.h` 提供；nanosig_port.h 自身不含任何平台判定宏。各平台
+# 后端头同名，由 include 路径决定选中哪一个——这是平台选择的唯一注入点，
+# 库与消费者共用同一份类型定义。
 if(NANOSIG_PLATFORM STREQUAL "freertos")
     set(NANOSIG_PLATFORM_DIR platform/freertos)
 elseif(WIN32)
@@ -121,8 +122,6 @@ elseif(APPLE)
 else()
     set(NANOSIG_PLATFORM_DIR platform/linux)
 endif()
-
-set(NANOSIG_PLATFORM_HEADER_DEFINE "NANOSIG_PLATFORM_HEADER=\"nanosig_platform_port.h\"")
 
 add_library(nanosig STATIC
     src/nanosig.c
@@ -158,11 +157,11 @@ target_include_directories(nanosig PRIVATE
 )
 
 # PUBLIC: consumers (contract tests / app) must see the same platform types as
-# the library — the platform header is the single source of that layout.
+# the library — the platform header is the single source of that layout, and it
+# is selected purely by the include path.
 target_include_directories(nanosig PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}>
 )
-target_compile_definitions(nanosig PUBLIC ${NANOSIG_PLATFORM_HEADER_DEFINE})
 
 if(NANOSIG_PLATFORM STREQUAL "freertos")
     # PUBLIC: the backend constants are PUBLIC so the contract tests can assert

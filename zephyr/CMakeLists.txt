@@ -21,16 +21,16 @@ configure_file(
 )
 
 if(CONFIG_NANOSIG_ZEPHYR)
-    # 应用与库必须选到同一平台类型定义，故 include 路径与平台选择宏对整棵构建树
+    # 应用与库必须选到同一平台类型定义，故 include 路径对整棵构建树
     # 可见（等价于顶层 CMake 的 PUBLIC 传播）。平台类型来自 platform/zephyr 的
-    # 构建内头，由 NANOSIG_PLATFORM_HEADER 注入；nanosig_port.h 无平台判定宏。
+    # 构建内头 `nanosig_platform_port.h`，按固定名由 include 路径选中；
+    # nanosig_port.h 无平台判定宏。
     zephyr_include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
         ${NANOSIG_MODULE_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../platform/zephyr
     )
     zephyr_compile_definitions(
-        NANOSIG_PLATFORM_HEADER="nanosig_platform_port.h"
         NS_MPSC_CACHELINE_ALIGNED
     )
 

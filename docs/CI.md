@@ -75,7 +75,7 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 
 ## API 编译期契约检查（`api-compile-checks`）
 
-- `nanosig_add_api_compile_check`（`cmake/ApiCompileChecks.cmake`）为每个契约 TU 生成 `-fsyntax-only` 的自定义目标与同名 ctest 用例；可选 `DEFINES` / `INCLUDE_DIRS` 追加编译宏与头文件路径。所有检查都带上当前平台注入的 `NANOSIG_PLATFORM_HEADER` 与平台 include 目录，因此检查的是**真实平台类型**，不是伪装的宏分支。
+- `nanosig_add_api_compile_check`（`cmake/ApiCompileChecks.cmake`）为每个契约 TU 生成 `-fsyntax-only` 的自定义目标与同名 ctest 用例；可选 `DEFINES` / `INCLUDE_DIRS` 追加编译宏与头文件路径。所有检查都带上当前平台的 include 目录，因此检查的是**真实平台类型**，不是伪装的宏分支。
 - host 预设：`api-compile-checks` 覆盖 macro-matrix、broker、data-structures、types、cpp-compat，以及平台契约 TU（`test_platform_contract_compile.c`）。跨平台类型正确性由各平台 CI 的真实编译承担（Windows / FreeRTOS / Zephyr 各自的工具链），host 上不再伪造其它平台的 SDK 类型。
 - `NANOSIG_PLATFORM=freertos`：同样注册 `api-compile-checks`（平台契约，带 `NANOSIG_FREERTOS_INCLUDE_DIRS` 的 SDK 头路径），并由 `ctest --preset freertos-* -LE nightly` 自动执行。
 
