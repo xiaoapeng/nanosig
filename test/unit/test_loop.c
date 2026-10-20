@@ -27,6 +27,7 @@
 typedef struct loop_thread_ctx {
     atomic_int failure_line;
     atomic_int running;    /* 1 when worker has entered ns_loop_run */
+    atomic_int quit_done;  /* 1 when the other thread finished ns_loop_quit */
     ns_loop_t *loop;
 } loop_thread_ctx_t;
 
@@ -141,6 +142,13 @@ static int loop_thread_entry(void *arg)
         ns_atomic_store_explicit(&ctx->failure_line, __LINE__, ns_memory_order_relaxed);
     }
 
+    /* ns_loop_destroy 不得与 ns_loop_quit 并发（见 nanosig_loop.h 的 @pre）。
+     * 等发起 quit 的线程确认 quit 已返回后再销毁，给 wakeup 句柄的读写建立
+     * happens-before 边。 */
+    while(ns_atomic_load_explicit(&ctx->quit_done, ns_memory_order_acquire) == 0){
+        test_yield();
+    }
+
     if(ctx->loop != NULL){
         int destroy_rc = ns_loop_destroy(ctx->loop);
         if((rc == NS_OK) && (destroy_rc != NS_OK)){
@@ -158,6 +166,8 @@ static int test_cross_thread_quit_and_ownership(void)
     loop_thread_ctx_t ctx;
 
     ns_atomic_init(&ctx.failure_line, 0);
+    ns_atomic_init(&ctx.running, 0);
+    ns_atomic_init(&ctx.quit_done, 0);
     ctx.loop = NULL;
 
     EXPECT_OK(ns_init() == NS_OK);
@@ -175,6 +185,8 @@ static int test_cross_thread_quit_and_ownership(void)
 
     EXPECT_OK(ctx.loop != NULL);
     EXPECT_OK(ns_loop_quit(ctx.loop) == NS_OK);
+    /* 通知 worker：quit 已返回，它可以安全销毁 loop（见 nanosig_loop.h 的 @pre）。 */
+    ns_atomic_store_explicit(&ctx.quit_done, 1, ns_memory_order_release);
     test_thread_join(&g_loop_thread);
     if(expect_true(g_loop_thread.rc == 0) != 0){
         fprintf(
@@ -374,65 +386,6 @@ static int test_async_quit_in_slot(void)
     return 0;
 }
 
-/* 平台差异：Windows 的 thread_join 是 WaitForSingleObject(自身句柄)，
- * 自 join 会永久阻塞而非返回错误，故该用例只在 POSIX 后端运行。 */
-#if !defined(_WIN32)
-static atomic_int g_self_stop_rc;
-static atomic_int g_self_stop_done;
-
-static void on_self_stop_slot(void *user_data, const ns_no_payload_t *payload)
-{
-    (void)payload;
-
-    ns_loop_t *loop = (ns_loop_t *)user_data;
-
-    ns_atomic_store_explicit(
-        &g_self_stop_rc,
-        ns_loop_stop(loop),   /* 在 loop 自身线程调用，join 自身必然失败 */
-        ns_memory_order_release);
-    ns_atomic_store_explicit(&g_self_stop_done, 1, ns_memory_order_release);
-}
-
-/** slot 内 stop：join 失败返回错误，但不得把 loop 标记为已停止 */
-static int test_async_stop_in_slot(void)
-{
-    ns_signal_t sig;
-    ns_connection_t conn;
-    ns_loop_t *loop = NULL;
-    int i;
-
-    ns_atomic_init(&g_self_stop_rc, NS_OK);
-    ns_atomic_init(&g_self_stop_done, 0);
-
-    EXPECT_OK(ns_init() == NS_OK);
-    EXPECT_OK(ns_signal_init(&sig, ns_no_payload_t) == NS_OK);
-    EXPECT_OK(ns_loop_create(&loop, NULL) == NS_OK);
-    EXPECT_OK(ns_signal_connect_typed(sig, on_self_stop_slot, ns_no_payload_t, loop, loop, &conn) == NS_OK);
-    EXPECT_OK(ns_loop_start(loop) == NS_OK);
-    EXPECT_OK(ns_signal_emit(sig, NS_NO_PAYLOAD) == NS_OK);
-
-    for(i = 0; i < 1000000; i++){
-        if(ns_atomic_load_explicit(&g_self_stop_done, ns_memory_order_acquire) != 0) break;
-        test_yield();
-    }
-    EXPECT_OK(ns_atomic_load_explicit(&g_self_stop_done, ns_memory_order_acquire) != 0);
-
-    EXPECT_OK(ns_atomic_load_explicit(&g_self_stop_rc, ns_memory_order_acquire) != NS_OK);
-    /* 旧 worker 仍存活：不得再 start，也不得释放 loop */
-    EXPECT_OK(ns_loop_start(loop) == NS_E_BUSY);
-    EXPECT_OK(ns_loop_destroy(loop) == NS_E_BUSY);
-
-    /* slot 已返回且 quit 已被请求，其他线程再次 stop 应能完成 join */
-    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
-
-    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
-    EXPECT_OK(ns_signal_deinit(&sig) == NS_OK);
-    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
-    EXPECT_OK(ns_shutdown() == NS_OK);
-
-    return 0;
-}
-#endif /* !_WIN32 */
 
 /* ------------------------------------------------------------------ */
 /*  Test: 2 loops running simultaneously, cross-emit between them      */
@@ -663,9 +616,6 @@ int main(void)
     if(test_async_twice() != 0) return 1;
     if(test_async_signal_delivery() != 0) return 1;
     if(test_async_quit_in_slot() != 0) return 1;
-#if !defined(_WIN32)
-    if(test_async_stop_in_slot() != 0) return 1;
-#endif
     if(test_multi_loop_simultaneous() != 0) return 1;
     if(test_loop_queue_overflow() != 0) return 1;
     if(test_async_cross_thread() != 0) return 1;

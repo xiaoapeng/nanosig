@@ -302,10 +302,11 @@ entries:
     location: "docs/review/platform-ports-code-review.md#PLATFORM-013"
   - id: "PORT-030"
     module: "platform-ports"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-20"
     location: "docs/review/platform-ports-code-review.md#PORT-030"
     locations:
       - "platform/linux/port.c:347"
@@ -462,59 +463,6 @@ platform/linux/port.c:528
 platform/linux/port.c:532
 
 ---
-
-<a id="PORT-030"></a>
-### PORT-030: `ns_platform_thread_join` 未拦截“join 自身”：POSIX 未定义行为，TSAN 下 abort 进程、Windows 下永久阻塞
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-`ns_platform_thread_join` 直接把目标线程句柄交给 `pthread_join`（Linux/macOS）、`WaitForSingleObject(..., INFINITE)`（Windows）、`xSemaphoreTake(..., portMAX_DELAY)`（FreeRTOS），没有检查“调用者就是目标线程”这一情形。
-
-触发路径：`ns_loop_stop` 在 loop 自身线程（slot 回调）内被调用时，`src/nanosig.c:315` 会 join 后台 worker 自身。`nanosig_loop.h` 已把该情形写为调用方前提（“不得在 loop 自身线程（含 slot 回调）内调用”），但平台层没有做防御，违反前提时后果不是“返回错误”而是：
-
-1. POSIX（Linux/macOS）：`pthread_join(self)` 是未定义行为。glibc 返回 EDEADLK，但 ThreadSanitizer 的 `pthread_join` 拦截器在**真实 join 之前**就调用 `ThreadConsumeTid` → `ThreadRegistry::ConsumeThreadUserId`，把目标线程的 user id 从 `live_` map 中 erase（compiler-rt `sanitizer_thread_registry.cpp:347-350`）。于是后续由其他线程发起的**合法** join 再次进入 `ConsumeThreadUserId` 时 `live_.find(user_id)` 返回空，命中 `CHECK(t)`（同文件 348 行）→ `ThreadSanitizer: CHECK failed: ... "((t)) != (0)"` → 整个进程 abort。
-
-2. Windows：`WaitForSingleObject(自身线程句柄, INFINITE)` 永远等不到信号 → loop 线程永久死锁。
-
-3. FreeRTOS：join 信号量由目标线程自己 give，自取会永久阻塞在 `xSemaphoreTake`。
-
-Zephyr 后端不受影响：`z_impl_k_thread_join` 对自 join 返回 `-EDEADLK`。
-
-#### review 建议
-
-在平台层 `ns_platform_thread_join` 入口拦截自 join，返回 `NS_E_INVAL` 且不回收线程资源（由其他线程再次调用完成回收），使行为与 `ns_loop_stop` 已文档化的契约一致：
-
-- Linux/macOS：`if(pthread_equal(thread->thread, pthread_self()) != 0) return NS_E_INVAL;`
-- Windows：在 `ns_platform_thread_t` 增加目标线程自身 ID（由目标线程写入，`InterlockedExchange` 保证原子），join 时与 `GetCurrentThreadId()` 比对
-- FreeRTOS：`if(xTaskGetCurrentTaskHandle() == thread->task) return NS_E_INVAL;`
-- Zephyr：已安全，无需改动
-
-同时在 `include/nanosig/nanosig_port.h` 的 `ns_platform_thread_join` 上补 `@pre`，把“不得 join 自身、此时返回 `NS_E_INVAL`”写进公共契约。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-1. `cmake --preset linux-debug-tsan && cmake --build --preset linux-debug-tsan`
-2. `ctest --preset linux-debug-tsan -R nanosig_test_loop`
-3. 观察：`ThreadSanitizer: CHECK failed: sanitizer_thread_registry.cpp:348 "((t)) != (0)"`，调用栈为 `pthread_join` ← `ns_platform_thread_join` (platform/linux/port.c:347) ← `ns_loop_stop` (src/nanosig.c:315) ← `test_async_stop_in_slot` (test/unit/test_loop.c:426)。
-
-该失败在 master 上已经复现：`nightly` workflow 的 `linux-tsan` job 自 2026-10-18 起持续失败（run 39106875930、39218169382、39288768722）。
-
-Windows 等价场景：`ns_loop_stop` 在 slot 内调用 → `WaitForSingleObject(self, INFINITE)` → loop 线程永久挂起。
-
-#### 定位
-platform/linux/port.c:347
-platform/macos/port.c:376
-platform/windows/port.c:270
-platform/freertos/port.c:394
-src/nanosig.c:315
 
 <a id="PORT-021"></a>
 ### PORT-021: 平台文档仍描述重构前的原语
@@ -1088,8 +1036,6 @@ platform/README.md:225
 platform/windows/nanosig_platform_port.h:44
 platform/windows/port.c:443
 
----
-
 ## 现在关闭的问题
 
 <a id="PLATFORM-001"></a>
@@ -1381,6 +1327,65 @@ include/nanosig/nanosig_port.h:316-346
 platform/linux/port.c:199-219
 platform/macos/port.c:240-266
 platform/windows/port.c:151-170
+
+---
+
+<a id="PORT-030"></a>
+### PORT-030: `ns_platform_thread_join` 未拦截“join 自身”：POSIX 未定义行为，TSAN 下 abort 进程、Windows 下永久阻塞
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`ns_loop_stop` 在 `include/nanosig/nanosig_loop.h:154` 已文档化「**不得在 loop 自身线程（含 slot 回调）内调用**……违反本前提时行为未定义，**不保证返回错误**」。finding 所述问题仅在调用方违反该前提时出现，属用户错误而非库缺陷。按作者意见改为收紧契约 + 删除违约用例（`test/unit/test_loop.c` 的 `test_async_stop_in_slot`），未在平台层加防御。
+- **关闭日期**: 2026-10-20
+
+#### 问题描述
+
+`ns_platform_thread_join` 直接把目标线程句柄交给 `pthread_join`（Linux/macOS）、`WaitForSingleObject(..., INFINITE)`（Windows）、`xSemaphoreTake(..., portMAX_DELAY)`（FreeRTOS），没有检查“调用者就是目标线程”这一情形。
+
+触发路径：`ns_loop_stop` 在 loop 自身线程（slot 回调）内被调用时，`src/nanosig.c:315` 会 join 后台 worker 自身。`nanosig_loop.h` 已把该情形写为调用方前提（“不得在 loop 自身线程（含 slot 回调）内调用”），但平台层没有做防御，违反前提时后果不是“返回错误”而是：
+
+1. POSIX（Linux/macOS）：`pthread_join(self)` 是未定义行为。glibc 返回 EDEADLK，但 ThreadSanitizer 的 `pthread_join` 拦截器在**真实 join 之前**就调用 `ThreadConsumeTid` → `ThreadRegistry::ConsumeThreadUserId`，把目标线程的 user id 从 `live_` map 中 erase（compiler-rt `sanitizer_thread_registry.cpp:347-350`）。于是后续由其他线程发起的**合法** join 再次进入 `ConsumeThreadUserId` 时 `live_.find(user_id)` 返回空，命中 `CHECK(t)`（同文件 348 行）→ `ThreadSanitizer: CHECK failed: ... "((t)) != (0)"` → 整个进程 abort。
+
+2. Windows：`WaitForSingleObject(自身线程句柄, INFINITE)` 永远等不到信号 → loop 线程永久死锁。
+
+3. FreeRTOS：join 信号量由目标线程自己 give，自取会永久阻塞在 `xSemaphoreTake`。
+
+Zephyr 后端不受影响：`z_impl_k_thread_join` 对自 join 返回 `-EDEADLK`。
+
+#### review 建议
+
+在平台层 `ns_platform_thread_join` 入口拦截自 join，返回 `NS_E_INVAL` 且不回收线程资源（由其他线程再次调用完成回收），使行为与 `ns_loop_stop` 已文档化的契约一致：
+
+- Linux/macOS：`if(pthread_equal(thread->thread, pthread_self()) != 0) return NS_E_INVAL;`
+- Windows：在 `ns_platform_thread_t` 增加目标线程自身 ID（由目标线程写入，`InterlockedExchange` 保证原子），join 时与 `GetCurrentThreadId()` 比对
+- FreeRTOS：`if(xTaskGetCurrentTaskHandle() == thread->task) return NS_E_INVAL;`
+- Zephyr：已安全，无需改动
+
+同时在 `include/nanosig/nanosig_port.h` 的 `ns_platform_thread_join` 上补 `@pre`，把“不得 join 自身、此时返回 `NS_E_INVAL`”写进公共契约。
+
+#### 作者建议
+
+调用方违约，不在平台层兜底。收紧 `ns_loop_stop` 的契约：`include/nanosig/nanosig_loop.h` 的 `@pre` 改为「**不得在 loop 自身线程（含 slot 回调）内调用**……违反本前提时行为未定义，**不保证返回错误**」，并指引在 loop 自身线程内改用 `ns_loop_quit()`（异步、不等待线程退出）。同时删除违反该契约的用例 `test_async_stop_in_slot`——它覆盖的合法路径已由既有的 `test_async_quit_in_slot`（slot 内 quit + 他线程 stop）覆盖。→ 关闭-已拒绝
+
+#### 可重现的失败场景
+
+1. `cmake --preset linux-debug-tsan && cmake --build --preset linux-debug-tsan`
+2. `ctest --preset linux-debug-tsan -R nanosig_test_loop`
+3. 观察：`ThreadSanitizer: CHECK failed: sanitizer_thread_registry.cpp:348 "((t)) != (0)"`，调用栈为 `pthread_join` ← `ns_platform_thread_join` (platform/linux/port.c:347) ← `ns_loop_stop` (src/nanosig.c:315) ← `test_async_stop_in_slot` (test/unit/test_loop.c:426)。
+
+该失败在 master 上已经复现：`nightly` workflow 的 `linux-tsan` job 自 2026-10-18 起持续失败（run 39106875930、39218169382、39288768722）。
+
+Windows 等价场景：`ns_loop_stop` 在 slot 内调用 → `WaitForSingleObject(self, INFINITE)` → loop 线程永久挂起。
+
+#### 定位
+platform/linux/port.c:347
+platform/macos/port.c:376
+platform/windows/port.c:270
+platform/freertos/port.c:394
+src/nanosig.c:315
+
+---
 
 ---
 

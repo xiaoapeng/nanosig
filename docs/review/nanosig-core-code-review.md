@@ -147,10 +147,11 @@ entries:
       - "include/nanosig/nanosig_loop.h:133"
   - id: "CORE-018"
     module: "nanosig-core"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-20"
     location: "docs/review/nanosig-core-code-review.md#CORE-018"
     locations:
       - "src/nanosig.c:185"
@@ -175,56 +176,6 @@ entries:
 ---
 
 ## 现在打开的问题
-
-<a id="CORE-018"></a>
-### CORE-018: `ns_loop_quit`（他线程）与 `ns_loop_destroy` 之间无 happens-before 边：wakeup 关闭与信号并发，TSAN 报 data race
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-跨线程 `ns_loop_quit` 与 loop 线程内的 `ns_loop_destroy` 之间没有任何同步边：
-
-- `ns_loop_quit` (src/nanosig.c:272) → `ns_platform_wakeup_signal` → `write(eventfd)`
-- `ns_loop_destroy` (src/nanosig.c:185/190) → `ns_platform_wakeup_deinit` → `close(eventfd)` + `ns_platform_free(loop)`
-
-`ns_loop_quit` 文档标注为 MPM-safe，而 `ns_loop_destroy` 的 `@pre` 只禁止与 `ns_loop_create`/自身并发，**没有**禁止与 `ns_loop_quit` 并发；实际顺序上 quit 的 write 先于 close（eventfd 唤醒由内核保证），但 C 内存模型下没有 happens-before 边，`free(loop)` 对堆块的写与主线程读 `loop->wakeup` 的读构成真实数据竞争（TSAN 报 `ns_platform_free` 与 `ns_platform_wakeup_signal` 竞争，close/write 在 TSAN 内部 fd 状态表上亦报竞争）。
-
-后果：`nightly` 的 `linux-tsan` job 退出码 66（TSAN 报 race 的默认退出码），ctest 判定测试失败——这是 master nightly 自 2026-10-18 起持续失败的**另一个**独立原因（run 39106875930 只有这一条 data race，无自 join 崩溃）。
-
-#### review 建议
-
-二选一，需要作者裁决：
-
-A. **实现层补同步边（推荐）**：在 `ns_loop_t` 中加入保护 wakeup 生命周期的锁。`ns_loop_quit` 加锁 → 读 fd → write → 解锁；`ns_loop_destroy` 加锁 → close → 解锁 → free。锁的获取/释放天然提供 happens-before 边，同时消除 free 与并发读之间的 C 级数据竞争；`ns_loop_quit` 仍是 MPM-safe（只是多一次无竞争的加解锁）。
-
-B. **收紧契约**：在 `nanosig_loop.h` 明确 “`ns_loop_destroy` 不得与 `ns_loop_quit` 并发”，并修改 `test_cross_thread_quit_and_ownership`（test/unit/test_loop.c:177）——由主线程在 join worker 之后再 destroy，避免测试自身制造无同步的并发访问。
-
-注意本条与已关闭的 CORE-001 不是同一问题：CORE-001 是 “run 与 deinit 并发”，本条是 “quit 与 destroy 并发”，且 quit 被文档标注为 MPM-safe。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-1. `cmake --preset linux-debug-tsan && cmake --build --preset linux-debug-tsan`
-2. `ctest --preset linux-debug-tsan -R nanosig_test_loop`
-3. 观察：TSAN 报 2 条 data race：
-   - `SUMMARY: data race platform/linux/port.c:128 in ns_platform_wakeup_deinit`（close 与 write 在 eventfd 上竞争）
-   - `SUMMARY: data race platform/linux/port.c:90 in ns_platform_free`（free(loop) 与主线程读 loop->wakeup 竞争）
-   栈顶分别是 `ns_loop_destroy` (src/nanosig.c:185/190) ← `loop_thread_entry` (test/unit/test_loop.c:145) 与 `ns_loop_quit` (src/nanosig.c:272) ← `test_cross_thread_quit_and_ownership` (test/unit/test_loop.c:177)。
-4. 测试进程退出码 66，ctest 判定失败。
-
-#### 定位
-src/nanosig.c:185
-src/nanosig.c:190
-src/nanosig.c:272
-platform/linux/port.c:128
-platform/linux/port.c:141
-test/unit/test_loop.c:177
 
 <a id="CORE-016"></a>
 ### CORE-016: 超出 ring 半容量的 payload 被 emit 报成 `NS_E_INVAL`，该上限未在任何公开文档中说明
@@ -314,8 +265,6 @@ src/nanosig.c:140
 src/nanosig.c:156
 src/nanosig.c:159
 include/nanosig/nanosig_loop.h:74
-
----
 
 ## 现在关闭的问题
 
@@ -564,3 +513,59 @@ include/nanosig/nanosig_loop.h:133
 
 - **关闭日期**: 2026-10-18
 - **状态**: 关闭-已拒绝
+
+<a id="CORE-018"></a>
+### CORE-018: `ns_loop_quit`（他线程）与 `ns_loop_destroy` 之间无 happens-before 边：wakeup 关闭与信号并发，TSAN 报 data race
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：`ns_loop_destroy` 在 `include/nanosig/nanosig_loop.h:90` 已文档化「**不得与 `ns_loop_quit()` 并发**」，`ns_loop_quit` 的 `@note` 亦交叉引用该约束。这与该函数既有的 `@pre`（断开全部 signal connection、确保无 in-flight `ns_signal_emit_raw()` 持有 loop 指针）属于同一类生命周期约束——wakeup 句柄在被销毁前不得有并发使用者。finding 所述问题仅在调用方违反该前提时出现，属用户错误而非库缺陷。已按作者意见收紧契约并修正违约用例（`test/unit/test_loop.c` 的 `test_cross_thread_quit_and_ownership` 增加 quit→destroy 握手）。
+- **关闭日期**: 2026-10-20
+
+#### 问题描述
+
+跨线程 `ns_loop_quit` 与 loop 线程内的 `ns_loop_destroy` 之间没有任何同步边：
+
+- `ns_loop_quit` (src/nanosig.c:272) → `ns_platform_wakeup_signal` → `write(eventfd)`
+- `ns_loop_destroy` (src/nanosig.c:185/190) → `ns_platform_wakeup_deinit` → `close(eventfd)` + `ns_platform_free(loop)`
+
+`ns_loop_quit` 文档标注为 MPM-safe，而 `ns_loop_destroy` 的 `@pre` 只禁止与 `ns_loop_create`/自身并发，**没有**禁止与 `ns_loop_quit` 并发；实际顺序上 quit 的 write 先于 close（eventfd 唤醒由内核保证），但 C 内存模型下没有 happens-before 边，`free(loop)` 对堆块的写与主线程读 `loop->wakeup` 的读构成真实数据竞争（TSAN 报 `ns_platform_free` 与 `ns_platform_wakeup_signal` 竞争，close/write 在 TSAN 内部 fd 状态表上亦报竞争）。
+
+后果：`nightly` 的 `linux-tsan` job 退出码 66（TSAN 报 race 的默认退出码），ctest 判定测试失败——这是 master nightly 自 2026-10-18 起持续失败的**另一个**独立原因（run 39106875930 只有这一条 data race，无自 join 崩溃）。
+
+#### review 建议
+
+二选一，需要作者裁决：
+
+A. **实现层补同步边（推荐）**：在 `ns_loop_t` 中加入保护 wakeup 生命周期的锁。`ns_loop_quit` 加锁 → 读 fd → write → 解锁；`ns_loop_destroy` 加锁 → close → 解锁 → free。锁的获取/释放天然提供 happens-before 边，同时消除 free 与并发读之间的 C 级数据竞争；`ns_loop_quit` 仍是 MPM-safe（只是多一次无竞争的加解锁）。
+
+B. **收紧契约**：在 `nanosig_loop.h` 明确 “`ns_loop_destroy` 不得与 `ns_loop_quit` 并发”，并修改 `test_cross_thread_quit_and_ownership`（test/unit/test_loop.c:177）——由主线程在 join worker 之后再 destroy，避免测试自身制造无同步的并发访问。
+
+注意本条与已关闭的 CORE-001 不是同一问题：CORE-001 是 “run 与 deinit 并发”，本条是 “quit 与 destroy 并发”，且 quit 被文档标注为 MPM-safe。
+
+#### 作者建议
+
+同一条原则：`ns_loop_destroy` 与 `ns_loop_quit` 并发属调用方违约，不在库内加锁兜底（wakeup 句柄也被 emit 热路径使用，加锁会伤热路径）。收紧 `nanosig_loop.h` 中 `ns_loop_destroy` 的 `@pre`（不得与 `ns_loop_quit` 并发），并在 `ns_loop_quit` 的 `@note` 交叉引用；同时修正 `test_cross_thread_quit_and_ownership`，让发起 quit 的线程在 quit 返回后再放行 worker 销毁 loop（握手建立 happens-before 边）。→ 关闭-已拒绝
+
+#### 可重现的失败场景
+
+1. `cmake --preset linux-debug-tsan && cmake --build --preset linux-debug-tsan`
+2. `ctest --preset linux-debug-tsan -R nanosig_test_loop`
+3. 观察：TSAN 报 2 条 data race：
+   - `SUMMARY: data race platform/linux/port.c:128 in ns_platform_wakeup_deinit`（close 与 write 在 eventfd 上竞争）
+   - `SUMMARY: data race platform/linux/port.c:90 in ns_platform_free`（free(loop) 与主线程读 loop->wakeup 竞争）
+   栈顶分别是 `ns_loop_destroy` (src/nanosig.c:185/190) ← `loop_thread_entry` (test/unit/test_loop.c:145) 与 `ns_loop_quit` (src/nanosig.c:272) ← `test_cross_thread_quit_and_ownership` (test/unit/test_loop.c:177)。
+4. 测试进程退出码 66，ctest 判定失败。
+
+#### 定位
+src/nanosig.c:185
+src/nanosig.c:190
+src/nanosig.c:272
+platform/linux/port.c:128
+platform/linux/port.c:141
+test/unit/test_loop.c:177
+
+---
+
+---
