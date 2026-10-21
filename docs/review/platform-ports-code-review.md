@@ -318,6 +318,45 @@ entries:
       - "platform/windows/port.c:270"
       - "platform/freertos/port.c:394"
       - "src/nanosig.c:328"
+  - id: "PORT-031"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-031"
+    locations:
+      - "platform/macos/port.c:349"
+      - "platform/macos/port.c:390"
+      - "platform/linux/port.c:320"
+      - "src/nanosig.c:91"
+      - "include/nanosig/nanosig_port.h:442"
+  - id: "PORT-032"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-032"
+    locations:
+      - "platform/linux/port.c:339"
+      - "platform/linux/port.c:344"
+      - "platform/macos/port.c:368"
+      - "platform/windows/port.c:269"
+      - "platform/windows/port.c:271"
+      - "platform/freertos/port.c:387"
+      - "platform/zephyr/port.c:282"
+      - "include/nanosig/nanosig_port.h:480"
+  - id: "PORT-033"
+    module: "platform-ports"
+    status: "open"
+    severity: "high"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-033"
+    locations:
+      - "src/ns_broker.c:551"
+      - "platform/README.md:67"
 ---
 
 # Platform Ports 代码审查报告
@@ -354,6 +393,125 @@ entries:
 ---
 
 ## 现在打开的问题
+
+<a id="PORT-031"></a>
+### PORT-031: macOS `pthread_attr_setstacksize` 拒绝非 4096 倍数，但 `ns_platform_thread_stack_range` 发布的区间包含这些值
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+Darwin 的 `pthread_attr_setstacksize` **拒绝**（EINVAL）任何不是 4096 整数倍的尺寸，而不是向上取整。
+
+但 `ns_platform_thread_stack_range` 在 POSIX 后端发布 `min = PTHREAD_STACK_MIN`、`max = SIZE_MAX`，即宣称"区间内任意值都���受"。于是落在区间内部、但不是 4096 倍数的值（例如 10000、20000、100000）会通过 `ns_loop_config_validate` 的区间检查，在 `ns_loop_create` 阶段被放行，到 `ns_loop_start` 才被 `ns_platform_thread_init` 拒绝并返回 `NS_E_INVAL` —— 没有任何诊断信息。
+
+`include/nanosig/nanosig_loop.h:53` 的字段注释承诺"超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`"，隐含"区间内的值可用"；`platform/README.md:34` 声明"后端按自身粒度向上取整" —— 在 macOS 上这两条都不成立。
+
+#### review 建议
+
+两处都要改：
+
+1. POSIX 后端在调用 `pthread_attr_setstacksize` 之前把请求**向上取整到后端粒度**（Darwin：4096 的整数倍；取整后再用取整后的值复核 `PTHREAD_STACK_MIN`），这样就兑现了"实际分配的栈永远不小于请求值"的公共契约（`include/nanosig/nanosig_port.h:463`）。取整粒度应当是一个后端常量，而不是散落的魔数。
+
+2. `ns_platform_thread_stack_range` 的语义要与之自洽：要么发布真实可接受的集合，要么在文档中明确"区间是必要条件而非充分条件"。
+
+3. `platform/README.md:34` 与 `include/nanosig/nanosig_port.h:463` 的"向上取整"表述在 (1) 落地前是错的，需同步。
+
+Linux 侧（glibc）的 `pthread_attr_setstacksize` 只检查 `size < PTHREAD_STACK_MIN`，大概率无此问题，但需在 Linux CI 上用一个非页倍数值确认后再关闭本条。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+macOS（本机实测，x86_64 与 arm64 均成立）：
+
+```
+PTHREAD_STACK_MIN = 8192
+setstacksize(   8192) -> 0    OK
+setstacksize(  10000) -> 22   EINVAL
+setstacksize(  16384) -> 0    OK
+setstacksize(  20480) -> 0    OK
+setstacksize( 100000) -> 22   EINVAL
+setstacksize(   4096) -> 22   EINVAL
+```
+
+库级复现：`ns_init()` → `cfg = NS_LOOP_CONFIG_DEFAULT(); cfg.stack_size = 100000;` → `ns_loop_create(&loop, &cfg)` 返回 `NS_OK`（放行）→ `ns_loop_start(loop)` 返回 `NS_E_INVAL`（拒绝，且无诊断）。
+
+#### 定位
+platform/macos/port.c:349
+platform/macos/port.c:390
+platform/linux/port.c:320
+src/nanosig.c:91
+include/nanosig/nanosig_port.h:442
+
+<a id="PORT-032"></a>
+### PORT-032: 线程对象状态重置排在参数校验之后，init 失败后 join 在 4/5 后端仍是 UB 或永久阻塞
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+本次改动为"init 失败后 join 返回 `NS_E_INVAL`"引入了状态标记（POSIX 的 `created`、FreeRTOS 的 `join_sem == NULL`、Windows 的 `thread == NULL`），但**状态重置被放在了参数校验之后**：
+
+- `platform/linux/port.c:339` / `platform/macos/port.c:368`：`if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;` 在 `thread->created = 0;`（:344 / :373）**之前**返回 → `created` 保持调用方存储里的旧值。
+- `platform/freertos/port.c:387`：同一顺序 → `join_sem` 保持旧值。
+- `platform/windows/port.c:269`：同一顺序；且新加的栈大小校验（:271-275）也在 `thread->thread` 赋值（:281）之前返回 → HANDLE 保持旧值。
+
+只有 Zephyr 做对了：`platform/zephyr/port.c:282` 的 `*thread = NULL;` 在 `entry == NULL` 检查**之前**。
+
+后果（`entry == NULL` 这条是显式处理的错误路径，不是未文档化的前提）：调用方传入未初始化的线程存储 → init 返回 `NS_E_INVAL` → 随后的 join 拿到的是垃圾状态：
+
+| 后端 | 后续 join 行为 |
+|---|---|
+| Linux / macOS | `pthread_join(垃圾 pthread_t)` → 未定义行为 |
+| Windows | `WaitForSingleObject(垃圾 HANDLE, INFINITE)` → 永久阻塞或崩溃 |
+| FreeRTOS | `xSemaphoreTake(垃圾句柄, portMAX_DELAY)` → 永久阻塞 |
+
+`include/nanosig/nanosig_port.h:480` 明确承诺"`ns_platform_thread_init` **失败**后不得视为线程已创建：此时 join 返回 `NS_E_INVAL`（不阻塞、不崩溃）。五个后端一致。" —— 该承诺在 4/5 后端为假。
+
+新增测试之所以没抓到：`test/unit/test_platform_backend.c:158` 复用的是同一个 `thread` 变量，而它在此之前已被成功创建并 join 过（:140-149），`created` 已被清零；`entry == NULL` 那条（:116）之后从未跟 join。
+
+#### review 建议
+
+1. 把状态重置挪到 `ns_platform_thread_init` 的**最前面**（`thread == NULL` 检查之后、任何其它提前返回之前），五个后端统一照 Zephyr 的写法：`thread->created = 0;`（POSIX）、`thread->task = NULL; thread->join_sem = NULL;`（FreeRTOS）、`thread->thread = NULL;`（Windows）。
+
+2. 补测试：每种失败模式用**全新的**线程存储（先 memset 成毒值），覆盖 `entry == NULL`、`stack_size` 低于 `min`、`stack_size` 高于 `max` 三条路径，断言随后的 `ns_platform_thread_join` 一律返回 `NS_E_INVAL`。当前测试复用同一个变量，正是它掩盖了这个缺陷。
+
+3. 公共头 `include/nanosig/nanosig_port.h:480` 的"五个后端一致"表述在 (1) 落地前是错的，需同步。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+macOS 实测：
+
+```c
+ns_platform_thread_t t;
+memset(&t, 0xFF, sizeof(t));                        /* 未初始化的调用方存储 */
+ns_platform_thread_init(&t, NULL, NULL, "x", 0u);   /* -> NS_E_INVAL */
+printf("t.created = %d\n", t.created);              /* -> -1（残留值，应为 0） */
+/* 此刻 ns_platform_thread_join(&t) 会对垃圾 pthread_t 调 pthread_join → UB */
+```
+
+Windows 另有一条本次新增的触发路径：`ns_platform_thread_init(&t, entry, arg, "x", 1024)`（< 16 KB 策略下限）→ `NS_E_INVAL`，而 `t.thread` 从未被赋值 → 随后的 join 对垃圾 HANDLE 调 `WaitForSingleObject`。
+
+#### 定位
+platform/linux/port.c:339
+platform/linux/port.c:344
+platform/macos/port.c:368
+platform/windows/port.c:269
+platform/windows/port.c:271
+platform/freertos/port.c:387
+platform/zephyr/port.c:282
+include/nanosig/nanosig_port.h:480
 
 <a id="PORT-021"></a>
 ### PORT-021: 平台文档仍描述重构前的原语
@@ -833,6 +991,69 @@ platform/README.md:72
 platform/README.md:225
 platform/windows/nanosig_platform_port.h:44
 platform/windows/port.c:443
+
+<a id="PORT-033"></a>
+### PORT-033: `NANOSIG_BROKER_STACK_SIZE` 没有任何范围校验，文档推荐的 4096 在 host 构建上让 `ns_init()` 直接失败
+
+- **状态**: 打开
+- **严重度**: 🟠 高
+- **类型**: bug
+
+#### 问题描述
+
+`NANOSIG_BROKER_STACK_SIZE` 被原样注入并直接交给 `ns_platform_thread_init`（`src/ns_broker.c:551`），**没有与后端自身可接受区间做任何校验**。一个后端会拒绝的值，于是变成 `ns_init()` 返回 `NS_E_INVAL` —— 整个库初始化失败，且没有任何诊断信息或恢复路径。
+
+问题在于这个旋钮是**跨目标共享的单一编译期常量**，而各平台的最小栈大小差异很大：
+
+| 平台 | 最小可接受请求 | 4096 是否可接受 |
+|---|---|---|
+| macOS x86_64 | 8192（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
+| macOS arm64 | 16384（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
+| Linux | 16384 | ✗ 拒绝 |
+| FreeRTOS | 1024 words | ✓ 接受 |
+| Zephyr | 512（nanosig 策略值） | ✓ 接受 |
+
+而 `platform/README.md:67` 与 `docs/specs/深度访谈-线程栈大小参数规格.md:163` 恰恰把 **4096** 作为推荐值写给用户（"嵌入式目标若要显式锁死，建议设 4096"）。在嵌入式目标上它是对的；同一个值搬到 host 构建上就让库起不来。
+
+另外，arm64 macOS 上 4096 会被 `pthread_attr_setstacksize` **静默向上取整**到 16 KB —— 也就是说这个"编译期锁死"在不同架构上锁住的根本不是同一个值。
+
+#### review 建议
+
+1. **在构建期校验，而不是运行期**：顶层 `CMakeLists.txt` 里当 `NANOSIG_BROKER_STACK_SIZE != 0` 时，用 `check_c_source_compiles` 探测当前平台的最小可接受栈大小，低于它就 `FATAL_ERROR`（Zephyr 侧已有 Kconfig `range`，可参照）。这样配错在 configure 阶段就暴露，而不是让 `ns_init()` 在运行期莫名其妙地失败。
+
+2. 若走运行期校验路线，则需要把后端最小值暴露到 `src/` —— 而这与"src/ 不做平台判断"的硬约束冲突，故 (1) 是更干净的方案。
+
+3. 修正 `platform/README.md:67` 与规格文档的推荐值：要么改成一个跨平台可接受的值（如 65536），要么明确写清"该值必须 ≥ 目标平台的最小栈大小，且仅适用于嵌入式目标"。
+
+4. 顺带修正"编译期锁死"的表述 —— 在会向上取整的平台上，锁住的是"请求值"而非"实际栈大小"，这个区别应写进文档。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+macOS 实测（arm64 构建，`-DNANOSIG_BROKER_STACK_SIZE=4096`）：
+
+```
+$ cmake -S . -B build -DNANOSIG_PLATFORM=host -DNANOSIG_BROKER_STACK_SIZE=4096 -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build --target nanosig_test_broker_lifecycle
+$ ./build/nanosig_test_broker_lifecycle
+EXPECT failed at test/unit/test_broker_lifecycle.c:118: ns_init() == NS_OK
+exit=1
+```
+
+即 `ns_init()` 返回 `NS_E_INVAL`，整个库无法初始化。
+
+#### 定位
+
+src/ns_broker.c:551
+CMakeLists.txt:55
+CMakeLists.txt:172
+platform/README.md:67
+
+
+---
 
 ## 现在关闭的问题
 
