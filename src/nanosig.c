@@ -74,9 +74,21 @@ static int ns_is_power_of_two(size_t value)
 
 static int ns_loop_config_validate(const ns_loop_config_t *config)
 {
+    size_t stack_min = 0u;
+    size_t stack_max = 0u;
+    int rc;
+
     if(config == NULL) return NS_E_INVAL;
     if(config->flags != 0u) return NS_E_INVAL;
     if(!ns_is_power_of_two((size_t)config->queue_byte_capacity)) return NS_E_INVAL;
+
+    /* stack_size == 0 = 后端默认，不受区间约束。 */
+    if(config->stack_size == 0u) return NS_OK;
+
+    rc = ns_platform_thread_stack_range(&stack_min, &stack_max);
+    if(rc != NS_OK) return rc;
+    if(config->stack_size < stack_min) return NS_E_INVAL;
+    if(config->stack_size > stack_max) return NS_E_INVAL;
 
     return NS_OK;
 }
@@ -297,7 +309,8 @@ int ns_loop_start(ns_loop_t *loop)
         &loop->async_thread,
         ns_loop_async_entry,
         loop,
-        loop->config.debug_name ? loop->config.debug_name : "ns-loop");
+        loop->config.debug_name ? loop->config.debug_name : "ns-loop",
+        loop->config.stack_size);
     if(rc != NS_OK) return rc;
 
     loop->async_started = 1;

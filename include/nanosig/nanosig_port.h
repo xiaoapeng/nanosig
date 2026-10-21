@@ -428,31 +428,58 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex);
 int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us);
 
 /**
+ * @brief 查询当前后端接受的线程栈大小区间。
+ *
+ * 供调用方在把线程栈调小（例如嵌入式场景省 RAM）之前确认合法下界，也供契约测试
+ * 用同一份判据覆盖全部后端。返回值是**后端策略**：POSIX 的下界来自
+ * `PTHREAD_STACK_MIN`，FreeRTOS 的下界来自 `configMINIMAL_STACK_SIZE`（words）
+ * 对应的字节数；Windows 与 Zephyr 没有平台级最小栈保证，其下界是 nanosig 自定的
+ * 策略值，只用于**拒绝明显过小的请求**，不保证不会栈溢出。
+ *
+ * @param min_out 输出**最小可接受**的栈大小请求（字节）；可为 `NULL`。
+ *        `*min_out - 1` 必然被后端拒绝。后端会按自身粒度向上取整请求值
+ *        （FreeRTOS 按 `StackType_t`），故本值是"最小可接受请求"而非"下限字节数"。
+ * @param max_out 输出最大可接受栈大小（字节）；可为 `NULL`。无实际上限时为 `SIZE_MAX`。
+ * @return `NS_OK` 表示成功，失败时返回负数状态码。
+ */
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out);
+
+/**
  * @brief 初始化平台线程并立即启动。
  *
  * @warning 非幂等：重复 init 而不先 `ns_platform_thread_join` 会覆盖字段并泄漏第一次
  *          分配的平台资源。
  * @pre 调用方必须保证 `thread` 在 `ns_platform_thread_join` 返回前一直有效。
  * @note Zephyr 后端的 `ns_platform_thread_t` 是由 port 分配、`ns_platform_thread_join`
- *       回收的不透明对象（内含内核栈），因此 init 可能返回 `NS_E_NOMEM`；其余后端的
- *       该类型是调用方存储，无额外对齐要求。
+ *       回收的不透明对象（内核栈由 `k_thread_stack_alloc` 单独分配），因此 init 可能
+ *       返回 `NS_E_NOMEM`；**全部后端**的该类型都不再需要特殊对齐。
  *
  * @param thread 线程存储；Zephyr 后端为 port 分配的对象句柄。
  * @param entry 线程入口。
  * @param arg 传给入口的参数。
  * @param debug_name 调试名称；平台层不接管字符串所有权。
+ * @param stack_size 线程栈大小，单位**字节**。`0` 表示使用后端默认栈大小。
+ *        小于 `ns_platform_thread_stack_range` 给出的下界时返回 `NS_E_INVAL` 且
+ *        **不创建线程**。实际分配的栈永远不小于请求值（FreeRTOS 向上取整到
+ *        `StackType_t` 整数倍）。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name);
+    const char *debug_name,
+    size_t stack_size);
 
 /**
  * @brief 阻塞等待平台线程退出，并释放其持有的平台资源。
  *
  * 返回后 `thread` 存储仍归调用方所有，但其内容不可再用（除非再次 init）。
+ *
+ * @note `ns_platform_thread_init` **失败**后不得视为线程已创建：此时 join 返回
+ *       `NS_E_INVAL`（不阻塞、不崩溃）。五个后端一致。
+ * @note Zephyr 后端 join 失败（如自 join）时**不回收**线程对象与栈 —— 目标线程
+ *       可能仍在运行，回收会造成 use-after-free。句柄保留，由调用方处理。
  *
  * @param thread 调用方拥有的线程存储。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

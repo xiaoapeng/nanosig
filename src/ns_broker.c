@@ -41,6 +41,14 @@
 #define NS_DBG_MODULE_LEVEL_BROKER NS_DBG_SYS
 #endif
 
+/* broker（timer）线程的栈大小，单位字节。0 = 后端默认栈大小。
+   该值由构建系统注入（CMake cache 变量 NANOSIG_BROKER_STACK_SIZE；Zephyr 侧由
+   Kconfig 符号转发为同名宏）；注入缺失即编译失败，避免"编译期锁死"退化成静默
+   回落到后端默认。 */
+#ifndef NANOSIG_BROKER_STACK_SIZE
+#error "NANOSIG_BROKER_STACK_SIZE must be injected by the build system"
+#endif
+
 #ifdef NANOSIG_TEST
 /* Test hook: non-NS_OK value injects waitset_wait failure.
  * Set before ns_init() to verify broker thread survives waitset errors. */
@@ -540,7 +548,8 @@ int ns_broker_global_init(void)
     rc = ns_timer_mgr_global_init(ns_broker_notify, broker);
     if(rc != NS_OK) goto out_op_lock;
 
-    rc = ns_platform_thread_init(&broker->thread, ns_broker_run, broker, "nanosig-broker");
+    rc = ns_platform_thread_init(&broker->thread, ns_broker_run, broker,
+                                 "nanosig-broker", NANOSIG_BROKER_STACK_SIZE);
     if(rc != NS_OK) goto out_timer_mgr;
 
     g_broker = broker;

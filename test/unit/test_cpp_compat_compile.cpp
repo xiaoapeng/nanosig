@@ -20,6 +20,7 @@
  */
 
 #include <cstddef>
+#include <cstdlib>
 #include <type_traits>
 
 /* ── Individual headers ────────────────────────────────────────── */
@@ -205,7 +206,11 @@ static void cpp_test_loop_config_default(void)
     (void)cfg.queue_byte_capacity;
     (void)cfg.flags;
     (void)cfg.debug_name;
-}
+    static_assert(sizeof(cfg.stack_size) == sizeof(size_t),
+        "ns_loop_config_t::stack_size must be size_t");
+    if(cfg.stack_size != 0u) {
+        std::abort();  /* 默认配置的 stack_size 必须是 0（= 后端默认栈大小） */
+    }}
 
 /* ── Test: ns_memory_order_t enum ─────────────────────────────── */
 

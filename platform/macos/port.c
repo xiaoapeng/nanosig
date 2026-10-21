@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -345,25 +346,60 @@ static void *ns_macos_thread_main(void *arg)
     return NULL;
 }
 
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
+{
+    if(min_out != NULL) *min_out = (size_t)PTHREAD_STACK_MIN;
+    if(max_out != NULL) *max_out = SIZE_MAX;
+    return NS_OK;
+}
+
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name)
+    const char *debug_name,
+    size_t stack_size)
 {
+    pthread_attr_t attr;
     int rc;
 
     (void)debug_name;
 
     if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
+    /* entry/arg 必须在 pthread_create 之前就位：trampoline 一启动就会读它们。 */
     thread->entry = entry;
     thread->arg = arg;
-    rc = pthread_create(&thread->thread, NULL, ns_macos_thread_main, thread);
+    thread->created = 0;
+
+    if(stack_size == 0u){
+        rc = pthread_create(&thread->thread, NULL, ns_macos_thread_main, thread);
+        if(rc != 0){
+            return (rc == EAGAIN) ? NS_E_NOMEM : NS_E_INVAL;
+        }
+        thread->created = 1;
+        return NS_OK;
+    }
+
+    /* 下界判定交给 pthread_attr_setstacksize 自身：它对 size < PTHREAD_STACK_MIN
+       返回 EINVAL。PTHREAD_STACK_MIN 在部分 libc 上是运行期值，不是常量表达式，
+       故不做静态断言。 */
+    rc = pthread_attr_init(&attr);
+    if(rc != 0) return NS_E_NOMEM;
+
+    rc = pthread_attr_setstacksize(&attr, stack_size);
+    if(rc != 0){
+        (void)pthread_attr_destroy(&attr);
+        return (rc == ENOMEM) ? NS_E_NOMEM : NS_E_INVAL;
+    }
+
+    rc = pthread_create(&thread->thread, &attr, ns_macos_thread_main, thread);
+    (void)pthread_attr_destroy(&attr);
     if(rc != 0){
         return (rc == EAGAIN) ? NS_E_NOMEM : NS_E_INVAL;
     }
 
+    thread->created = 1;
     return NS_OK;
 }
 
@@ -371,7 +407,11 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
     int rc;
 
-    if(thread == NULL) return NS_E_INVAL;
+    if((thread == NULL) || (thread->created == 0)) return NS_E_INVAL;
+
+    /* 先清标记（防重复 join）。不能在此清 entry/arg —— 目标线程可能还在
+       trampoline 里读它们。 */
+    thread->created = 0;
 
     rc = pthread_join(thread->thread, NULL);
     return (rc == 0) ? NS_OK : NS_E_INVAL;

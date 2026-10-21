@@ -65,8 +65,10 @@ static void platform_contract_accept_caller_storage(void)
     rc |= ns_platform_mutex_unlock(&mutex);
     rc |= ns_platform_mutex_deinit(&mutex);
 
-    rc |= ns_platform_thread_init(&thread, thread_fn, NULL, "contract");
+    rc |= ns_platform_thread_init(&thread, thread_fn, NULL, "contract", 0u);
     rc |= ns_platform_thread_join(&thread);
+
+    rc |= ns_platform_thread_stack_range(NULL, NULL);
 
     rc |= ns_platform_waitset_init(&waitset);
     rc |= ns_platform_waitset_deinit(&waitset);

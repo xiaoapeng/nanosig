@@ -19,12 +19,62 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 - wakeup：`init`、`deinit`、signal、单个等待。
 - 同步：mutex 的 `init`、`deinit`、加锁和解锁。
 - 时间：单调微秒时钟。
-- 线程：`init`、join（`ns_platform_thread_join` 保留 join 命名：它确实阻塞至线程结束）。
+- 线程：`init`、join（`ns_platform_thread_join` 保留 join 命名：它确实阻塞至线程结束）、
+  栈大小上下限查询（`ns_platform_thread_stack_range`）。
 
 平台对象（wakeup / mutex / thread / waitset）**全部由调用方拥有存储**：
 `ns_platform_*_init` 在调用方给出的对象上初始化，`ns_platform_*_deinit` 释放其内部资源，
 两者都**不**分配或释放对象本身。对应的类型由构建内头
 `platform/<os>/nanosig_platform_port.h` 以**透明别名**形式提供（见“平台类型注入”节）。
+（唯一例外：Zephyr 后端的线程对象由 port 分配 —— 见“Zephyr 后端”一节。）
+
+## 线程栈大小
+
+`ns_platform_thread_init` 的第 5 个参数 `stack_size` 指定线程栈大小，单位**字节**；
+`0` 表示使用后端默认栈大小。实际分配的栈**永远不小于请求值**（后端按自身粒度向上取整）。
+低于后端可接受下界的请求返回 `NS_E_INVAL` 且**不创建线程**。
+
+`ns_platform_thread_stack_range(&min, &max)` 发布该后端的可接受区间：
+
+- `min` 是**最小可接受请求**（字节），`*min - 1` 必然被拒。
+- `max` 是最大可接受请求（字节）；无实际上限时为 `SIZE_MAX`。
+
+| 后端 | `stack_size == 0` 的默认 | 非 0 时怎么用 | 下限来源 |
+|------|------------------------|--------------|---------|
+| Linux | OS 默认（`pthread_create` 传 `NULL` attr） | `pthread_attr_setstacksize` | `PTHREAD_STACK_MIN`（平台保证；glibc ≥ 2.34 是运行期值，故**不做静态断言**） |
+| macOS | OS 默认（`NULL` attr） | 同 Linux | 同 Linux |
+| Windows | OS 默认（`_beginthreadex(..., 0u, ...)`） | 直接作为 `_beginthreadex` 第 2 参 | **nanosig 策略值 16 KB**（见下） |
+| FreeRTOS | 1024 words（`StackType_t` 单位） | 字节 → words，**向上取整** | `configMINIMAL_STACK_SIZE`（words，**FreeRTOS 惯例，`xTaskCreate` 并不强制**） |
+| Zephyr | 4096 字节 | `k_thread_stack_alloc` | **nanosig 策略值 512 B**（见下） |
+
+**Windows 下限是 nanosig 策略值，不是 Win32 平台保证**：`_beginthreadex` / `CreateThread`
+没有公开的最小栈大小契约，且 Win32 线程栈默认**不带 guard page** —— 栈过小不会立刻
+失败，而是静默溢栈踩坏相邻内存。本下限只用于拒绝明显过小的请求，**不能保证不溢出**。
+
+**Zephyr 下限同理是 nanosig 策略值**：Zephyr 3.7 没有 `Z_MIN_THREAD_STACK_SIZE`，
+`k_thread_stack_alloc` 自身也不做任何下限检查，过小的栈会被静默分配然后运行时溢栈。
+
+**FreeRTOS 的 `min` 不是"下限字节数"**：请求会向上取整到 `StackType_t` 的整数倍，
+所以 `floor_bytes - sizeof(StackType_t)` 这一档仍会被补回 floor 而被接受。
+`min` 是最小**可接受请求**，`min - 1` 才必然被拒。
+
+### broker 线程的栈
+
+broker 线程（驱动 timer manager、派发 watcher 事件）的栈大小由**编译期**常量
+`NANOSIG_BROKER_STACK_SIZE` 决定，单位字节，`0` = 平台默认。该常量由构建系统注入：
+
+- CMake 构建：顶层 `CMakeLists.txt` 的同名 cache 变量
+  （`-DNANOSIG_BROKER_STACK_SIZE=4096`）。
+- Zephyr 构建：应用 `prj.conf` 的 `CONFIG_NANOSIG_BROKER_STACK_SIZE`。
+
+注入缺失即**编译失败**（`src/ns_broker.c` 的 `#error`），不会静默回落到平台默认。
+
+> **broker 线程会执行用户回调**：`watcher->handler` 直接在 broker 线程上调用
+> （`src/ns_broker.c`）。调小 broker 栈前必须确认用户 handler 的最深调用不会溢栈。
+> broker 自身的固定栈开销（用户帧之前）约 512 B（@64-bit）：`completions[16]`
+> 与 Zephyr waitset 的 `active[32]` 会同时存活。
+> 可观测手段：Zephyr 用 `k_thread_stack_space_get()`（需 `CONFIG_THREAD_STACK_INFO`），
+> FreeRTOS 用 `uxTaskGetStackHighWaterMark()`。
 
 ## waitset 原语
 
@@ -99,7 +149,8 @@ macOS 后端：
 
 Windows 后端：
 
-- 线程使用 CreateThread / WaitForSingleObject(join)。
+- 线程使用 `_beginthreadex` / WaitForSingleObject(join)。栈大小作为
+  `_beginthreadex` 的第 2 个参数（字节）；下限是 nanosig 策略值，见“线程栈大小”一节。
 - wakeup 使用 auto-reset event。
 - 单 wakeup 等待使用 WaitForSingleObject 或等价机制。
 - 锁使用 SRWLOCK 或等价 mutex 原语。
@@ -113,7 +164,8 @@ Windows 后端：
 FreeRTOS 后端：
 
 - 线程使用 `xTaskCreate`；`ns_platform_thread_join` 用一次性 join 信号量等待任务结束，
-  被 join 的任务在 `vTaskDelete(NULL)` 之前 signal 该信号量。
+  被 join 的任务在 `vTaskDelete(NULL)` 之前 signal 该信号量。栈大小按**字节**传入，
+  后端向上取整到 `StackType_t` 的整数倍后作为任务深度（words）。
 - mutex 使用 `xSemaphoreCreateMutex`（`xSemaphoreTake` / `xSemaphoreGive`）。
 - wakeup 使用**每对象独立的二值信号量**；`ns_platform_wakeup_signal` 调用
   `xSemaphoreGive`（已满视为成功）。**禁止**使用 task notification 实现 wakeup：
@@ -270,14 +322,16 @@ Zephyr 后端是 v1 的第五个后端，使用 `k_poll` 语义，面向 Zephyr 
 `primitive` 承载 `k_poll` 可等待对象指针。
 
 - 内存使用 `k_malloc` / `k_free`；`ns_platform_alloc` 即 `k_malloc`。
-- 线程使用 `k_thread_create` / `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
-  内嵌在 `struct ns_platform_thread` 中（不依赖 `CONFIG_DYNAMIC_THREAD`）。
-- 线程对象是**唯一不由调用方拥有存储**的平台对象：它内嵌内核栈、对齐要求为
-  `Z_KERNEL_STACK_OBJ_ALIGN`，故由 port 按该对齐分配（`ns_platform_thread_init`）、
-  由 `ns_platform_thread_join` 回收；调用方仍只声明 `ns_platform_thread_t` 变量并取
-  地址。这样该对齐要求不会经堆上的 `ns_loop_t` / broker 传给通用分配器——否则开
-  MPU 栈保护（对齐等于栈尺寸）时，哈希表节点、格式化缓冲等小对象分配都会按栈尺寸
-  对齐，小堆会提前撞上 `NS_E_NOMEM`。
+- 线程使用 `k_thread_create` / `k_thread_join`，栈由 `k_thread_stack_alloc` **运行期**
+  单独分配（不再内嵌进对象），故依赖 `CONFIG_DYNAMIC_THREAD` +
+  `CONFIG_DYNAMIC_THREAD_ALLOC`（nanosig 的 `zephyr/Kconfig` 已 `select`，
+  应用零配置；代价是内核开启 EXPERIMENTAL 动态线程栈、线程栈信息记账与线程监控，
+  且栈改从 `CONFIG_HEAP_MEM_POOL_SIZE` 分配）。
+- 线程对象是**唯一不由调用方拥有存储**的平台对象：由 port 在
+  `ns_platform_thread_init` 分配、`ns_platform_thread_join` 回收；调用方仍只声明
+  `ns_platform_thread_t` 变量并取地址。栈与对象分离后，对象本身只剩
+  `struct k_thread` 与两个指针，用普通 `ns_platform_alloc` 分配即可 —— 栈的对齐
+  要求不再经堆上的 `ns_loop_t` / broker 传给通用分配器。
 - mutex 使用 `k_mutex`。
 - wakeup 使用**每对象独立 `k_sem`**（上限 1）；`signal` = `k_sem_give`
   （已满视为成功），`wait` = `k_sem_take`。

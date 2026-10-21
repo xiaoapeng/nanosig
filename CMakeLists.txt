@@ -46,10 +46,14 @@ set(NANOSIG_FREERTOS_INCLUDE_DIRS "" CACHE STRING
 # FreeRTOS 后端可配置常量；仅 NANOSIG_PLATFORM=freertos 时编入。
 set(NANOSIG_FREERTOS_WAITSET_CAP "32" CACHE STRING
     "FreeRTOS queue-set token capacity (Sigma member capacity + max member capacity)")
-set(NANOSIG_FREERTOS_THREAD_STACK_WORDS "1024" CACHE STRING
-    "FreeRTOS platform task stack depth in StackType_t words")
 set(NANOSIG_FREERTOS_TASK_PRIORITY "1" CACHE STRING
     "FreeRTOS platform task priority")
+
+# broker（timer）线程的栈大小，单位字节。0 = 使用平台默认栈大小。
+# 编译期锁死：库内只有这一个对外可配的栈旋钮，注入缺失即编译失败
+# （src/ns_broker.c 的 #error），不会静默回落到平台默认。
+set(NANOSIG_BROKER_STACK_SIZE "0" CACHE STRING
+    "Broker (timer) thread stack size in bytes (0 = platform default)")
 
 option(NANOSIG_BUILD_FREERTOS_POSIX
     "Build the FreeRTOS POSIX host harness and FreeRTOS contract tests" OFF)
@@ -163,12 +167,16 @@ target_include_directories(nanosig PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}>
 )
 
+# broker（timer）线程的栈大小：库内部旋钮，PRIVATE 注入（不外泄给消费者，
+# 也不占用公共 API 面）。PRIVATE 而非 PUBLIC，因为唯一使用者是 src/ns_broker.c。
+target_compile_definitions(nanosig PRIVATE
+    NANOSIG_BROKER_STACK_SIZE=${NANOSIG_BROKER_STACK_SIZE}
+)
+
 if(NANOSIG_PLATFORM STREQUAL "freertos")
-    # PUBLIC: the backend constants are PUBLIC so the contract tests can assert
-    # against the same configured capacity/stack/priority values.
+    # PUBLIC: 后端常量让契约测试能断言同一份配置值（容量与优先级）。
     target_compile_definitions(nanosig PUBLIC
         NANOSIG_FREERTOS_WAITSET_CAP=${NANOSIG_FREERTOS_WAITSET_CAP}
-        NANOSIG_FREERTOS_THREAD_STACK_WORDS=${NANOSIG_FREERTOS_THREAD_STACK_WORDS}
         NANOSIG_FREERTOS_TASK_PRIORITY=${NANOSIG_FREERTOS_TASK_PRIORITY}
     )
     target_include_directories(nanosig PUBLIC ${NANOSIG_FREERTOS_INCLUDE_DIRS})

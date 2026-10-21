@@ -32,6 +32,9 @@ if(CONFIG_NANOSIG_ZEPHYR)
     )
     zephyr_compile_definitions(
         NS_MPSC_CACHELINE_ALIGNED
+        # broker（timer）线程的栈大小：库内部旋钮，prj.conf 的
+        # CONFIG_NANOSIG_BROKER_STACK_SIZE 转发为同名宏。注入缺失即编译失败。
+        NANOSIG_BROKER_STACK_SIZE=${CONFIG_NANOSIG_BROKER_STACK_SIZE}
     )
 
     zephyr_library()

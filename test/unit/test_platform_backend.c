@@ -112,12 +112,50 @@ static int test_thread(void)
 
     ctx.value = 0;
 
-    if(ns_platform_thread_init(NULL, test_thread_entry, &ctx, "bad-thread") != NS_E_INVAL) return 1;
-    if(ns_platform_thread_init(&thread, NULL, &ctx, "bad-thread") != NS_E_INVAL) return 1;
-    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "test-thread") == NS_OK);
+    if(ns_platform_thread_init(NULL, test_thread_entry, &ctx, "bad-thread", 0u) != NS_E_INVAL) return 1;
+    if(ns_platform_thread_init(&thread, NULL, &ctx, "bad-thread", 0u) != NS_E_INVAL) return 1;
+    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "test-thread", 0u) == NS_OK);
     EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
     EXPECT_OK(ctx.value == 42);
     if(ns_platform_thread_join(NULL) != NS_E_INVAL) return 1;
+
+    return 0;
+}
+
+/* 栈大小参数：0 走默认、显式值生效、过小被拒且不创建线程。 */
+static int test_thread_stack_size(void)
+{
+    ns_platform_thread_t thread;
+    test_thread_ctx_t ctx;
+    size_t stack_min = 0u;
+    size_t stack_max = 0u;
+
+    /* 上下限查询契约：min >= 1，max >= min。 */
+    EXPECT_OK(ns_platform_thread_stack_range(&stack_min, &stack_max) == NS_OK);
+    EXPECT_OK(stack_min >= 1u);
+    EXPECT_OK(stack_max >= stack_min);
+
+    /* stack_size == 0：走后端默认路径。 */
+    ctx.value = 0;
+    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-default", 0u) == NS_OK);
+    EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
+    EXPECT_OK(ctx.value == 42);
+
+    /* 显式栈大小：合法值创建成功、线程跑完。 */
+    ctx.value = 0;
+    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-sized",
+                                      stack_min) == NS_OK);
+    EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
+    EXPECT_OK(ctx.value == 42);
+
+    /* 过小：必须显式拒绝，且不得创建线程（入口副作用计数保持 0）。 */
+    ctx.value = 0;
+    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-too-small",
+                                      stack_min - 1u) == NS_E_INVAL);
+    EXPECT_OK(ctx.value == 0);
+
+    /* init 失败后误调 join：必须返回错误（不得 UB，也不得永久阻塞）。 */
+    EXPECT_OK(ns_platform_thread_join(&thread) == NS_E_INVAL);
 
     return 0;
 }
@@ -176,7 +214,7 @@ static int test_event_backend(void)
 
     /* 跨线程 signal → wait 触发，user_data 原样返回 */
     ctx.event = &event;
-    EXPECT_OK(ns_platform_thread_init(&thread, test_event_signal_entry, &ctx, "test-event-signal") == NS_OK);
+    EXPECT_OK(ns_platform_thread_init(&thread, test_event_signal_entry, &ctx, "test-event-signal", 0u) == NS_OK);
     EXPECT_OK(ns_platform_waitset_wait(&ws, 1000000u, cc, 4u, &cnt) == NS_OK);
     EXPECT_OK(cnt == 1u);
     EXPECT_OK(cc[0].waitable == &event.waitable);
@@ -1050,6 +1088,7 @@ int main(void)
     if(test_wakeup_drain_closed_fd() != 0){ fprintf(stderr, "test_wakeup_drain_closed_fd failed\n"); return 1; }
     if(test_clock() != 0){ fprintf(stderr, "test_clock failed\n"); return 1; }
     if(test_thread() != 0){ fprintf(stderr, "test_thread failed\n"); return 1; }
+    if(test_thread_stack_size() != 0){ fprintf(stderr, "test_thread_stack_size failed\n"); return 1; }
     if(test_waitset_lifecycle() != 0){ fprintf(stderr, "test_waitset_lifecycle failed\n"); return 1; }
     if(test_event_backend() != 0){ fprintf(stderr, "test_event_backend failed\n"); return 1; }
     if(test_event_null_params() != 0){ fprintf(stderr, "test_event_null_params failed\n"); return 1; }
