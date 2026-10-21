@@ -317,7 +317,7 @@ entries:
       - "platform/macos/port.c:376"
       - "platform/windows/port.c:270"
       - "platform/freertos/port.c:394"
-      - "src/nanosig.c:315"
+      - "src/nanosig.c:328"
 ---
 
 # Platform Ports 代码审查报告
@@ -1011,7 +1011,18 @@ platform/README.md 与 docs/agents/platform/AGENTS.md 文档化；调用方接�
 review 建议的 `ns_platform_alloc_aligned` 未采用：对 loop/broker 而言两者等价，
 但新增的公共分配入口会把"对齐"这个平台细节泄漏给 src/。另一条备选（把内核栈从
 结构体里搬出去、用 `K_KERNEL_STACK_LEN` 手搓缓冲区）也未采用：Zephyr 文档要求栈
-必须由 `K_KERNEL_STACK_DEFINE` 宏定义，手搓长度可能 UB。
+必须由 `K_THREAD_STACK_DEFINE` / `K_KERNEL_STACK_DEFINE` 宏定义，手搓长度可能 UB。
+
+> **加注（线程栈大小参数改动）**：本条的关闭方案已被**部分取代**。Zephyr 后端
+> 改为运行期动态栈（`k_thread_stack_alloc` / `k_thread_stack_free`），线程对象
+> 不再内嵌 `K_KERNEL_STACK_MEMBER`，`k_aligned_alloc(Z_KERNEL_STACK_OBJ_ALIGN, ...)`
+> 也随之退化为普通 `ns_platform_alloc`（`k_malloc`）。本条**要解决的问题依然成立**
+> 且结论更强：栈与对象分离后，对齐要求彻底不再经堆上的 `ns_loop_t` / broker 传给
+> 通用分配器。原关闭理由中"Zephyr 文档要求栈必须由 `K_THREAD_STACK_DEFINE` 宏定义"
+> 一句已被 Zephyr 的 `k_thread_stack_alloc`（动态线程栈 API）取代。
+> 代价是该 API 需要 `CONFIG_DYNAMIC_THREAD` + `CONFIG_DYNAMIC_THREAD_ALLOC`
+> （nanosig 的 `zephyr/Kconfig` 已 `select`），内核因此开启 EXPERIMENTAL 动态线程栈、
+> 线程栈信息记账与线程监控。详见 `docs/specs/深度访谈-线程栈大小参数规格.md`。
 - 修复分支: fix/zephyr-thread-object-owned
 
 #### 关闭日期
@@ -1141,7 +1152,7 @@ platform/windows/port.c:151-170
 
 `ns_platform_thread_join` 直接把目标线程句柄交给 `pthread_join`（Linux/macOS）、`WaitForSingleObject(..., INFINITE)`（Windows）、`xSemaphoreTake(..., portMAX_DELAY)`（FreeRTOS），没有检查“调用者就是目标线程”这一情形。
 
-触发路径：`ns_loop_stop` 在 loop 自身线程（slot 回调）内被调用时，`src/nanosig.c:315` 会 join 后台 worker 自身。`nanosig_loop.h` 已把该情形写为调用方前提（“不得在 loop 自身线程（含 slot 回调）内调用”），但平台层没有做防御，违反前提时后果不是“返回错误”而是：
+触发路径：`ns_loop_stop` 在 loop 自身线程（slot 回调）内被调用时，`src/nanosig.c:328` 会 join 后台 worker 自身。`nanosig_loop.h` 已把该情形写为调用方前提（“不得在 loop 自身线程（含 slot 回调）内调用”），但平台层没有做防御，违反前提时后果不是“返回错误”而是：
 
 1. POSIX（Linux/macOS）：`pthread_join(self)` 是未定义行为。glibc 返回 EDEADLK，但 ThreadSanitizer 的 `pthread_join` 拦截器在**真实 join 之前**就调用 `ThreadConsumeTid` → `ThreadRegistry::ConsumeThreadUserId`，把目标线程的 user id 从 `live_` map 中 erase（compiler-rt `sanitizer_thread_registry.cpp:347-350`）。于是后续由其他线程发起的**合法** join 再次进入 `ConsumeThreadUserId` 时 `live_.find(user_id)` 返回空，命中 `CHECK(t)`（同文件 348 行）→ `ThreadSanitizer: CHECK failed: ... "((t)) != (0)"` → 整个进程 abort。
 
@@ -1181,7 +1192,7 @@ platform/linux/port.c:347
 platform/macos/port.c:376
 platform/windows/port.c:270
 platform/freertos/port.c:394
-src/nanosig.c:315
+src/nanosig.c:328
 
 ---
 

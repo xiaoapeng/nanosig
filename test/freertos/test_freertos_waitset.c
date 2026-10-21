@@ -538,9 +538,43 @@ static void test_thread(void)
     ns_platform_thread_t t;
 
     g_thread_ran = 0;
-    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t") == NS_OK);
+    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", 0u) == NS_OK);
     CHECK(ns_platform_thread_join(&t) == NS_OK);
     CHECK(g_thread_ran == 1);
+}
+
+/* 栈大小：显式字节数向上取整到 StackType_t 整数倍；过小被拒。 */
+static void test_thread_stack_size(void)
+{
+    ns_platform_thread_t t;
+    size_t stack_min = 0u;
+    size_t stack_max = 0u;
+
+    CHECK(ns_platform_thread_stack_range(&stack_min, &stack_max) == NS_OK);
+    CHECK(stack_min >= 1u);
+    CHECK(stack_max >= stack_min);
+
+    /* 合法值：创建并跑完。 */
+    g_thread_ran = 0;
+    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min) == NS_OK);
+    CHECK(ns_platform_thread_join(&t) == NS_OK);
+    CHECK(g_thread_ran == 1);
+
+    /* 非 sizeof(StackType_t) 整数倍：向上取整，实际栈 >= 请求值。
+       用 stack_min + 1：stack_min 是 configMINIMAL_STACK_SIZE 个整字，
+       加 1 必然不是 sizeof(StackType_t) 的整数倍（32/64 位 harness 都成立）。 */
+    g_thread_ran = 0;
+    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min + 1u) == NS_OK);
+    CHECK(ns_platform_thread_join(&t) == NS_OK);
+    CHECK(g_thread_ran == 1);
+
+    /* 过小：显式拒绝，不创建线程。 */
+    g_thread_ran = 0;
+    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min - 1u) == NS_E_INVAL);
+    CHECK(g_thread_ran == 0);
+
+    /* init 失败后误调 join：必须返回错误（不得永久阻塞在没创建过的信号量上）。 */
+    CHECK(ns_platform_thread_join(&t) == NS_E_INVAL);
 }
 
 static void test_clock(void)
@@ -577,6 +611,7 @@ static void runner_task(void *arg)
     test_wakeup();
     test_mutex();
     test_thread();
+    test_thread_stack_size();
     test_clock();
 
     fflush(NULL);

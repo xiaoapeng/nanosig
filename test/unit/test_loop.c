@@ -74,6 +74,7 @@ static int test_same_thread_binding(void)
     invalid_cfg.flags = 1u;
 
     EXPECT_OK(cfg.queue_byte_capacity == NS_CAPACITY_1024);
+    EXPECT_OK(cfg.stack_size == 0u);
     EXPECT_OK(ns_init() == NS_OK);
     EXPECT_OK(ns_loop_create(&loop, &invalid_cfg) == NS_E_INVAL);
     EXPECT_OK(ns_loop_create(&loop, &cfg) == NS_OK);
@@ -84,10 +85,92 @@ static int test_same_thread_binding(void)
     return 0;
 }
 
+/* stack_size：显式值可配；越界在 ns_loop_create 期被拒。 */
+static int test_loop_config_stack_size(void)
+{
+    ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
+    ns_loop_config_t too_small_cfg = NS_LOOP_CONFIG_DEFAULT();
+    ns_loop_config_t too_large_cfg = NS_LOOP_CONFIG_DEFAULT();
+    ns_loop_t *loop = NULL;
+    size_t stack_min = 0u;
+    size_t stack_max = 0u;
+
+    EXPECT_OK(ns_platform_thread_stack_range(&stack_min, &stack_max) == NS_OK);
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    /* 显式栈大小：合法值通过校验。 */
+    cfg.stack_size = stack_min;
+    EXPECT_OK(ns_loop_create(&loop, &cfg) == NS_OK);
+    EXPECT_OK(loop != NULL);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    loop = NULL;
+
+    /* 过小：ns_loop_create 阶段就拒绝。 */
+    too_small_cfg.stack_size = stack_min - 1u;
+    EXPECT_OK(ns_loop_create(&loop, &too_small_cfg) == NS_E_INVAL);
+    EXPECT_OK(loop == NULL);
+
+    /* 过大：同样在 create 阶段拒绝（仅当后端确实有上限时才可构造）。 */
+    if(stack_max < SIZE_MAX){
+        too_large_cfg.stack_size = stack_max + 1u;
+        EXPECT_OK(ns_loop_create(&loop, &too_large_cfg) == NS_E_INVAL);
+        EXPECT_OK(loop == NULL);
+    }
+
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
+}
+
 static void running_marker_slot(void *user_data, const void *payload)
 {
     (void)payload;
     ns_atomic_store_explicit(&((loop_thread_ctx_t *)user_data)->running, 1, ns_memory_order_release);
+}
+
+/* 集成：非零 stack_size 的 loop 后台线程能正常跑 timer 并派发 slot。 */
+static int test_loop_start_with_stack_size(void)
+{
+    ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
+    ns_timer_t timer;
+    ns_connection_t conn;
+    ns_loop_t *loop = NULL;
+    loop_thread_ctx_t ctx;
+    size_t stack_min = 0u;
+    int i;
+
+    EXPECT_OK(ns_platform_thread_stack_range(&stack_min, NULL) == NS_OK);
+
+    ns_atomic_init(&ctx.running, 0);
+    ns_atomic_init(&ctx.failure_line, 0);
+    ns_atomic_init(&ctx.quit_done, 0);
+
+    EXPECT_OK(ns_init() == NS_OK);
+
+    cfg.debug_name = "stack-loop";
+    cfg.stack_size = stack_min;
+    EXPECT_OK(ns_loop_create(&loop, &cfg) == NS_OK);
+
+    EXPECT_OK(ns_timer_init(&timer, 1u, 0u) == NS_OK);
+    EXPECT_OK(ns_signal_connect(&timer.signal, running_marker_slot, loop, &ctx, &conn) == NS_OK);
+
+    EXPECT_OK(ns_loop_start(loop) == NS_OK);
+    EXPECT_OK(ns_timer_start(&timer) == NS_OK);
+
+    for(i = 0; i < 1000000; i++){
+        if(ns_atomic_load_explicit(&ctx.running, ns_memory_order_acquire) != 0) break;
+        test_yield();
+    }
+    EXPECT_OK(ns_atomic_load_explicit(&ctx.running, ns_memory_order_acquire) != 0);
+
+    EXPECT_OK(ns_loop_stop(loop) == NS_OK);
+    EXPECT_OK(ns_signal_disconnect(&conn) == NS_OK);
+    EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
+    EXPECT_OK(ns_loop_destroy(loop) == NS_OK);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+
+    return 0;
 }
 
 static int loop_thread_entry(void *arg)
@@ -607,6 +690,8 @@ int main(void)
 {
     if(test_invalid_args_and_lifecycle() != 0) return 1;
     if(test_same_thread_binding() != 0) return 1;
+    if(test_loop_config_stack_size() != 0) return 1;
+    if(test_loop_start_with_stack_size() != 0) return 1;
     if(test_cross_thread_quit_and_ownership() != 0) return 1;
     if(test_async_start_stop() != 0) return 1;
     if(test_async_repeat_start() != 0) return 1;

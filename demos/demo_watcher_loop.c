@@ -112,7 +112,9 @@ int main(void)
     rc = ns_broker_add(&g_loop_ctx.watcher);
     if(rc != NS_OK) goto out_watcher;
 
-    rc = ns_platform_thread_init(&g_producer, producer_entry, &g_loop_ctx, "producer");
+    /* 用户自建线程可以差异化栈大小：这里给 64 KB（单位字节），0 表示用后端默认。 */
+    rc = ns_platform_thread_init(&g_producer, producer_entry, &g_loop_ctx, "producer",
+                                 (size_t)(64u * 1024u));
     if(rc != NS_OK) goto out_broker;
 
     /* loop 线程分发 handler emit 的自建 signal，直到 slot 达阈值 quit。 */

@@ -49,6 +49,10 @@ typedef struct ns_loop_config {
     uint32_t flags;
     /** 调试名称；库只保存指针，不接管字符串所有权。 */
     const char *debug_name;
+    /** 后台线程（`ns_loop_start` 创建）的栈大小，单位**字节**。0 = 使用后端默认栈大小。
+     *  实际分配的栈永远不小于请求值。超出后端可接受区间时 `ns_loop_create` 返回
+     *  `NS_E_INVAL`。注意：signal 的 slot 回调在该线程上执行，栈须能容纳回调深度。 */
+    size_t stack_size;
 } ns_loop_config_t;
 
 /**
@@ -58,13 +62,14 @@ typedef struct ns_loop_config {
  */
 #ifdef __cplusplus
 #define NS_LOOP_CONFIG_DEFAULT() \
-    ns_loop_config_t{ NS_CAPACITY_1024, 0u, nullptr }
+    ns_loop_config_t{ NS_CAPACITY_1024, 0u, nullptr, 0u }
 #else
 #define NS_LOOP_CONFIG_DEFAULT() \
     ((ns_loop_config_t){ \
         .queue_byte_capacity = NS_CAPACITY_1024, \
         .flags = 0u, \
-        .debug_name = NULL \
+        .debug_name = NULL, \
+        .stack_size = 0u \
     })
 #endif
 

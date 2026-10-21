@@ -58,10 +58,10 @@
 #define NANOSIG_FREERTOS_WAITSET_CAP 32u
 #endif
 
-/** 平台线程任务的 FreeRTOS 栈深度（字数，StackType_t 单位）。 */
-#ifndef NANOSIG_FREERTOS_THREAD_STACK_WORDS
-#define NANOSIG_FREERTOS_THREAD_STACK_WORDS 1024u
-#endif
+/** 平台线程任务的 FreeRTOS 栈深度（字数，StackType_t 单位）。后端内部默认值，
+ *  **不是配置面**（不是宏，避免被误当成可配旋钮）；对外可配的编译期旋钮只有
+ *  broker 线程的 NANOSIG_BROKER_STACK_SIZE（字节，见 src/ns_broker.c）。 */
+static const size_t k_ns_freertos_default_stack_words = 1024u;
 
 /** 平台线程任务的 FreeRTOS 优先级。 */
 #ifndef NANOSIG_FREERTOS_TASK_PRIORITY
@@ -355,19 +355,56 @@ static void ns_freertos_task_entry(void *arg)
     vTaskDelete(NULL);
 }
 
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
+{
+    /* configMINIMAL_STACK_SIZE 是 words 值（xTaskCreate 的深度单位是 StackType_t），
+       xTaskCreate 本身并不强制它；本检查是以 FreeRTOS 自身配置为基准的 nanosig 策略。
+
+       返回的 min 是**最小可接受请求字节数**，不是"下限字节数"：请求会向上取整到
+       sizeof(StackType_t) 的整数倍，所以 floor-字节数 - sizeof(StackType_t) 这一档
+       仍会被补回 floor 而被接受。min - 1 才是必然被拒的那个值。
+       例（64 位 harness，StackType_t = 8 字节，configMINIMAL_STACK_SIZE = 1024）：
+       floor = 8192 B，min = 8185 B，8184 B 被拒、8185 B 被接受。 */
+    if(min_out != NULL){
+        *min_out = ((size_t)configMINIMAL_STACK_SIZE - 1u) * sizeof(StackType_t) + 1u;
+    }
+    if(max_out != NULL) *max_out = SIZE_MAX;
+    return NS_OK;
+}
+
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name)
+    const char *debug_name,
+    size_t stack_size)
 {
     BaseType_t rc;
+    configSTACK_DEPTH_TYPE depth;
 
     (void)debug_name;
 
     if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
+    /* 先把资源指针置空：任何提前返回的失败路径都不会留下"看起来已初始化"的
+       句柄，否则 join 会拿着没创建过的信号量永久阻塞。 */
     thread->task = NULL;
+    thread->join_sem = NULL;
+
+    if(stack_size == 0u){
+        depth = (configSTACK_DEPTH_TYPE)k_ns_freertos_default_stack_words;
+    }else{
+        /* 字节 → words，**向上取整**：保证实际栈字节数 >= 请求字节数。
+           拆成 / 与 % 避免 `bytes + sizeof - 1` 在极大值上回绕。 */
+        size_t words = (stack_size / sizeof(StackType_t))
+                     + ((stack_size % sizeof(StackType_t)) ? 1u : 0u);
+        if(words < (size_t)configMINIMAL_STACK_SIZE) return NS_E_INVAL;
+        /* configSTACK_DEPTH_TYPE 的位宽由 FreeRTOS 配置决定（默认 uint32_t），
+           用它的最大值做上界，避免截断。 */
+        if(words > (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0)) return NS_E_INVAL;
+        depth = (configSTACK_DEPTH_TYPE)words;
+    }
+
     thread->entry = entry;
     thread->arg = arg;
     thread->join_sem = xSemaphoreCreateBinary();
@@ -376,11 +413,13 @@ int ns_platform_thread_init(
     }
 
     rc = xTaskCreate(ns_freertos_task_entry, "nanosig",
-                     (configSTACK_DEPTH_TYPE)NANOSIG_FREERTOS_THREAD_STACK_WORDS,
+                     depth,
                      thread, (UBaseType_t)NANOSIG_FREERTOS_TASK_PRIORITY,
                      &thread->task);
     if(rc != pdPASS){
         vSemaphoreDelete(thread->join_sem);
+        thread->join_sem = NULL;
+        thread->task = NULL;
         return NS_E_NOMEM;
     }
 
@@ -389,10 +428,12 @@ int ns_platform_thread_init(
 
 int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
-    if(thread == NULL) return NS_E_INVAL;
+    if((thread == NULL) || (thread->join_sem == NULL)) return NS_E_INVAL;
 
     (void)xSemaphoreTake(thread->join_sem, portMAX_DELAY);
     vSemaphoreDelete(thread->join_sem);
+    thread->join_sem = NULL;
+    thread->task = NULL;
     return NS_OK;
 }
 

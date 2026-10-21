@@ -10,10 +10,22 @@ config NANOSIG_ZEPHYR
     bool "nanosig Zephyr platform backend"
     default n
     select POLL
+    # 线程栈改为运行期分配（k_thread_stack_alloc），需要动态线程栈支持。
+    # DYNAMIC_THREAD depends on THREAD_STACK_INFO（默认 n），故必须一并 select，
+    # 否则依赖不满足、select 失效。CONFIG_DYNAMIC_THREAD_ALLOC 是必需的：
+    # 动态栈池（CONFIG_DYNAMIC_THREAD_POOL_SIZE）默认为 0，不开它
+    # k_thread_stack_alloc 会直接返回 NULL。
+    select DYNAMIC_THREAD
+    select THREAD_STACK_INFO
+    select DYNAMIC_THREAD_ALLOC
     help
       Build the nanosig signal/slot library for the Zephyr RTOS with the
       k_poll platform backend. Opt-in: enable CONFIG_NANOSIG_ZEPHYR=y and
       set CONFIG_HEAP_MEM_POOL_SIZE > 0. Requires CONFIG_MULTITHREADING=y.
+
+      Enabling this backend turns on Zephyr's experimental dynamic thread stack
+      support, which also enables thread stack info and thread monitoring. The
+      kernel's stability contract is affected and per-thread bookkeeping grows.
 
 config NANOSIG_ZEPHYR_WAITSET_CAP
     int "nanosig Zephyr waitset capacity (max active waitables)"
@@ -27,15 +39,18 @@ config NANOSIG_ZEPHYR_WAITSET_CAP
       this Kconfig symbol is not set; CONFIG_NANOSIG_ZEPHYR_WAITSET_CAP wins
       when both are present.
 
-config NANOSIG_ZEPHYR_THREAD_STACK_SIZE
-    int "nanosig Zephyr platform thread stack size (bytes)"
+config NANOSIG_BROKER_STACK_SIZE
+    int "nanosig broker (timer) thread stack size (bytes)"
     depends on NANOSIG_ZEPHYR
-    default 4096
-    range 1024 65536
+    default 0
+    range 0 65536
     help
-      Kernel stack embedded in each ns_platform_thread_t (via
-      K_KERNEL_STACK_MEMBER). A bare -DNANOSIG_ZEPHYR_THREAD_STACK_SIZE
-      compile definition is honored when this symbol is not set.
+      Stack size of the nanosig broker (timer) thread, in bytes. 0 means the
+      Zephyr backend default (4096). The value is forwarded to the library as
+      the NANOSIG_BROKER_STACK_SIZE macro and is locked in at build time.
+
+      The broker thread runs user watcher handlers, so the stack must be large
+      enough for the deepest handler the application registers.
 
 config NANOSIG_ZEPHYR_THREAD_PRIORITY
     int "nanosig Zephyr platform thread preempt priority"

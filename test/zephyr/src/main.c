@@ -439,13 +439,37 @@ static void test_thread_proc(void *arg)
 
 ZTEST(nanosig_zephyr, test_thread_create_join)
 {
-    /* k_thread + 内嵌内核栈内联在结构体中：放静态存储，避免占用 ZTEST 线程栈。 */
+    /* 线程对象由 port 分配（不透明句柄），内含独立分配的内核栈：放静态存储。 */
     static ns_platform_thread_t t;
 
     g_thread_ran = 0;
-    zassert_ok(ns_platform_thread_init(&t, test_thread_proc, NULL, "t"), "thread create");
+    zassert_ok(ns_platform_thread_init(&t, test_thread_proc, NULL, "t", 0u), "thread create");
     zassert_ok(ns_platform_thread_join(&t), "thread join");
     zassert_true(g_thread_ran == 1, "thread entry must have run");
+}
+
+ZTEST(nanosig_zephyr, test_thread_stack_size)
+{
+    static ns_platform_thread_t t;
+    size_t stack_min = 0u;
+    size_t stack_max = 0u;
+
+    zassert_ok(ns_platform_thread_stack_range(&stack_min, &stack_max), "stack range");
+    zassert_true(stack_min >= 1u, "stack min");
+    zassert_true(stack_max >= stack_min, "stack max");
+
+    /* 显式栈大小：创建成功且线程执行。 */
+    g_thread_ran = 0;
+    zassert_ok(ns_platform_thread_init(&t, test_thread_proc, NULL, "t", stack_min),
+               "thread create with explicit stack size");
+    zassert_ok(ns_platform_thread_join(&t), "thread join");
+    zassert_true(g_thread_ran == 1, "thread entry must have run");
+
+    /* 过小：显式拒绝，不创建线程。 */
+    g_thread_ran = 0;
+    zassert_equal(ns_platform_thread_init(&t, test_thread_proc, NULL, "t", stack_min - 1u),
+                  NS_E_INVAL, "too-small stack must be rejected");
+    zassert_true(g_thread_ran == 0, "thread must not have been created");
 }
 
 ZTEST(nanosig_zephyr, test_clock_monotonic)
@@ -527,7 +551,7 @@ ZTEST(nanosig_zephyr, test_event_cross_thread_signal_drain_in_poller)
     s_xthread_ws = &ws;
     s_xthread_ev = &ev;
 
-    zassert_ok(ns_platform_thread_init(&t, xthread_event_poller, NULL, "poller"),
+    zassert_ok(ns_platform_thread_init(&t, xthread_event_poller, NULL, "poller", 0u),
                "thread create");
 
     /* 显式握手：poller 已就绪后再从本线程跨线程 signal，不依赖调度时序。 */
@@ -561,7 +585,7 @@ ZTEST(nanosig_zephyr, test_wakeup_cross_thread_signal_wait)
     s_xthread_wk = &wk;
     s_xthread_result = NS_PLATFORM_WAIT_TIMEOUT;
 
-    zassert_ok(ns_platform_thread_init(&t, xthread_wakeup_poller, NULL, "wk-poller"),
+    zassert_ok(ns_platform_thread_init(&t, xthread_wakeup_poller, NULL, "wk-poller", 0u),
                "thread create");
 
     zassert_ok(k_sem_take(&s_xthread_ready, K_FOREVER), "poller ready handshake");

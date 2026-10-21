@@ -8,6 +8,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -241,19 +242,43 @@ static unsigned int __stdcall ns_windows_thread_main(void *arg)
     return 0u;
 }
 
+/* Windows 线程栈的最小值。**这是 nanosig 的策略下限，不是 Win32 平台保证**：
+   _beginthreadex / CreateThread 没有公开的最小栈大小契约，且 Win32 线程栈默认
+   不带 guard page —— 栈过小不会立刻失败，而是静默溢栈踩坏相邻内存。本下限只用于
+   拒绝明显过小的请求，不能保证不溢出。取值依据见 platform/README.md。 */
+#define NS_WINDOWS_THREAD_STACK_MIN ((size_t)(16u * 1024u))
+
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
+{
+    if(min_out != NULL) *min_out = NS_WINDOWS_THREAD_STACK_MIN;
+    if(max_out != NULL) *max_out = (size_t)UINT_MAX;
+    return NS_OK;
+}
+
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name)
+    const char *debug_name,
+    size_t stack_size)
 {
+    unsigned int stack = 0u;
+
     (void)debug_name;
 
     if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
+    if(stack_size != 0u){
+        if(stack_size < NS_WINDOWS_THREAD_STACK_MIN) return NS_E_INVAL;
+        if(stack_size > (size_t)UINT_MAX) return NS_E_INVAL;
+        stack = (unsigned int)stack_size;
+    }
+
     thread->entry = entry;
     thread->arg = arg;
-    thread->thread = (HANDLE)_beginthreadex(NULL, 0u, ns_windows_thread_main, thread, 0u, NULL);
+    /* _beginthreadex 失败时返回 NULL：随后误调 join 会因 NULL 句柄直接返回错误，
+       而不是对未初始化的 HANDLE 调 WaitForSingleObject。 */
+    thread->thread = (HANDLE)_beginthreadex(NULL, stack, ns_windows_thread_main, thread, 0u, NULL);
     if(thread->thread == NULL){
         return NS_E_NOMEM;
     }
@@ -265,7 +290,7 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
     int rc = NS_OK;
 
-    if(thread == NULL) return NS_E_INVAL;
+    if((thread == NULL) || (thread->thread == NULL)) return NS_E_INVAL;
 
     if(WaitForSingleObject(thread->thread, INFINITE) != WAIT_OBJECT_0) rc = NS_E_INVAL;
     if(CloseHandle(thread->thread) == 0) rc = NS_E_INVAL;

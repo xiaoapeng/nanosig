@@ -8,11 +8,10 @@
  * - 内存：`k_malloc` / `k_free`；平台对象（wakeup / mutex / waitset）由调用方拥有
  *   存储，唯一例外是线程对象（见下条）。
  * - mutex：`k_mutex`（`k_mutex_lock` / `k_mutex_unlock`）。
- * - 线程：`k_thread_create` + `k_thread_join`，栈用 `K_KERNEL_STACK_MEMBER`
- *   内嵌在 `struct ns_platform_thread` 中，不依赖 `CONFIG_DYNAMIC_THREAD`；
- *   该对象由本后端按 `Z_KERNEL_STACK_OBJ_ALIGN` 分配、`ns_platform_thread_join`
- *   回收，使内核栈的对齐要求不外传给通用分配器（见 `nanosig_platform_port.h`
- *   的 @note）。
+ * - 线程：`k_thread_create` + `k_thread_join`，栈由 `k_thread_stack_alloc` **运行期**
+ *   单独分配（不再内嵌进对象），故依赖 `CONFIG_DYNAMIC_THREAD` +
+ *   `CONFIG_DYNAMIC_THREAD_ALLOC`；线程对象仍由本后端分配、`ns_platform_thread_join`
+ *   回收，使栈的对齐要求不外传给通用分配器（见 `nanosig_platform_port.h` 的 @note）。
  * - wakeup：**每对象独立 `k_sem`**（上限 1，二值语义）；`signal` = `k_sem_give`
  *   （已满视为成功），`wait` = `k_sem_take`。
  * - event：`k_poll_signal`；`waitable` 与 `signal_handle` 指向同一 `k_poll_signal`；
@@ -59,12 +58,12 @@
 #error "nanosig Zephyr backend requires CONFIG_MULTITHREADING=y"
 #endif
 #if !defined(CONFIG_HEAP_MEM_POOL_SIZE) || (CONFIG_HEAP_MEM_POOL_SIZE == 0)
-#error "nanosig Zephyr backend requires CONFIG_HEAP_MEM_POOL_SIZE > 0 (k_aligned_alloc / k_free)"
+#error "nanosig Zephyr backend requires CONFIG_HEAP_MEM_POOL_SIZE > 0 (k_malloc / k_free)"
 #endif
 
-/* 可配置常量（NS_ZEPHYR_WAITSET_CAP / NS_ZEPHYR_THREAD_STACK_SIZE /
-   NS_ZEPHYR_THREAD_PRIORITY）与平台类型由构建内头
-   platform/zephyr/nanosig_platform_port.h 提供（按固定名由 include 路径
+/* 可配置常量（NS_ZEPHYR_WAITSET_CAP / NS_ZEPHYR_THREAD_PRIORITY /
+   NS_ZEPHYR_DEFAULT_THREAD_STACK_SIZE / NS_ZEPHYR_MIN_THREAD_STACK_SIZE）与平台类型由
+   构建内头 platform/zephyr/nanosig_platform_port.h 提供（按固定名由 include 路径
    选中）；平台对象存储归调用方所有。 */
 
 /* Zephyr 后端 ABI 探针符号；宿主后端导出 ns_platform_abi_host，FreeRTOS 导出
@@ -235,13 +234,14 @@ int ns_platform_mutex_unlock(ns_platform_mutex_t *mutex)
 /*  thread                                                             */
 /* ------------------------------------------------------------------ */
 
-/* 线程对象由本后端拥有：内嵌内核栈要求 Z_KERNEL_STACK_OBJ_ALIGN 对齐，把该要求约束在
-   这一个分配里，通用分配器（ns_platform_alloc）就不必按栈尺寸对齐每个小对象。 */
+/* 线程对象由本后端拥有：内核栈不再内嵌进对象，而是由 `k_thread_stack_alloc`
+   单独分配，对象本身只剩 `struct k_thread` + 两个指针，用普通 `ns_platform_alloc`
+   即可，栈对齐要求不再外传给通用分配器。 */
 struct ns_platform_thread {
     struct k_thread        thread;
     ns_platform_thread_fn  entry;
     void                  *arg;
-    K_KERNEL_STACK_MEMBER(stack, NS_ZEPHYR_THREAD_STACK_SIZE);
+    k_thread_stack_t      *stack;
 };
 
 static void ns_zephyr_thread_trampoline(void *p1, void *p2, void *p3)
@@ -254,13 +254,26 @@ static void ns_zephyr_thread_trampoline(void *p1, void *p2, void *p3)
     thread->entry(thread->arg);
 }
 
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
+{
+    /* Zephyr 3.7 没有 Z_MIN_THREAD_STACK_SIZE，k_thread_stack_alloc 自身也不做
+       任何下限检查 —— 过小的栈会被静默分配然后运行时溢栈（踩坏相邻堆）。故下限
+       由本后端把关：这是 nanosig 策略值，不是 Zephyr 平台保证。 */
+    if(min_out != NULL) *min_out = (size_t)NS_ZEPHYR_MIN_THREAD_STACK_SIZE;
+    if(max_out != NULL) *max_out = SIZE_MAX;
+    return NS_OK;
+}
+
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name)
+    const char *debug_name,
+    size_t stack_size)
 {
     struct ns_platform_thread *obj;
+    size_t stack_bytes;
+    k_tid_t tid;
 
     (void)debug_name;
 
@@ -269,17 +282,37 @@ int ns_platform_thread_init(
     *thread = NULL;
     if(entry == NULL) return NS_E_INVAL;
 
-    obj = (struct ns_platform_thread *)k_aligned_alloc(
-        (size_t)Z_KERNEL_STACK_OBJ_ALIGN, sizeof(*obj));
+    if(stack_size == 0u){
+        stack_bytes = (size_t)NS_ZEPHYR_DEFAULT_THREAD_STACK_SIZE;
+    }else{
+        if(stack_size < (size_t)NS_ZEPHYR_MIN_THREAD_STACK_SIZE) return NS_E_INVAL;
+        stack_bytes = stack_size;
+    }
+
+    obj = (struct ns_platform_thread *)ns_platform_alloc(sizeof(*obj));
     if(obj == NULL) return NS_E_NOMEM;
 
     obj->entry = entry;
     obj->arg = arg;
+    obj->stack = k_thread_stack_alloc(stack_bytes, 0);
+    if(obj->stack == NULL){
+        ns_platform_free(obj);
+        return NS_E_NOMEM;
+    }
 
-    (void)k_thread_create(&obj->thread, obj->stack,
-                          (size_t)K_KERNEL_STACK_SIZEOF(obj->stack),
+    /* k_thread_create 返回 k_tid_t（struct k_thread *），不是 int：Zephyr 3.7 的
+       实现要么成功返回线程 id、要么内部断言失败，不会返回错误码。这里仍做
+       NULL 检查（防御性），失败时回收栈与对象。 */
+    tid = k_thread_create(&obj->thread, obj->stack, stack_bytes,
                           ns_zephyr_thread_trampoline, obj, NULL, NULL,
                           NS_ZEPHYR_THREAD_PRIORITY, 0u, K_NO_WAIT);
+    if(tid == NULL){
+        if(k_thread_stack_free(obj->stack) != 0){
+            printk("nanosig: thread stack free failed after create failure\n");
+        }
+        ns_platform_free(obj);
+        return NS_E_NOMEM;
+    }
 
     *thread = obj;
     return NS_OK;
@@ -287,13 +320,30 @@ int ns_platform_thread_init(
 
 int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
+    struct ns_platform_thread *obj;
+    int rc;
+
     if((thread == NULL) || (*thread == NULL)) return NS_E_INVAL;
 
-    if(k_thread_join(&(*thread)->thread, K_FOREVER) != 0) return NS_E_INVAL;
+    obj = *thread;
 
-    k_free(*thread);
+    if(k_thread_join(&obj->thread, K_FOREVER) != 0){
+        /* join 失败（如自 join 返回 -EDEADLK）时目标线程可能仍在运行：**不得**
+           释放它的栈与对象，否则运行中的线程会踩到已释放内存。保留句柄，
+           交由调用方重试或按平台契约处理。 */
+        printk("nanosig: thread join failed\n");
+        return NS_E_INVAL;
+    }
+
     *thread = NULL;
-    return NS_OK;
+    rc = NS_OK;
+    if(k_thread_stack_free(obj->stack) != 0){
+        printk("nanosig: thread stack free failed\n");
+        rc = NS_E_INVAL;
+    }
+
+    ns_platform_free(obj);
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */

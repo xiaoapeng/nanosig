@@ -8,13 +8,12 @@
  * `platform/<os>/` 加入 include 路径后，按固定名 `nanosig_platform_port.h`
  * 被 `nanosig_port.h` 引入；`nanosig_port.h` 本身不含任何平台判定宏。
  *
- * @note 唯一例外是 `ns_platform_thread_t`：它内嵌内核栈（`K_KERNEL_STACK_MEMBER`），
- * 对齐要求为 `Z_KERNEL_STACK_OBJ_ALIGN`。若该类型按值内嵌，这个要求会经堆上的
- * `ns_loop_t` / broker 传递到整个 `ns_platform_alloc`，使所有小对象分配都按栈尺寸
- * 对齐（开 MPU 栈保护时尤其浪费堆）。因此本后端把它做成**由 port 分配的不透明对象**：
- * `ns_platform_thread_init` 按 `Z_KERNEL_STACK_OBJ_ALIGN` 分配，
- * `ns_platform_thread_join` 回收；`ns_platform_alloc` 则保持普通 `k_malloc`。
- * 调用方仍然只声明 `ns_platform_thread_t` 变量并取地址，接口形态不变。
+ * @note 唯一例外是 `ns_platform_thread_t`：它是**由 port 分配的不透明对象**。
+ * 线程的内核栈不再内嵌进对象，而是由 `k_thread_stack_alloc` 单独分配并在
+ * `ns_platform_thread_join` 回收；对象本身只剩 `struct k_thread` 与两个指针，
+ * 用普通 `ns_platform_alloc`（`k_malloc`）分配即可，栈对齐要求不再经堆上的
+ * `ns_loop_t` / broker 传递到通用分配器。调用方仍然只声明 `ns_platform_thread_t`
+ * 变量并取地址，接口形态不变。
  *
  * @copyright Copyright (c) 2026 nanosig contributors
  */
@@ -40,14 +39,13 @@
 #define NS_ZEPHYR_WAITSET_CAP 32
 #endif
 
-/** 平台线程的内嵌内核栈字节数。 */
-#if defined(CONFIG_NANOSIG_ZEPHYR_THREAD_STACK_SIZE)
-#define NS_ZEPHYR_THREAD_STACK_SIZE CONFIG_NANOSIG_ZEPHYR_THREAD_STACK_SIZE
-#elif defined(NANOSIG_ZEPHYR_THREAD_STACK_SIZE)
-#define NS_ZEPHYR_THREAD_STACK_SIZE NANOSIG_ZEPHYR_THREAD_STACK_SIZE
-#else
-#define NS_ZEPHYR_THREAD_STACK_SIZE 4096
-#endif
+/** 平台线程的内核栈默认字节数（stack_size == 0 时使用）。 */
+#define NS_ZEPHYR_DEFAULT_THREAD_STACK_SIZE 4096
+
+/** 平台线程内核栈的最小字节数。**nanosig 策略值，不是 Zephyr 平台保证**：
+ *  Zephyr 3.7 没有 Z_MIN_THREAD_STACK_SIZE，k_thread_stack_alloc 也不做下限检查，
+ *  过小的栈会被静默分配然后运行时溢栈（踩坏相邻堆）。 */
+#define NS_ZEPHYR_MIN_THREAD_STACK_SIZE 512
 
 /** 平台线程优先级（抢占式）。 */
 #if defined(CONFIG_NANOSIG_ZEPHYR_THREAD_PRIORITY)

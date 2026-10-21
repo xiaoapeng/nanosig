@@ -33,7 +33,9 @@ timer_mgr 层（独立模块）：
   notify 回调唤醒 broker
 
 平台层：
-  ns_platform_thread_init / join（调用方拥有 thread 存储）
+  ns_platform_thread_init / join（调用方拥有 thread 存储；Zephyr 后端除外，
+  它的线程对象由 port 分配）
+  ns_platform_thread_stack_range（线程栈大小上下限）
   ns_platform_waitset
   ns_platform_event_*（caller-owned waitable-first 事件原语）
 ```
@@ -287,7 +289,8 @@ ns_init()
     → ns_list_init(&broker->op_queue_head)
     → ns_timer_mgr_global_init(ns_broker_notify, broker)
     → atomic_init(&broker->quit_requested, 0) / atomic_init(&broker->shutdown_started, 0)
-    → ns_platform_thread_init(&broker->thread, broker_run, broker)
+    → ns_platform_thread_init(&broker->thread, broker_run, broker, "nanosig-broker",
+                              NANOSIG_BROKER_STACK_SIZE)
     → g_broker = broker
   → atomic_store(g_ns_initialized, 1)
 ```
@@ -355,20 +358,38 @@ handler 在其内部 emit 用户 signal 时，该 emit 已经指向用户自己�
 ```c
 typedef void (*ns_platform_thread_fn)(void *arg);
 
-/* ns_platform_thread_t 是平台头的透明别名（pthread_t / HANDLE / 任务句柄 + 内嵌栈） */
+/* ns_platform_thread_t 是平台头的透明别名（pthread_t / HANDLE / 任务句柄） */
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
     void *arg,
-    const char *debug_name);
+    const char *debug_name,
+    size_t stack_size);   /* 字节；0 = 后端默认栈大小 */
 
 int ns_platform_thread_join(ns_platform_thread_t *thread);
+
+int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out);
 ```
 
 - Windows：`_beginthreadex` + wrapper 函数适配 `LPTHREAD_START_ROUTINE`。
 - Linux/macOS：`pthread_create`。
 - `init` 在调用方提供的存储上初始化，不分配 thread 对象；`join` 只回收线程自身
   的平台资源（如 Windows 的线程句柄），不释放调用方存储。
+- `stack_size` 单位字节，`0` = 后端默认；低于 `ns_platform_thread_stack_range`
+  给出的最小可接受请求时返回 `NS_E_INVAL` 且不创建线程。实际分配的栈永远不小于
+  请求值（FreeRTOS 向上取整到 `StackType_t` 整数倍）。
+
+**broker 线程的栈大小是编译期常量** `NANOSIG_BROKER_STACK_SIZE`（字节，`0` =
+平台默认），由构建系统注入（CMake cache 变量 / Zephyr 的
+`CONFIG_NANOSIG_BROKER_STACK_SIZE`），注入缺失即编译失败。
+
+> **watcher handler 在 broker 线程上执行。** broker 派发 watcher 事件时直接调用
+> 用户注册的 `watcher->handler`（`src/ns_broker.c`），因此 broker 线程的栈必须
+> 容纳用户 handler 的调用深度。调小 broker 栈前必须评估这一点 —— 见
+> `platform/README.md` 的「broker 线程的栈」一节（含栈预算与可观测手段）。
+>
+> 对照：signal 的 slot 回调**不在** broker 线程上执行 —— `ns_signal_emit_raw`
+> 只把调用推进目标 loop 的队列，slot 由 loop 线程派发。
 
 ### ns_platform_event_*
 

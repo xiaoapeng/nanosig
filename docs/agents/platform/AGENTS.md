@@ -43,7 +43,11 @@ primitives + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE`).
   (`pthread.h` / `windows.h` / `FreeRTOS.h` / `zephyr/kernel.h`).
 - Loop-only scope: single wakeup, mutex, monotonic clock, and allocation.
 - Waitset scope: waitset init/deinit/add/remove/wait, and waitable registration state. Waitset decoupled from wakeup.
-- Thread scope: thread init/join.
+- Thread scope: thread init/join, plus the stack-size parameter (`ns_platform_thread_init`'s
+  5th arg, in **bytes**, `0` = backend default) and the backend's acceptable range
+  (`ns_platform_thread_stack_range`, whose `min` is the smallest **accepted request**).
+  Per-backend mapping (bytes → native unit) and the lower-bound check live in each
+  backend; the public API stays byte-based and platform-agnostic.
 - No NULL sentinel exists for caller-owned storage, so "already initialized" state is
   tracked with dedicated flags in library code (`ns_signal_t.mutex_initialized`,
   `struct ns_loop.async_started`, `ns_debug.c`'s ready flag, `ns_timer_mgr.initialized`).
@@ -66,8 +70,8 @@ primitives + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE`).
 ### External
 - Linux backend uses pthread mutex/thread, eventfd or an equivalent single wakeup, clock APIs, platform allocation, and epoll for waitset.
 - macOS backend uses pthread mutex/thread, kqueue EVFILT_USER wakeups, clock APIs, platform allocation, and kqueue/kevent for waitset.
-- Windows backend uses CreateThread, auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset.
-- FreeRTOS backend uses xTaskCreate + join semaphore, per-object binary-semaphore wakeups (never task notifications), xSemaphoreCreateMutex, xTaskGetTickCount, pvPortMalloc/vPortFree, and queue sets (`xQueueCreateSet`/`xQueueSelectFromSet`, IN-only) for waitset.
-- Zephyr backend uses `k_thread_create` + `k_thread_join` with an embedded `K_KERNEL_STACK_MEMBER` stack; the thread object is the one platform type owned by the port rather than by the caller (allocated with `k_aligned_alloc` at `Z_KERNEL_STACK_OBJ_ALIGN` in `ns_platform_thread_init`, freed in `ns_platform_thread_join`), so the stack's alignment requirement never reaches the generic allocator (`ns_platform_alloc` is plain `k_malloc` and the heap-allocated `ns_loop_t`/broker only hold a handle), per-object by-value `k_sem` wakeups (limit 1), by-value `k_mutex`, `k_uptime_ticks`, `k_malloc`/`k_free` for internal state, `k_poll_signal` events (level-triggered; `ns_platform_event_drain` is the only reset site and runs on the poller thread), and `k_poll` (`K_POLL_TYPE_SIGNAL` + `K_POLL_MODE_NOTIFY_ONLY`, IN-only) for waitset.
+- Windows backend uses `_beginthreadex` (not `CreateThread`), auto-reset events, single-handle wait, SRWLOCK, QPC, platform allocation, and WaitForMultipleObjects for waitset. Its minimum stack size is a **nanosig policy value** (Win32 threads have no guard page, so an undersized stack is a silent overflow), not a platform guarantee.
+- FreeRTOS backend uses xTaskCreate + join semaphore, per-object binary-semaphore wakeups (never task notifications), xSemaphoreCreateMutex, xTaskGetTickCount, pvPortMalloc/vPortFree, and queue sets (`xQueueCreateSet`/`xQueueSelectFromSet`, IN-only) for waitset. Thread stack sizes arrive in bytes and are rounded **up** to whole `StackType_t` words.
+- Zephyr backend uses `k_thread_create` + `k_thread_join` with a **runtime-allocated** kernel stack (`k_thread_stack_alloc` / `k_thread_stack_free`, requiring `CONFIG_DYNAMIC_THREAD` + `CONFIG_DYNAMIC_THREAD_ALLOC`, which `zephyr/Kconfig` selects); the thread object is the one platform type owned by the port rather than by the caller (allocated in `ns_platform_thread_init`, freed in `ns_platform_thread_join`), so the stack's alignment requirement never reaches the generic allocator (`ns_platform_alloc` is plain `k_malloc` and the heap-allocated `ns_loop_t`/broker only hold a handle), per-object by-value `k_sem` wakeups (limit 1), by-value `k_mutex`, `k_uptime_ticks`, `k_malloc`/`k_free` for internal state, `k_poll_signal` events (level-triggered; `ns_platform_event_drain` is the only reset site and runs on the poller thread), and `k_poll` (`K_POLL_TYPE_SIGNAL` + `K_POLL_MODE_NOTIFY_ONLY`, IN-only) for waitset.
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->
