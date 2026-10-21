@@ -50,6 +50,17 @@ entries:
     type: "bug"
     section: "fixed-history"
     location: "docs/review/freertos-code-review.md#FREERTOS-007"
+  - id: "FREERTOS-008"
+    module: "freertos"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/freertos-code-review.md#FREERTOS-008"
+    locations:
+      - "platform/freertos/port.c:371"
+      - "platform/freertos/port.c:404"
+      - "src/nanosig.c:91"
 ---
 
 # FreeRTOS Backend 代码审查报告
@@ -178,6 +189,51 @@ entries:
 ## 现在打开的问题
 
 （暂无。）
+
+<a id="FREERTOS-008"></a>
+### FREERTOS-008: FreeRTOS 后端发布 `max = SIZE_MAX`，但 `ns_platform_thread_init` 拒绝超出 `configSTACK_DEPTH_TYPE` 的请求
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: bug
+
+#### 问题描述
+
+`ns_platform_thread_stack_range` 在 FreeRTOS 后端发布 `*max_out = SIZE_MAX`（`platform/freertos/port.c:371`），但 `ns_platform_thread_init` 有一道 `words > (configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0)` 的上界检查（:404），超过即 `NS_E_INVAL`。
+
+于是当 `size_t` 比 `configSTACK_DEPTH_TYPE` 更宽时（本仓库的 64 位 POSIX harness 里 `configSTACK_DEPTH_TYPE` 默认是 `uint32_t`），一个大于 `(2^32-1) * sizeof(StackType_t)` 字节的请求能通过 `ns_loop_config_validate` 的区间检查（`src/nanosig.c:91`），却在 `ns_loop_start` 阶段被拒绝 —— 与 `include/nanosig/nanosig_loop.h:53` 承诺的"超出区间时 `ns_loop_create` 就返回 `NS_E_INVAL`"不符，且失败点比契约晚了一层。
+
+在 32 位 MCU 上 `size_t` 与 `configSTACK_DEPTH_TYPE` 同宽，两个界恰好重合，本条不触发 —— 但 POSIX harness 与任何 `size_t` 更宽的目标都会触发。
+
+#### review 建议
+
+发布真实上界：`*max_out = (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0) * sizeof(StackType_t);`（能装进深度类型的最大字节数），而不是 `SIZE_MAX`。这样 :404 的溢出检查对公共 API 而言不可达，`ns_loop_config_validate` 成为文档所说的唯一闸口。
+
+顺带核对同一后端的 `min`：现有 `min = (configMINIMAL_STACK_SIZE - 1) * sizeof(StackType_t) + 1`（:366-370）是对的 —— `min` 被接受、`min - 1` 被拒，代数上成立。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+FreeRTOS POSIX harness（64 位宿主，`configSTACK_DEPTH_TYPE` = uint32_t，`sizeof(StackType_t)` = 8）：
+
+```
+ns_loop_config_t cfg = NS_LOOP_CONFIG_DEFAULT();
+cfg.stack_size = (size_t)UINT32_MAX * 8 + 4096;   /* 约 32 GB，超过深度类型上限 */
+ns_loop_create(&loop, &cfg)  -> NS_OK      （区间检查放行，max = SIZE_MAX）
+ns_loop_start(loop)          -> NS_E_INVAL （:404 上界检查拒绝）
+```
+
+32 位 MCU 上不触发。
+
+#### 定位
+platform/freertos/port.c:371
+platform/freertos/port.c:404
+src/nanosig.c:91
+
+---
 
 ## 现在关闭的问题
 

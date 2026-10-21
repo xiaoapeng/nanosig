@@ -56,6 +56,20 @@ entries:
     type: "unknown"
     section: "fixed-history"
     location: "docs/review/global-review.md#GLOBAL-005"
+  - id: "GLOBAL-008"
+    module: "global-review"
+    status: "open"
+    severity: "medium"
+    type: "doc"
+    section: "open"
+    location: "docs/review/global-review.md#GLOBAL-008"
+    locations:
+      - "include/nanosig/nanosig_port.h:480"
+      - "include/nanosig/nanosig_port.h:463"
+      - "include/nanosig/nanosig_loop.h:53"
+      - "platform/README.md:34"
+      - "platform/README.md:58"
+      - "platform/README.md:67"
 ---
 
 # 全局视角 Review（跨模块问题）
@@ -112,6 +126,67 @@ entries:
 ---
 
 ## 现在打开的问题
+
+<a id="GLOBAL-008"></a>
+### GLOBAL-008: 线程栈大小的跨后端公共契约声明与实现不符（三处），且规格与 README 互相矛盾
+
+- **状态**: 打开
+- **严重度**: 🟡 中
+- **类型**: doc
+
+#### 问题描述
+
+线程栈大小是本次新增的**公共 API 契约**，跨全部五个后端。当前有四处公共表述与实现对不上，其中三处的根因在具体后端（已分别记为 PORT-031 / PORT-032 / PORT-033），本条只记录**契约表述本身**的问题：
+
+| 公共表述 | 位置 | 与实现的出入 |
+|---|---|---|
+| "init 失败后 join 返回 `NS_E_INVAL`（不阻塞、不崩溃）。**五个后端一致**" | include/nanosig/nanosig_port.h:480 | 4/5 后端的 `entry == NULL` 路径不满足（PORT-032） |
+| "实际分配的栈**永远不小于**请求值（后端按自身粒度向上取整）" | include/nanosig/nanosig_port.h:463、platform/README.md:34 | macOS 不取整而是**拒绝**非 4096 倍数的请求（PORT-031） |
+| "超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`" | include/nanosig/nanosig_loop.h:53 | 上界在 3/5 后端拦不住，失败推迟到 `ns_loop_start`（PORT-031 / FREERTOS-008） |
+
+另有**文档互相矛盾**：
+
+- `platform/README.md:58` 说 FreeRTOS 的 "`floor_bytes - sizeof(StackType_t)` 这一档仍会被补回 floor 而被接受"，但该值是 `StackType_t` 的整数倍 → 换算后是 `configMINIMAL_STACK_SIZE - 1` words → **被拒**。正确规则是 `(floor_bytes - sizeof(StackType_t), floor_bytes]`，即 `floor_bytes - sizeof(StackType_t) + 1` 及以上。`platform/freertos/port.c:363-367` 给的是对的（"8184 B 被拒、8185 B 被接受"），README 与实现互相打架。
+- `platform/README.md:67` 与 `docs/specs/深度访谈-线程栈大小参数规格.md:163` 都把 `NANOSIG_BROKER_STACK_SIZE=4096` 作为推荐值，而它在 host 平台会让 `ns_init()` 失败（PORT-033）。
+
+#### review 建议
+
+1. 契约表述要与实现对齐，**三选一并明确写下来**：
+   - (a) 修后端，使实现满足现有表述（POSIX 向上取整；状态重置前移；构建期校验 broker 旋钮）—— 保留契约的强表述；
+   - (b) 弱化契约：把"五个后端一致""永远不小于请求值""`ns_loop_create` 就返回 `NS_E_INVAL`"改成与实现相符的措辞；
+   - (c) 混合：下界与"init 失败后 join 返回错误"保留强契约（可强制），上界改为"尽力在 `ns_loop_create` 阶段校验，实际以 `ns_loop_start` 为准"。
+
+   倾向 (c)：下界与失败语义是**可强制**的，值得写成硬契约；上界依赖各后端实现上限（POSIX 受 RLIMIT_STACK / 平台实现限制、Zephyr 受堆大小限制、FreeRTOS 受深度类型宽度限制），本就无法在公共层统一表达。
+
+2. 修正 `platform/README.md:58` 的 FreeRTOS `min` 规则表述，使其与 `platform/freertos/port.c:363-367` 一致（建议直接引用 `min = (configMINIMAL_STACK_SIZE - 1) * sizeof(StackType_t) + 1` 这个式子）。
+
+3. 修正 `platform/README.md:67` 与规格文档的推荐值（见 PORT-033）。
+
+4. 规格文档 `docs/specs/深度访谈-线程栈大小参数规格.md` 的 AC-6/AC-7/AC-11 与 D-3 表也需要按上述结论复核。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+逐条对照：
+
+- `include/nanosig/nanosig_port.h:480` 的"五个后端一致" ↔ PORT-032 的四后端反例。
+- `include/nanosig/nanosig_port.h:463` 与 `platform/README.md:34` 的"向上取整" ↔ macOS 实测 `setstacksize(100000) -> EINVAL`。
+- `include/nanosig/nanosig_loop.h:53` 的"`ns_loop_create` 返回 `NS_E_INVAL`" ↔ `ns_loop_create(stack_size=100000)` 返回 `NS_OK`。
+- `platform/README.md:58` ↔ `platform/freertos/port.c:363-367` 的 8184/8185 例子。
+- `platform/README.md:67` ↔ PORT-033 的 `ns_init()` 失败实测。
+
+#### 定位
+include/nanosig/nanosig_port.h:480
+include/nanosig/nanosig_port.h:463
+include/nanosig/nanosig_loop.h:53
+platform/README.md:34
+platform/README.md:58
+platform/README.md:67
+
+---
 
 ## 现在关闭的问题
 
