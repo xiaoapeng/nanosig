@@ -320,10 +320,11 @@ entries:
       - "src/nanosig.c:328"
   - id: "PORT-031"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-22"
     location: "docs/review/platform-ports-code-review.md#PORT-031"
     locations:
       - "platform/macos/port.c:349"
@@ -391,6 +392,8 @@ entries:
 ---
 
 ---
+
+- **PORT-031（2026-10-22）**: POSIX 后端把栈大小请求向上取整到页粒度（4096）后再交给 pthread_attr_setstacksize，下界判定仍用原始请求；新增非页粒度请求的单测用例 — commit `b3e660d`
 
 ## 现在打开的问题
 
@@ -998,65 +1001,6 @@ CMakeLists.txt:55
 CMakeLists.txt:172
 platform/README.md:67
 
-<a id="PORT-031"></a>
-### PORT-031: macOS `pthread_attr_setstacksize` 拒绝非 4096 倍数，但 `ns_platform_thread_stack_range` 发布的区间包含这些值
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-Darwin 的 `pthread_attr_setstacksize` **拒绝**（EINVAL）任何不是 4096 整数倍的尺寸，而不是向上取整。
-
-但 `ns_platform_thread_stack_range` 在 POSIX 后端发布 `min = PTHREAD_STACK_MIN`、`max = SIZE_MAX`，即宣称"区间内任意值都���受"。于是落在区间内部、但不是 4096 倍数的值（例如 10000、20000、100000）会通过 `ns_loop_config_validate` 的区间检查，在 `ns_loop_create` 阶段被放行，到 `ns_loop_start` 才被 `ns_platform_thread_init` 拒绝并返回 `NS_E_INVAL` —— 没有任何诊断信息。
-
-`include/nanosig/nanosig_loop.h:53` 的字段注释承诺"超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`"，隐含"区间内的值可用"；`platform/README.md:34` 声明"后端按自身粒度向上取整" —— 在 macOS 上这两条都不成立。
-
-#### review 建议
-
-两处都要改：
-
-1. POSIX 后端在调用 `pthread_attr_setstacksize` 之前把请求**向上取整到后端粒度**（Darwin：4096 的整数倍；取整后再用取整后的值复核 `PTHREAD_STACK_MIN`），这样就兑现了"实际分配的栈永远不小于请求值"的公共契约（`include/nanosig/nanosig_port.h:463`）。取整粒度应当是一个后端常量，而不是散落的魔数。
-
-2. `ns_platform_thread_stack_range` 的语义要与之自洽：要么发布真实可接受的集合，要么在文档中明确"区间是必要条件而非充分条件"。
-
-3. `platform/README.md:34` 与 `include/nanosig/nanosig_port.h:463` 的"向上取整"表述在 (1) 落地前是错的，需同步。
-
-Linux 侧（glibc）的 `pthread_attr_setstacksize` 只检查 `size < PTHREAD_STACK_MIN`，大概率无此问题，但需在 Linux CI 上用一个非页倍数值确认后再关闭本条。
-
-#### 作者建议
-
-采纳方案 A：POSIX 后端在调用 pthread_attr_setstacksize 之前，按页粒度（4096，硬编码）把请求向上取整，兑现公共契约"实际分配的栈永远不小于请求值"。粒度用常量 4096 而非 getpagesize()：主流 POSIX 平台页大小恒为 4096，行为可预测。下界判定仍用原始请求（min-1 必被拒），取整只影响上送值。同时加防溢出上界。
-
-#### 可重现的失败场景
-
-macOS（本机实测，x86_64 与 arm64 均成立）：
-
-```
-PTHREAD_STACK_MIN = 8192
-setstacksize(   8192) -> 0    OK
-setstacksize(  10000) -> 22   EINVAL
-setstacksize(  16384) -> 0    OK
-setstacksize(  20480) -> 0    OK
-setstacksize( 100000) -> 22   EINVAL
-setstacksize(   4096) -> 22   EINVAL
-```
-
-库级复现：`ns_init()` → `cfg = NS_LOOP_CONFIG_DEFAULT(); cfg.stack_size = 100000;` → `ns_loop_create(&loop, &cfg)` 返回 `NS_OK`（放行）→ `ns_loop_start(loop)` 返回 `NS_E_INVAL`（拒绝，且无诊断）。
-
-#### 定位
-platform/macos/port.c:349
-platform/macos/port.c:390
-platform/linux/port.c:320
-src/nanosig.c:91
-include/nanosig/nanosig_port.h:442
-
----
-
-
----
-
 ## 现在关闭的问题
 
 <a id="PLATFORM-001"></a>
@@ -1607,6 +1551,66 @@ Linux，令 wakeup 的 eventfd 处于可读状态，`ns_platform_wakeup_wait` �
 platform/linux/port.c:30-47
 platform/linux/port.c:132-169
 src/ns_broker.c:239
+
+---
+
+<a id="PORT-031"></a>
+### PORT-031: macOS `pthread_attr_setstacksize` 拒绝非 4096 倍数，但 `ns_platform_thread_stack_range` 发布的区间包含这些值
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 修复 commit b3e660d
+- **关闭日期**: 2026-10-22
+
+#### 问题描述
+
+Darwin 的 `pthread_attr_setstacksize` **拒绝**（EINVAL）任何不是 4096 整数倍的尺寸，而不是向上取整。
+
+但 `ns_platform_thread_stack_range` 在 POSIX 后端发布 `min = PTHREAD_STACK_MIN`、`max = SIZE_MAX`，即宣称"区间内任意值都���受"。于是落在区间内部、但不是 4096 倍数的值（例如 10000、20000、100000）会通过 `ns_loop_config_validate` 的区间检查，在 `ns_loop_create` 阶段被放行，到 `ns_loop_start` 才被 `ns_platform_thread_init` 拒绝并返回 `NS_E_INVAL` —— 没有任何诊断信息。
+
+`include/nanosig/nanosig_loop.h:53` 的字段注释承诺"超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`"，隐含"区间内的值可用"；`platform/README.md:34` 声明"后端按自身粒度向上取整" —— 在 macOS 上这两条都不成立。
+
+#### review 建议
+
+两处都要改：
+
+1. POSIX 后端在调用 `pthread_attr_setstacksize` 之前把请求**向上取整到后端粒度**（Darwin：4096 的整数倍；取整后再用取整后的值复核 `PTHREAD_STACK_MIN`），这样就兑现了"实际分配的栈永远不小于请求值"的公共契约（`include/nanosig/nanosig_port.h:463`）。取整粒度应当是一个后端常量，而不是散落的魔数。
+
+2. `ns_platform_thread_stack_range` 的语义要与之自洽：要么发布真实可接受的集合，要么在文档中明确"区间是必要条件而非充分条件"。
+
+3. `platform/README.md:34` 与 `include/nanosig/nanosig_port.h:463` 的"向上取整"表述在 (1) 落地前是错的，需同步。
+
+Linux 侧（glibc）的 `pthread_attr_setstacksize` 只检查 `size < PTHREAD_STACK_MIN`，大概率无此问题，但需在 Linux CI 上用一个非页倍数值确认后再关闭本条。
+
+#### 作者建议
+
+采纳方案 A：POSIX 后端在调用 pthread_attr_setstacksize 之前，按页粒度（4096，硬编码）把请求向上取整，兑现公共契约"实际分配的栈永远不小于请求值"。粒度用常量 4096 而非 getpagesize()：主流 POSIX 平台页大小恒为 4096，行为可预测。下界判定仍用原始请求（min-1 必被拒），取整只影响上送值。同时加防溢出上界。
+
+#### 可重现的失败场景
+
+macOS（本机实测，x86_64 与 arm64 均成立）：
+
+```
+PTHREAD_STACK_MIN = 8192
+setstacksize(   8192) -> 0    OK
+setstacksize(  10000) -> 22   EINVAL
+setstacksize(  16384) -> 0    OK
+setstacksize(  20480) -> 0    OK
+setstacksize( 100000) -> 22   EINVAL
+setstacksize(   4096) -> 22   EINVAL
+```
+
+库级复现：`ns_init()` → `cfg = NS_LOOP_CONFIG_DEFAULT(); cfg.stack_size = 100000;` → `ns_loop_create(&loop, &cfg)` 返回 `NS_OK`（放行）→ `ns_loop_start(loop)` 返回 `NS_E_INVAL`（拒绝，且无诊断）。
+
+#### 定位
+platform/macos/port.c:349
+platform/macos/port.c:390
+platform/linux/port.c:320
+src/nanosig.c:91
+include/nanosig/nanosig_port.h:442
+
+---
 
 ---
 
