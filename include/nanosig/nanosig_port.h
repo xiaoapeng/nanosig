@@ -460,8 +460,8 @@ int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out);
  * @param debug_name 调试名称；平台层不接管字符串所有权。
  * @param stack_size 线程栈大小，单位**字节**。`0` 表示使用后端默认栈大小。
  *        小于 `ns_platform_thread_stack_range` 给出的下界时返回 `NS_E_INVAL` 且
- *        **不创建线程**。实际分配的栈永远不小于请求值（FreeRTOS 向上取整到
- *        `StackType_t` 整数倍）。
+ *        **不创建线程**。实际分配的栈永远不小于请求值：POSIX 后端向上取整到页
+ *        粒度（4096 字节），FreeRTOS 向上取整到 `StackType_t` 整数倍。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
 int ns_platform_thread_init(
