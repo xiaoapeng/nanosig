@@ -148,6 +148,15 @@ static int test_thread_stack_size(void)
     EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
     EXPECT_OK(ctx.value == 42);
 
+    /* 非页粒度（4096）的请求：后端向上取整后必须成功。
+       macOS 的 pthread_attr_setstacksize 要求请求是页大小的整数倍，否则
+       直接 EINVAL（不代为取整）—— 这条用例守住"实际分配的栈永远不小于请求值"。 */
+    ctx.value = 0;
+    EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-unaligned",
+                                      stack_min + 100u) == NS_OK);
+    EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
+    EXPECT_OK(ctx.value == 42);
+
     /* 过小：必须显式拒绝，且不得创建线程（入口副作用计数保持 0）。 */
     ctx.value = 0;
     EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-too-small",

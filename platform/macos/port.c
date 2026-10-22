@@ -353,6 +353,14 @@ int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
     return NS_OK;
 }
 
+/* POSIX 线程栈的分配粒度（页大小）。
+   Darwin 的 pthread_attr_setstacksize **要求**请求是页大小的整数倍，否则直接
+   返回 EINVAL（它不代为取整）；Linux 侧 glibc 内部同样按页取整，提前取整对
+   结果无影响。统一在这里按页粒度向上取整，兑现公共契约"实际分配的栈永远
+   不小于请求值"。主流 POSIX 平台页大小恒为 4096，故用常量而非 getpagesize()，
+   行为可预测。 */
+#define NS_POSIX_THREAD_STACK_GRANULARITY 4096u
+
 int ns_platform_thread_init(
     ns_platform_thread_t *thread,
     ns_platform_thread_fn entry,
@@ -361,6 +369,7 @@ int ns_platform_thread_init(
     size_t stack_size)
 {
     pthread_attr_t attr;
+    size_t stack_aligned;
     int rc;
 
     (void)debug_name;
@@ -381,13 +390,22 @@ int ns_platform_thread_init(
         return NS_OK;
     }
 
-    /* 下界判定交给 pthread_attr_setstacksize 自身：它对 size < PTHREAD_STACK_MIN
-       返回 EINVAL。PTHREAD_STACK_MIN 在部分 libc 上是运行期值，不是常量表达式，
-       故不做静态断言。 */
+    /* 下界用**原始请求**判定：先取整再判下界会让"略小于 PTHREAD_STACK_MIN"
+       的请求被补到下限而获准，违反"min - 1 必被拒"的契约。
+       PTHREAD_STACK_MIN 在部分 libc 上是运行期值，不是常量表达式，故不做
+       静态断言。 */
+    if(stack_size < (size_t)PTHREAD_STACK_MIN) return NS_E_INVAL;
+
+    /* 向上取整到页粒度（防溢出）。 */
+    if(stack_size > SIZE_MAX - (size_t)(NS_POSIX_THREAD_STACK_GRANULARITY - 1u)) return NS_E_INVAL;
+    stack_aligned = ((stack_size + (size_t)(NS_POSIX_THREAD_STACK_GRANULARITY - 1u))
+                     / (size_t)NS_POSIX_THREAD_STACK_GRANULARITY)
+                    * (size_t)NS_POSIX_THREAD_STACK_GRANULARITY;
+
     rc = pthread_attr_init(&attr);
     if(rc != 0) return NS_E_NOMEM;
 
-    rc = pthread_attr_setstacksize(&attr, stack_size);
+    rc = pthread_attr_setstacksize(&attr, stack_aligned);
     if(rc != 0){
         (void)pthread_attr_destroy(&attr);
         return (rc == ENOMEM) ? NS_E_NOMEM : NS_E_INVAL;

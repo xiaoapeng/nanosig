@@ -31,7 +31,8 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 ## 线程栈大小
 
 `ns_platform_thread_init` 的第 5 个参数 `stack_size` 指定线程栈大小，单位**字节**；
-`0` 表示使用后端默认栈大小。实际分配的栈**永远不小于请求值**（后端按自身粒度向上取整）。
+`0` 表示使用后端默认栈大小。实际分配的栈**永远不小于请求值**（后端按自身粒度向上取整：
+POSIX 取整到页粒度 4096，FreeRTOS 取整到 `StackType_t` 整数倍）。
 低于后端可接受下界的请求返回 `NS_E_INVAL` 且**不创建线程**。
 
 `ns_platform_thread_stack_range(&min, &max)` 发布该后端的可接受区间：
@@ -41,7 +42,7 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 
 | 后端 | `stack_size == 0` 的默认 | 非 0 时怎么用 | 下限来源 |
 |------|------------------------|--------------|---------|
-| Linux | OS 默认（`pthread_create` 传 `NULL` attr） | `pthread_attr_setstacksize` | `PTHREAD_STACK_MIN`（平台保证；glibc ≥ 2.34 是运行期值，故**不做静态断言**） |
+| Linux | OS 默认（`pthread_create` 传 `NULL` attr） | `pthread_attr_setstacksize`，请求先向上取整到页粒度（4096） | `PTHREAD_STACK_MIN`（平台保证；glibc ≥ 2.34 是运行期值，故**不做静态断言**） |
 | macOS | OS 默认（`NULL` attr） | 同 Linux | 同 Linux |
 | Windows | OS 默认（`_beginthreadex(..., 0u, ...)`） | 直接作为 `_beginthreadex` 第 2 参 | **nanosig 策略值 16 KB**（见下） |
 | FreeRTOS | 1024 words（`StackType_t` 单位） | 字节 → words，**向上取整** | `configMINIMAL_STACK_SIZE`（words，**FreeRTOS 惯例，`xTaskCreate` 并不强制**） |
