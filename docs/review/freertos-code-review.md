@@ -187,7 +187,7 @@ entries:
 
 ---
 
-- **FREERTOS-008（2026-10-23）**: ns_platform_thread_stack_range 的 max 改为按 configSTACK_DEPTH_TYPE 宽度换算（溢出时以 SIZE_MAX 封顶），并加不变量断言（在显式调窄 configSTACK_DEPTH_TYPE 的配置下具备判别力） — commit `541fed1`
+- **FREERTOS-008（2026-10-23）**: ns_platform_thread_stack_range 的 max 改为按 configSTACK_DEPTH_TYPE 宽度换算（溢出时以 SIZE_MAX 封顶），并加不变量断言（在显式调窄 configSTACK_DEPTH_TYPE 的配置下具备判别力） — commit `05320ca`
 
 ## 现在打开的问题
 
@@ -203,7 +203,7 @@ entries:
 - **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: bug
-- **关闭原因**: 修复 commit `541fed1`
+- **关闭原因**: 修复 commit `05320ca`
 - **关闭日期**: 2026-10-23
 
 #### 问题描述
