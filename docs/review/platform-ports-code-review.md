@@ -350,10 +350,11 @@ entries:
       - "include/nanosig/nanosig_port.h:480"
   - id: "PORT-033"
     module: "platform-ports"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-23"
     location: "docs/review/platform-ports-code-review.md#PORT-033"
     locations:
       - "src/ns_broker.c:551"
@@ -940,70 +941,6 @@ platform/README.md:72
 platform/README.md:225
 platform/windows/nanosig_platform_port.h:44
 platform/windows/port.c:443
-
-<a id="PORT-033"></a>
-### PORT-033: `NANOSIG_BROKER_STACK_SIZE` 没有任何范围校验，文档推荐的 4096 在 host 构建上让 `ns_init()` 直接失败
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-`NANOSIG_BROKER_STACK_SIZE` 被原样注入并直接交给 `ns_platform_thread_init`（`src/ns_broker.c:551`），**没有与后端自身可接受区间做任何校验**。一个后端会拒绝的值，于是变成 `ns_init()` 返回 `NS_E_INVAL` —— 整个库初始化失败，且没有任何诊断信息或恢复路径。
-
-问题在于这个旋钮是**跨目标共享的单一编译期常量**，而各平台的最小栈大小差异很大：
-
-| 平台 | 最小可接受请求 | 4096 是否可接受 |
-|---|---|---|
-| macOS x86_64 | 8192（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
-| macOS arm64 | 16384（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
-| Linux | 16384 | ✗ 拒绝 |
-| FreeRTOS | 1024 words | ✓ 接受 |
-| Zephyr | 512（nanosig 策略值） | ✓ 接受 |
-
-而 `platform/README.md:67` 与 `docs/specs/深度访谈-线程栈大小参数规格.md:163` 恰恰把 **4096** 作为推荐值写给用户（"嵌入式目标若要显式锁死，建议设 4096"）。在嵌入式目标上它是对的；同一个值搬到 host 构建上就让库起不来。
-
-另外，arm64 macOS 上 4096 会被 `pthread_attr_setstacksize` **静默向上取整**到 16 KB —— 也就是说这个"编译期锁死"在不同架构上锁住的根本不是同一个值。
-
-#### review 建议
-
-1. **在构建期校验，而不是运行期**：顶层 `CMakeLists.txt` 里当 `NANOSIG_BROKER_STACK_SIZE != 0` 时，用 `check_c_source_compiles` 探测当前平台的最小可接受栈大小，低于它就 `FATAL_ERROR`（Zephyr 侧已有 Kconfig `range`，可参照）。这样配错在 configure 阶段就暴露，而不是让 `ns_init()` 在运行期莫名其妙地失败。
-
-2. 若走运行期校验路线，则需要把后端最小值暴露到 `src/` —— 而这与"src/ 不做平台判断"的硬约束冲突，故 (1) 是更干净的方案。
-
-3. 修正 `platform/README.md:67` 与规格文档的推荐值：要么改成一个跨平台可接受的值（如 65536），要么明确写清"该值必须 ≥ 目标平台的最小栈大小，且仅适用于嵌入式目标"。
-
-4. 顺带修正"编译期锁死"的表述 —— 在会向上取整的平台上，锁住的是"请求值"而非"实际栈大小"，这个区别应写进文档。
-
-#### 作者建议
-
-作者决定：嵌入式默认栈改为 **2048 字节**（FreeRTOS 与 Zephyr 一致），host 保持外部宏 0 = 平台默认。
-为此 FreeRTOS 后端的下限也从 configMINIMAL_STACK_SIZE（1024 words，FreeRTOS 给 idle 任务的惯例值）改为 **nanosig 策略值 1024 字节**，否则 2048 字节（= 256 words @8B/word harness）仍会被旧下限拒绝。
-代价（作者已知悉并接受）：broker 线程的栈小于 FreeRTOS 惯例的 idle 任务栈，而它还要执行用户的 watcher handler；由 configCHECK_FOR_STACK_OVERFLOW + 用户自行评估 handler 深度兜底。下限同时改为字节制，顺带消除 FREERTOS-008 里 min 的字节/words 混合语义。
-
-#### 可重现的失败场景
-
-macOS 实测（arm64 构建，`-DNANOSIG_BROKER_STACK_SIZE=4096`）：
-
-```
-$ cmake -S . -B build -DNANOSIG_PLATFORM=host -DNANOSIG_BROKER_STACK_SIZE=4096 -DCMAKE_BUILD_TYPE=Release
-$ cmake --build build --target nanosig_test_broker_lifecycle
-$ ./build/nanosig_test_broker_lifecycle
-EXPECT failed at test/unit/test_broker_lifecycle.c:118: ns_init() == NS_OK
-exit=1
-```
-
-即 `ns_init()` 返回 `NS_E_INVAL`，整个库无法初始化。
-
-#### 定位
-
-src/ns_broker.c:551
-CMakeLists.txt:55
-CMakeLists.txt:172
-platform/README.md:67
-
----
 
 ## 现在关闭的问题
 
@@ -1615,6 +1552,72 @@ src/nanosig.c:91
 include/nanosig/nanosig_port.h:442
 
 ---
+
+---
+
+<a id="PORT-033"></a>
+### PORT-033: `NANOSIG_BROKER_STACK_SIZE` 没有任何范围校验，文档推荐的 4096 在 host 构建上让 `ns_init()` 直接失败
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 作者仲裁：文档部分已修（README 与规格不再推荐 host 上非法的 4096，改为推荐留 0；若显式锁死须 >= 目标平台最小栈，见 e216c92），构建期校验按作者决定**不加**——文档已不再把用户引向陷阱，而为探测 PTHREAD_STACK_MIN 引入 configure 期编译探测的复杂度不值得。嵌入式默认同时改为 2 KB（e216c92）。
+- **关闭日期**: 2026-10-23
+
+#### 问题描述
+
+`NANOSIG_BROKER_STACK_SIZE` 被原样注入并直接交给 `ns_platform_thread_init`（`src/ns_broker.c:551`），**没有与后端自身可接受区间做任何校验**。一个后端会拒绝的值，于是变成 `ns_init()` 返回 `NS_E_INVAL` —— 整个库初始化失败，且没有任何诊断信息或恢复路径。
+
+问题在于这个旋钮是**跨目标共享的单一编译期常量**，而各平台的最小栈大小差异很大：
+
+| 平台 | 最小可接受请求 | 4096 是否可接受 |
+|---|---|---|
+| macOS x86_64 | 8192（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
+| macOS arm64 | 16384（`PTHREAD_STACK_MIN`） | ✗ 拒绝 |
+| Linux | 16384 | ✗ 拒绝 |
+| FreeRTOS | 1024 words | ✓ 接受 |
+| Zephyr | 512（nanosig 策略值） | ✓ 接受 |
+
+而 `platform/README.md:67` 与 `docs/specs/深度访谈-线程栈大小参数规格.md:163` 恰恰把 **4096** 作为推荐值写给用户（"嵌入式目标若要显式锁死，建议设 4096"）。在嵌入式目标上它是对的；同一个值搬到 host 构建上就让库起不来。
+
+另外，arm64 macOS 上 4096 会被 `pthread_attr_setstacksize` **静默向上取整**到 16 KB —— 也就是说这个"编译期锁死"在不同架构上锁住的根本不是同一个值。
+
+#### review 建议
+
+1. **在构建期校验，而不是运行期**：顶层 `CMakeLists.txt` 里当 `NANOSIG_BROKER_STACK_SIZE != 0` 时，用 `check_c_source_compiles` 探测当前平台的最小可接受栈大小，低于它就 `FATAL_ERROR`（Zephyr 侧已有 Kconfig `range`，可参照）。这样配错在 configure 阶段就暴露，而不是让 `ns_init()` 在运行期莫名其妙地失败。
+
+2. 若走运行期校验路线，则需要把后端最小值暴露到 `src/` —— 而这与"src/ 不做平台判断"的硬约束冲突，故 (1) 是更干净的方案。
+
+3. 修正 `platform/README.md:67` 与规格文档的推荐值：要么改成一个跨平台可接受的值（如 65536），要么明确写清"该值必须 ≥ 目标平台的最小栈大小，且仅适用于嵌入式目标"。
+
+4. 顺带修正"编译期锁死"的表述 —— 在会向上取整的平台上，锁住的是"请求值"而非"实际栈大小"，这个区别应写进文档。
+
+#### 作者建议
+
+作者决定：嵌入式默认栈改为 **2048 字节**（FreeRTOS 与 Zephyr 一致），host 保持外部宏 0 = 平台默认。
+为此 FreeRTOS 后端的下限也从 configMINIMAL_STACK_SIZE（1024 words，FreeRTOS 给 idle 任务的惯例值）改为 **nanosig 策略值 1024 字节**，否则 2048 字节（= 256 words @8B/word harness）仍会被旧下限拒绝。
+代价（作者已知悉并接受）：broker 线程的栈小于 FreeRTOS 惯例的 idle 任务栈，而它还要执行用户的 watcher handler；由 configCHECK_FOR_STACK_OVERFLOW + 用户自行评估 handler 深度兜底。下限同时改为字节制，顺带消除 FREERTOS-008 里 min 的字节/words 混合语义。
+
+#### 可重现的失败场景
+
+macOS 实测（arm64 构建，`-DNANOSIG_BROKER_STACK_SIZE=4096`）：
+
+```
+$ cmake -S . -B build -DNANOSIG_PLATFORM=host -DNANOSIG_BROKER_STACK_SIZE=4096 -DCMAKE_BUILD_TYPE=Release
+$ cmake --build build --target nanosig_test_broker_lifecycle
+$ ./build/nanosig_test_broker_lifecycle
+EXPECT failed at test/unit/test_broker_lifecycle.c:118: ns_init() == NS_OK
+exit=1
+```
+
+即 `ns_init()` 返回 `NS_E_INVAL`，整个库无法初始化。
+
+#### 定位
+
+src/ns_broker.c:551
+CMakeLists.txt:55
+CMakeLists.txt:172
+platform/README.md:67
 
 ---
 
