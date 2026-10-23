@@ -58,8 +58,8 @@ entries:
     section: "open"
     location: "docs/review/freertos-code-review.md#FREERTOS-008"
     locations:
-      - "platform/freertos/port.c:371"
-      - "platform/freertos/port.c:404"
+      - "platform/freertos/port.c:389"
+      - "platform/freertos/port.c:421"
       - "src/nanosig.c:91"
 ---
 
@@ -229,9 +229,11 @@ ns_loop_start(loop)          -> NS_E_INVAL （:404 上界检查拒绝）
 32 位 MCU 上不触发。
 
 #### 定位
-platform/freertos/port.c:371
-platform/freertos/port.c:404
+
+platform/freertos/port.c:389
+platform/freertos/port.c:421
 src/nanosig.c:91
+
 
 ---
 

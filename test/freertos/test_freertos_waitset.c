@@ -561,10 +561,16 @@ static void test_thread_stack_size(void)
     CHECK(g_thread_ran == 1);
 
     /* 非 sizeof(StackType_t) 整数倍：向上取整，实际栈 >= 请求值。
-       用 stack_min + 1：stack_min 是 configMINIMAL_STACK_SIZE 个整字，
-       加 1 必然不是 sizeof(StackType_t) 的整数倍（32/64 位 harness 都成立）。 */
+       stack_min 恒为 (floor_words-1)*sizeof+1，故 stack_min+1 也不是
+       sizeof(StackType_t) 的整数倍（32/64 位 harness 都成立）。 */
     g_thread_ran = 0;
     CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min + 1u) == NS_OK);
+    CHECK(ns_platform_thread_join(&t) == NS_OK);
+    CHECK(g_thread_ran == 1);
+
+    /* 默认值（stack_size == 0，即后端默认 2 KB）可用。 */
+    g_thread_ran = 0;
+    CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", 0u) == NS_OK);
     CHECK(ns_platform_thread_join(&t) == NS_OK);
     CHECK(g_thread_ran == 1);
 

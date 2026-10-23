@@ -431,9 +431,8 @@ int ns_platform_clock_monotonic_us(ns_platform_time_us_t *out_now_us);
  * @brief 查询当前后端接受的线程栈大小区间。
  *
  * 供调用方在把线程栈调小（例如嵌入式场景省 RAM）之前确认合法下界，也供契约测试
- * 用同一份判据覆盖全部后端。返回值是**后端策略**：POSIX 的下界来自
- * `PTHREAD_STACK_MIN`，FreeRTOS 的下界来自 `configMINIMAL_STACK_SIZE`（words）
- * 对应的字节数；Windows 与 Zephyr 没有平台级最小栈保证，其下界是 nanosig 自定的
+ * 用同一份判据覆盖全部后端。返回值是**后端策略**：只有 POSIX 的下界来自平台保证
+ * （`PTHREAD_STACK_MIN`）；Windows、FreeRTOS 与 Zephyr 下界都是 nanosig 自定的
  * 策略值，只用于**拒绝明显过小的请求**，不保证不会栈溢出。
  *
  * @param min_out 输出**最小可接受**的栈大小请求（字节）；可为 `NULL`。
