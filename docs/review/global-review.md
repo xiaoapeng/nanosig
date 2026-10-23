@@ -286,7 +286,7 @@ platform/windows/nanosig_platform_port.h:22
 - **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: doc
-- **关闭原因**: 三项全部消解：(1) 「init 失败后 join 返回 NS_E_INVAL，五个后端一致」已删除并改写为文档化前提（PORT-032）；(2) 「实际分配的栈永远不小于请求值」由 PORT-031 使 POSIX 后端真正向上取整到页粒度而成立；(3) 「超出区间时 ns_loop_create 返回 NS_E_INVAL」的上界问题由 FREERTOS-008（commit 541fed1）发布真实上界而解决；POSIX/Zephyr 的上界本就是 SIZE_MAX，属已知限制。
+- **关闭原因**: 三项全部消解：(1) 「init 失败后 join 返回 NS_E_INVAL，五个后端一致」已删除并改写为文档化前提（PORT-032）；(2) 「实际分配的栈永远不小于请求值」由 PORT-031 使 POSIX 后端真正向上取整到页粒度而成立；(3) 「超出区间时 ns_loop_create 返回 NS_E_INVAL」的上界问题由 FREERTOS-008 发布真实上界而解决（修复 commit 见该条目）；POSIX/Zephyr 的上界本就是 SIZE_MAX，属已知限制。
 - **关闭日期**: 2026-10-23
 
 #### 问题描述
