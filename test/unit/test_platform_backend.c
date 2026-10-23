@@ -157,14 +157,13 @@ static int test_thread_stack_size(void)
     EXPECT_OK(ns_platform_thread_join(&thread) == NS_OK);
     EXPECT_OK(ctx.value == 42);
 
-    /* 过小：必须显式拒绝，且不得创建线程（入口副作用计数保持 0）。 */
+    /* 过小：必须显式拒绝，且不得创建线程（入口副作用计数保持 0）。
+       init 失败后 thread 的内容未定义（见 nanosig_port.h 的 @note），
+       故此处**不**断言随后 join 的返回值。 */
     ctx.value = 0;
     EXPECT_OK(ns_platform_thread_init(&thread, test_thread_entry, &ctx, "thread-too-small",
                                       stack_min - 1u) == NS_E_INVAL);
     EXPECT_OK(ctx.value == 0);
-
-    /* init 失败后误调 join：必须返回错误（不得 UB，也不得永久阻塞）。 */
-    EXPECT_OK(ns_platform_thread_join(&thread) == NS_E_INVAL);
 
     return 0;
 }
