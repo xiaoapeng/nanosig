@@ -52,10 +52,11 @@ entries:
     location: "docs/review/freertos-code-review.md#FREERTOS-007"
   - id: "FREERTOS-008"
     module: "freertos"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-23"
     location: "docs/review/freertos-code-review.md#FREERTOS-008"
     locations:
       - "platform/freertos/port.c:389"
@@ -186,16 +187,24 @@ entries:
 
 ---
 
+- **FREERTOS-008（2026-10-23）**: ns_platform_thread_stack_range 的 max 改为按 configSTACK_DEPTH_TYPE 宽度换算（溢出时以 SIZE_MAX 封顶），并加不变量断言（在显式调窄 configSTACK_DEPTH_TYPE 的配置下具备判别力） — commit `541fed1`
+
 ## 现在打开的问题
+
+（暂无。）
+
+## 现在关闭的问题
 
 （暂无。）
 
 <a id="FREERTOS-008"></a>
 ### FREERTOS-008: FreeRTOS 后端发布 `max = SIZE_MAX`，但 `ns_platform_thread_init` 拒绝超出 `configSTACK_DEPTH_TYPE` 的请求
 
-- **状态**: 打开
+- **状态**: 关闭-已修复
 - **严重度**: 🟡 中
 - **类型**: bug
+- **关闭原因**: 修复 commit `541fed1`
+- **关闭日期**: 2026-10-23
 
 #### 问题描述
 
@@ -213,7 +222,8 @@ entries:
 
 #### 作者建议
 
-（待作者补充）
+采纳：发布真实上界。FreeRTOS V11 的 configSTACK_DEPTH_TYPE 默认就是 StackType_t（与 size_t 同宽），故本仓库的 64 位 harness 上**不可复现** —— 原 repro 假设它为 uint32_t 是错的（实测 sizeof == 8）。
+只有应用把 configSTACK_DEPTH_TYPE 显式调窄（例如省 RAM 用 uint16_t）时才触发。修法：max 改为按该类型宽度换算，并在换算会溢出 size_t 时以 SIZE_MAX 封顶（32 位目标上 max_words * sizeof 会溢出）。默认配置下行为不变（仍为 SIZE_MAX）。
 
 #### 可重现的失败场景
 
@@ -234,9 +244,4 @@ platform/freertos/port.c:389
 platform/freertos/port.c:421
 src/nanosig.c:91
 
-
 ---
-
-## 现在关闭的问题
-
-（暂无。）
