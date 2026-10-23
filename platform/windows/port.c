@@ -276,8 +276,8 @@ int ns_platform_thread_init(
 
     thread->entry = entry;
     thread->arg = arg;
-    /* _beginthreadex 失败时返回 NULL：随后误调 join 会因 NULL 句柄直接返回错误，
-       而不是对未初始化的 HANDLE 调 WaitForSingleObject。 */
+    /* _beginthreadex 失败时返回 NULL，join 的入口守卫据此返回 NS_E_INVAL；
+       init 失败后一般不应再 join（见 nanosig_port.h 的 @note）。 */
     thread->thread = (HANDLE)_beginthreadex(NULL, stack, ns_windows_thread_main, thread, 0u, NULL);
     if(thread->thread == NULL){
         return NS_E_NOMEM;

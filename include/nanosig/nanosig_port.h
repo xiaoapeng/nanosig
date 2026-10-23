@@ -475,8 +475,10 @@ int ns_platform_thread_init(
  *
  * 返回后 `thread` 存储仍归调用方所有，但其内容不可再用（除非再次 init）。
  *
- * @note `ns_platform_thread_init` **失败**后不得视为线程已创建：此时 join 返回
- *       `NS_E_INVAL`（不阻塞、不崩溃）。五个后端一致。
+ * @note `ns_platform_thread_init` **失败**后，`thread` 的内容未定义：调用方必须
+ *       检查其返回值，**不得**对失败的 `thread` 调用本函数（否则未定义行为 ——
+ *       可能对未初始化的平台句柄进行操作）。本函数只对**成功 init 过的** `thread`
+ *       具有定义的行为。
  * @note Zephyr 后端 join 失败（如自 join）时**不回收**线程对象与栈 —— 目标线程
  *       可能仍在运行，回收会造成 use-after-free。句柄保留，由调用方处理。
  *

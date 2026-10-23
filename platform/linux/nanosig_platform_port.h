@@ -48,8 +48,9 @@ typedef int ns_platform_wakeup_t;
 typedef pthread_mutex_t ns_platform_mutex_t;
 
 /** thread：pthread 句柄 + 入口/参数簿记（trampoline 从本结构体读取）。
- *  `created` 标记线程是否已真正创建：init 失败后调用方误调 join 时据此返回
- *  `NS_E_INVAL`，避免对未初始化的 `pthread_t` 调 `pthread_join`（未定义行为）。 */
+ *  `created` 标记线程是否已真正创建，供 `ns_platform_thread_join` 的入口守卫使用。
+ *  注意：init 失败后 `thread` 的内容未定义，调用方**不得**再调 join（见
+ *  nanosig_port.h 的 @note），本标记只保证成功路径上的行为。 */
 typedef struct ns_platform_thread {
     pthread_t             thread;
     ns_platform_thread_fn entry;

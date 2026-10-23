@@ -386,7 +386,16 @@ int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
         size_t floor_words = ns_freertos_bytes_to_words((size_t)NS_FREERTOS_MIN_STACK_BYTES);
         *min_out = (floor_words - 1u) * sizeof(StackType_t) + 1u;
     }
-    if(max_out != NULL) *max_out = SIZE_MAX;
+    if(max_out != NULL){
+        /* 上界由 xTaskCreate 的深度参数类型决定：configSTACK_DEPTH_TYPE 装不下的
+           words 数会被截断，故真实上界是"该类型能表达的最大 words 数"换算成的
+           字节数。若换算本身会超出 size_t（32 位目标上 max_words * sizeof 会溢出），
+           则以 SIZE_MAX 封顶 —— 那种目标上任何字节请求都装得下。 */
+        size_t max_words = (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0);
+        *max_out = (max_words > (SIZE_MAX / sizeof(StackType_t)))
+                 ? SIZE_MAX
+                 : (max_words * sizeof(StackType_t));
+    }
     return NS_OK;
 }
 
@@ -405,8 +414,8 @@ int ns_platform_thread_init(
 
     if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;
 
-    /* 先把资源指针置空：任何提前返回的失败路径都不会留下"看起来已初始化"的
-       句柄，否则 join 会拿着没创建过的信号量永久阻塞。 */
+    /* 先把资源指针置空：让"本对象没有活着的 join 信号量"成为可判定的状态，
+       供 join 的入口守卫使用（init 失败后不得再 join，见 nanosig_port.h 的 @note）。 */
     thread->task = NULL;
     thread->join_sem = NULL;
 

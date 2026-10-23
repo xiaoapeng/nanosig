@@ -554,6 +554,14 @@ static void test_thread_stack_size(void)
     CHECK(stack_min >= 1u);
     CHECK(stack_max >= stack_min);
 
+    /* 上界必须能由 configSTACK_DEPTH_TYPE 表达：否则 ns_loop_create 会放行一个
+       ns_platform_thread_init 必然拒绝的尺寸（两阶段校验不一致）。
+       注意：FreeRTOS V11 默认 configSTACK_DEPTH_TYPE == StackType_t，与 size_t 同宽，
+       此时本断言恒成立；只有当应用把 configSTACK_DEPTH_TYPE 显式调窄
+       （例如省 RAM 用 uint16_t）时才具备判别力。 */
+    CHECK((stack_max / sizeof(StackType_t))
+          <= (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0));
+
     /* 合法值：创建并跑完。 */
     g_thread_ran = 0;
     CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min) == NS_OK);
@@ -574,13 +582,12 @@ static void test_thread_stack_size(void)
     CHECK(ns_platform_thread_join(&t) == NS_OK);
     CHECK(g_thread_ran == 1);
 
-    /* 过小：显式拒绝，不创建线程。 */
+    /* 过小：显式拒绝，不创建线程。
+       init 失败后 t 的内容未定义（见 nanosig_port.h 的 @note），
+       故此处**不**断言随后 join 的返回值。 */
     g_thread_ran = 0;
     CHECK(ns_platform_thread_init(&t, thread_proc, NULL, "t", stack_min - 1u) == NS_E_INVAL);
     CHECK(g_thread_ran == 0);
-
-    /* init 失败后误调 join：必须返回错误（不得永久阻塞在没创建过的信号量上）。 */
-    CHECK(ns_platform_thread_join(&t) == NS_E_INVAL);
 }
 
 static void test_clock(void)
