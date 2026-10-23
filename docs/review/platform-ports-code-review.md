@@ -334,10 +334,11 @@ entries:
       - "include/nanosig/nanosig_port.h:442"
   - id: "PORT-032"
     module: "platform-ports"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-23"
     location: "docs/review/platform-ports-code-review.md#PORT-032"
     locations:
       - "platform/linux/port.c:339"
@@ -397,71 +398,6 @@ entries:
 - **PORT-031（2026-10-22）**: POSIX 后端把栈大小请求向上取整到页粒度（4096）后再交给 pthread_attr_setstacksize，下界判定仍用原始请求；新增非页粒度请求的单测用例 — commit `b3e660d`
 
 ## 现在打开的问题
-
-<a id="PORT-032"></a>
-### PORT-032: 线程对象状态重置排在参数校验之后，init 失败后 join 在 4/5 后端仍是 UB 或永久阻塞
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-
-#### 问题描述
-
-本次改动为"init 失败后 join 返回 `NS_E_INVAL`"引入了状态标记（POSIX 的 `created`、FreeRTOS 的 `join_sem == NULL`、Windows 的 `thread == NULL`），但**状态重置被放在了参数校验之后**：
-
-- `platform/linux/port.c:339` / `platform/macos/port.c:368`：`if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;` 在 `thread->created = 0;`（:344 / :373）**之前**返回 → `created` 保持调用方存储里的旧值。
-- `platform/freertos/port.c:387`：同一顺序 → `join_sem` 保持旧值。
-- `platform/windows/port.c:269`：同一顺序；且新加的栈大小校验（:271-275）也在 `thread->thread` 赋值（:281）之前返回 → HANDLE 保持旧值。
-
-只有 Zephyr 做对了：`platform/zephyr/port.c:282` 的 `*thread = NULL;` 在 `entry == NULL` 检查**之前**。
-
-后果（`entry == NULL` 这条是显式处理的错误路径，不是未文档化的前提）：调用方传入未初始化的线程存储 → init 返回 `NS_E_INVAL` → 随后的 join 拿到的是垃圾状态：
-
-| 后端 | 后续 join 行为 |
-|---|---|
-| Linux / macOS | `pthread_join(垃圾 pthread_t)` → 未定义行为 |
-| Windows | `WaitForSingleObject(垃圾 HANDLE, INFINITE)` → 永久阻塞或崩溃 |
-| FreeRTOS | `xSemaphoreTake(垃圾句柄, portMAX_DELAY)` → 永久阻塞 |
-
-`include/nanosig/nanosig_port.h:480` 明确承诺"`ns_platform_thread_init` **失败**后不得视为线程已创建：此时 join 返回 `NS_E_INVAL`（不阻塞、不崩溃）。五个后端一致。" —— 该承诺在 4/5 后端为假。
-
-新增测试之所以没抓到：`test/unit/test_platform_backend.c:158` 复用的是同一个 `thread` 变量，而它在此之前已被成功创建并 join 过（:140-149），`created` 已被清零；`entry == NULL` 那条（:116）之后从未跟 join。
-
-#### review 建议
-
-1. 把状态重置挪到 `ns_platform_thread_init` 的**最前面**（`thread == NULL` 检查之后、任何其它提前返回之前），五个后端统一照 Zephyr 的写法：`thread->created = 0;`（POSIX）、`thread->task = NULL; thread->join_sem = NULL;`（FreeRTOS）、`thread->thread = NULL;`（Windows）。
-
-2. 补测试：每种失败模式用**全新的**线程存储（先 memset 成毒值），覆盖 `entry == NULL`、`stack_size` 低于 `min`、`stack_size` 高于 `max` 三条路径，断言随后的 `ns_platform_thread_join` 一律返回 `NS_E_INVAL`。当前测试复用同一个变量，正是它掩盖了这个缺陷。
-
-3. 公共头 `include/nanosig/nanosig_port.h:480` 的"五个后端一致"表述在 (1) 落地前是错的，需同步。
-
-#### 作者建议
-
-（待作者补充）
-
-#### 可重现的失败场景
-
-macOS 实测：
-
-```c
-ns_platform_thread_t t;
-memset(&t, 0xFF, sizeof(t));                        /* 未初始化的调用方存储 */
-ns_platform_thread_init(&t, NULL, NULL, "x", 0u);   /* -> NS_E_INVAL */
-printf("t.created = %d\n", t.created);              /* -> -1（残留值，应为 0） */
-/* 此刻 ns_platform_thread_join(&t) 会对垃圾 pthread_t 调 pthread_join → UB */
-```
-
-Windows 另有一条本次新增的触发路径：`ns_platform_thread_init(&t, entry, arg, "x", 1024)`（< 16 KB 策略下限）→ `NS_E_INVAL`，而 `t.thread` 从未被赋值 → 随后的 join 对垃圾 HANDLE 调 `WaitForSingleObject`。
-
-#### 定位
-platform/linux/port.c:339
-platform/linux/port.c:344
-platform/macos/port.c:368
-platform/windows/port.c:269
-platform/windows/port.c:271
-platform/freertos/port.c:387
-platform/zephyr/port.c:282
-include/nanosig/nanosig_port.h:480
 
 <a id="PORT-021"></a>
 ### PORT-021: 平台文档仍描述重构前的原语
@@ -1618,6 +1554,75 @@ src/ns_broker.c:551
 CMakeLists.txt:55
 CMakeLists.txt:172
 platform/README.md:67
+
+---
+
+<a id="PORT-032"></a>
+### PORT-032: 线程对象状态重置排在参数校验之后，init 失败后 join 在 4/5 后端仍是 UB 或永久阻塞
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **关闭原因**: 合同前提保护：include/nanosig/nanosig_port.h 的 ns_platform_thread_join @note 现已文档化「ns_platform_thread_init 失败后，thread 的内容未定义：调用方必须检查其返回值，不得对失败的 thread 调用本函数（否则未定义行为）」。作者决定不为调用方错误兜底（同 C 库惯例）。本轮删除了原先的反向假承诺与两处依赖它的测试断言。
+- **关闭日期**: 2026-10-23
+
+#### 问题描述
+
+本次改动为"init 失败后 join 返回 `NS_E_INVAL`"引入了状态标记（POSIX 的 `created`、FreeRTOS 的 `join_sem == NULL`、Windows 的 `thread == NULL`），但**状态重置被放在了参数校验之后**：
+
+- `platform/linux/port.c:339` / `platform/macos/port.c:368`：`if((thread == NULL) || (entry == NULL)) return NS_E_INVAL;` 在 `thread->created = 0;`（:344 / :373）**之前**返回 → `created` 保持调用方存储里的旧值。
+- `platform/freertos/port.c:387`：同一顺序 → `join_sem` 保持旧值。
+- `platform/windows/port.c:269`：同一顺序；且新加的栈大小校验（:271-275）也在 `thread->thread` 赋值（:281）之前返回 → HANDLE 保持旧值。
+
+只有 Zephyr 做对了：`platform/zephyr/port.c:282` 的 `*thread = NULL;` 在 `entry == NULL` 检查**之前**。
+
+后果（`entry == NULL` 这条是显式处理的错误路径，不是未文档化的前提）：调用方传入未初始化的线程存储 → init 返回 `NS_E_INVAL` → 随后的 join 拿到的是垃圾状态：
+
+| 后端 | 后续 join 行为 |
+|---|---|
+| Linux / macOS | `pthread_join(垃圾 pthread_t)` → 未定义行为 |
+| Windows | `WaitForSingleObject(垃圾 HANDLE, INFINITE)` → 永久阻塞或崩溃 |
+| FreeRTOS | `xSemaphoreTake(垃圾句柄, portMAX_DELAY)` → 永久阻塞 |
+
+`include/nanosig/nanosig_port.h:480` 明确承诺"`ns_platform_thread_init` **失败**后不得视为线程已创建：此时 join 返回 `NS_E_INVAL`（不阻塞、不崩溃）。五个后端一致。" —— 该承诺在 4/5 后端为假。
+
+新增测试之所以没抓到：`test/unit/test_platform_backend.c:158` 复用的是同一个 `thread` 变量，而它在此之前已被成功创建并 join 过（:140-149），`created` 已被清零；`entry == NULL` 那条（:116）之后从未跟 join。
+
+#### review 建议
+
+1. 把状态重置挪到 `ns_platform_thread_init` 的**最前面**（`thread == NULL` 检查之后、任何其它提前返回之前），五个后端统一照 Zephyr 的写法：`thread->created = 0;`（POSIX）、`thread->task = NULL; thread->join_sem = NULL;`（FreeRTOS）、`thread->thread = NULL;`（Windows）。
+
+2. 补测试：每种失败模式用**全新的**线程存储（先 memset 成毒值），覆盖 `entry == NULL`、`stack_size` 低于 `min`、`stack_size` 高于 `max` 三条路径，断言随后的 `ns_platform_thread_join` 一律返回 `NS_E_INVAL`。当前测试复用同一个变量，正是它掩盖了这个缺陷。
+
+3. 公共头 `include/nanosig/nanosig_port.h:480` 的"五个后端一致"表述在 (1) 落地前是错的，需同步。
+
+#### 作者建议
+
+作者意见：调用方本来就会判断 init 的返回值。init 失败后仍去 join 属调用方错误，与 C 库惯例一致（fopen 返回 NULL 后不得 fclose），库没有义务兜底。因此不改代码，改为在公共头里把这条前提**明确文档化**（原先是反向承诺——写了「五个后端一致返回 NS_E_INVAL」，那是假的），并删除两处依赖该假承诺的测试断言（它们实际依赖线程对象的复用历史，属于对未定义行为的过度规定）。
+
+#### 可重现的失败场景
+
+macOS 实测：
+
+```c
+ns_platform_thread_t t;
+memset(&t, 0xFF, sizeof(t));                        /* 未初始化的调用方存储 */
+ns_platform_thread_init(&t, NULL, NULL, "x", 0u);   /* -> NS_E_INVAL */
+printf("t.created = %d\n", t.created);              /* -> -1（残留值，应为 0） */
+/* 此刻 ns_platform_thread_join(&t) 会对垃圾 pthread_t 调 pthread_join → UB */
+```
+
+Windows 另有一条本次新增的触发路径：`ns_platform_thread_init(&t, entry, arg, "x", 1024)`（< 16 KB 策略下限）→ `NS_E_INVAL`，而 `t.thread` 从未被赋值 → 随后的 join 对垃圾 HANDLE 调 `WaitForSingleObject`。
+
+#### 定位
+platform/linux/port.c:339
+platform/linux/port.c:344
+platform/macos/port.c:368
+platform/windows/port.c:269
+platform/windows/port.c:271
+platform/freertos/port.c:387
+platform/zephyr/port.c:282
+include/nanosig/nanosig_port.h:480
 
 ---
 

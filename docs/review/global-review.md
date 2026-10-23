@@ -136,18 +136,18 @@ entries:
 
 #### 问题描述
 
-线程栈大小是本次新增的**公共 API 契约**，跨全部五个后端。当前有四处公共表述与实现对不上，其中三处的根因在具体后端（已分别记为 PORT-031 / PORT-032 / PORT-033），本条只记录**契约表述本身**的问题：
+本条只记录**跨后端公共契约表述**的问题（根因在各后端，已分别记为 PORT-031 / PORT-032 / PORT-033 / FREERTOS-008）。
 
-| 公共表述 | 位置 | 与实现的出入 |
-|---|---|---|
-| "init 失败后 join 返回 `NS_E_INVAL`（不阻塞、不崩溃）。**五个后端一致**" | include/nanosig/nanosig_port.h:480 | 4/5 后端的 `entry == NULL` 路径不满足（PORT-032） |
-| "实际分配的栈**永远不小于**请求值（后端按自身粒度向上取整）" | include/nanosig/nanosig_port.h:463、platform/README.md:34 | macOS 不取整而是**拒绝**非 4096 倍数的请求（PORT-031） |
-| "超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`" | include/nanosig/nanosig_loop.h:53 | 上界在 3/5 后端拦不住，失败推迟到 `ns_loop_start`（PORT-031 / FREERTOS-008） |
+**已消解的两项**（2026-10-23 复核）：
 
-另有**文档互相矛盾**：
+| 原表述 | 现状 |
+|---|---|
+| "init 失败后 join 返回 `NS_E_INVAL`（五个后端一致）"（include/nanosig/nanosig_port.h） | ✅ 已删除该**反向假承诺**，改为文档化前提"init 失败后不得 join（未定义行为）"；PORT-032 按合同前提保护关闭 |
+| "实际分配的栈**永远不小于**请求值（后端按自身粒度向上取整）"（include/nanosig/nanosig_port.h、platform/README.md） | ✅ 已成立：POSIX 后端补上了页粒度向上取整（PORT-031） |
 
-- `platform/README.md:58` 说 FreeRTOS 的 "`floor_bytes - sizeof(StackType_t)` 这一档仍会被补回 floor 而被接受"，但该值是 `StackType_t` 的整数倍 → 换算后是 `configMINIMAL_STACK_SIZE - 1` words → **被拒**。正确规则是 `(floor_bytes - sizeof(StackType_t), floor_bytes]`，即 `floor_bytes - sizeof(StackType_t) + 1` 及以上。`platform/freertos/port.c:363-367` 给的是对的（"8184 B 被拒、8185 B 被接受"），README 与实现互相打架。
-- `platform/README.md:67` 与 `docs/specs/深度访谈-线程栈大小参数规格.md:163` 都把 `NANOSIG_BROKER_STACK_SIZE=4096` 作为推荐值，而它在 host 平台会让 `ns_init()` 失败（PORT-033）。
+**仍打开的一项**：
+
+"超出后端可接受区间时 `ns_loop_create` 返回 `NS_E_INVAL`"（include/nanosig/nanosig_loop.h）—— 下界在 create 阶段确实被拦；但**上界拦不住**：FreeRTOS 发布 `max = SIZE_MAX`，实际 init 还会因超出 `configSTACK_DEPTH_TYPE` 而拒绝（即 FREERTOS-008），失败点比契约晚一层。POSIX / Zephyr 的上界本身就是 `SIZE_MAX`（平台无法在公共层表达真实上限），属已知限制。本条随 FREERTOS-008 一并关闭。
 
 #### review 建议
 
