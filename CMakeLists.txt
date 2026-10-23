@@ -258,6 +258,9 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_unit_test(nanosig_test_signal_null_slot test/unit/test_signal_null_slot.c)
     nanosig_add_unit_test(nanosig_test_signal_double_deinit test/unit/test_signal_double_deinit.c)
     nanosig_add_unit_test(nanosig_test_loop_reuse test/unit/test_loop_reuse.c)
+    # C++ 侧的运行时契约：test_cpp_compat_compile.cpp 只做 -fsyntax-only 且无 main，
+    # 覆盖不到 NS_LOOP_CONFIG_DEFAULT() 的 C++ 位置初始化分支。
+    nanosig_add_unit_test(nanosig_test_cpp_compat_runtime test/unit/test_cpp_compat_runtime.cpp)
     nanosig_add_unit_test(nanosig_test_timer_deinit_use test/unit/test_timer_deinit_use.c)
     nanosig_add_unit_test(nanosig_test_broker_concurrent_remove test/unit/test_broker_concurrent_remove.c)
     set_tests_properties(nanosig_test_broker_concurrent_remove PROPERTIES TIMEOUT 60)

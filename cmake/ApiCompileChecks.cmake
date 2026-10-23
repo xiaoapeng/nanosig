@@ -160,6 +160,10 @@ function(nanosig_add_cpp_compat_check name)
             -fsyntax-only
             -Wall
             -Wextra
+            # NS_LOOP_CONFIG_DEFAULT() 的 C++ 分支是**位置初始化**（C++11 无指定
+            # 初始化器），漏写新字段只会产生警告；升级为错误，否则新增字段时
+            # CI 不会变红。运行时逐字段断言见 test_cpp_compat_runtime.cpp。
+            -Werror=missing-field-initializers
             -Wconversion
             -Wsign-conversion
             -I${PROJECT_SOURCE_DIR}/include
