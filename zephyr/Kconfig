@@ -46,7 +46,7 @@ config NANOSIG_BROKER_STACK_SIZE
     range 0 65536
     help
       Stack size of the nanosig broker (timer) thread, in bytes. 0 means the
-      Zephyr backend default (4096). The value is forwarded to the library as
+      Zephyr backend default (2048 bytes). The value is forwarded to the library as
       the NANOSIG_BROKER_STACK_SIZE macro and is locked in at build time.
 
       The broker thread runs user watcher handlers, so the stack must be large

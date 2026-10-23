@@ -45,8 +45,8 @@ POSIX 取整到页粒度 4096，FreeRTOS 取整到 `StackType_t` 整数倍）。
 | Linux | OS 默认（`pthread_create` 传 `NULL` attr） | `pthread_attr_setstacksize`，请求先向上取整到页粒度（4096） | `PTHREAD_STACK_MIN`（平台保证；glibc ≥ 2.34 是运行期值，故**不做静态断言**） |
 | macOS | OS 默认（`NULL` attr） | 同 Linux | 同 Linux |
 | Windows | OS 默认（`_beginthreadex(..., 0u, ...)`） | 直接作为 `_beginthreadex` 第 2 参 | **nanosig 策略值 16 KB**（见下） |
-| FreeRTOS | 1024 words（`StackType_t` 单位） | 字节 → words，**向上取整** | `configMINIMAL_STACK_SIZE`（words，**FreeRTOS 惯例，`xTaskCreate` 并不强制**） |
-| Zephyr | 4096 字节 | `k_thread_stack_alloc` | **nanosig 策略值 512 B**（见下） |
+| FreeRTOS | **2 KB（2048 字节）** | 字节 → words，**向上取整** | **nanosig 策略值 1024 字节**（不沿用 `configMINIMAL_STACK_SIZE`，见下） |
+| Zephyr | **2048 字节** | `k_thread_stack_alloc` | **nanosig 策略值 512 B**（见下） |
 
 **Windows 下限是 nanosig 策略值，不是 Win32 平台保证**：`_beginthreadex` / `CreateThread`
 没有公开的最小栈大小契约，且 Win32 线程栈默认**不带 guard page** —— 栈过小不会立刻
@@ -55,17 +55,27 @@ POSIX 取整到页粒度 4096，FreeRTOS 取整到 `StackType_t` 整数倍）。
 **Zephyr 下限同理是 nanosig 策略值**：Zephyr 3.7 没有 `Z_MIN_THREAD_STACK_SIZE`，
 `k_thread_stack_alloc` 自身也不做任何下限检查，过小的栈会被静默分配然后运行时溢栈。
 
+**FreeRTOS 下限同样是 nanosig 策略值**：`configMINIMAL_STACK_SIZE` 是 FreeRTOS 给
+**idle 任务**的惯例深度（1024 words），并非 `xTaskCreate` 强制的下限；本后端改用字节制
+策略值 **1024 字节**，使下限语义与公共 API 的单位一致。这同时意味着 FreeRTOS 上
+`stack_size == 0` 的默认值（2 KB）**小于**该惯例值 —— 这是作者明确的取舍：优先省 RAM，
+由 `configCHECK_FOR_STACK_OVERFLOW` 与调用方自行评估 watcher handler 深度兜底。
+
 **FreeRTOS 的 `min` 不是"下限字节数"**：请求会向上取整到 `StackType_t` 的整数倍，
-所以 `floor_bytes - sizeof(StackType_t)` 这一档仍会被补回 floor 而被接受。
+所以 `floor - sizeof(StackType_t)` 这一档仍会被补回 floor 而被接受。
 `min` 是最小**可接受请求**，`min - 1` 才必然被拒。
+例（64 位 harness，`StackType_t` = 8 字节）：floor = 1024 B → 128 words，
+最小可接受请求 = 1017 B；1016 B 被拒、1017 B 被接受。
 
 ### broker 线程的栈
 
 broker 线程（驱动 timer manager、派发 watcher 事件）的栈大小由**编译期**常量
-`NANOSIG_BROKER_STACK_SIZE` 决定，单位字节，`0` = 平台默认。该常量由构建系统注入：
+`NANOSIG_BROKER_STACK_SIZE` 决定，单位字节，`0` = 平台默认（host 为 OS 默认，
+FreeRTOS / Zephyr 为各后端默认的 2 KB）。该常量由构建系统注入：
 
-- CMake 构建：顶层 `CMakeLists.txt` 的同名 cache 变量
-  （`-DNANOSIG_BROKER_STACK_SIZE=4096`）。
+- CMake 构建：顶层 `CMakeLists.txt` 的同名 cache 变量。
+  **默认留 `0`**；若必须显式锁死，取值须 **≥ 目标平台的最小栈**
+  （host 上低于 `PTHREAD_STACK_MIN` 会让 `ns_init()` 直接返回 `NS_E_INVAL`）。
 - Zephyr 构建：应用 `prj.conf` 的 `CONFIG_NANOSIG_BROKER_STACK_SIZE`。
 
 注入缺失即**编译失败**（`src/ns_broker.c` 的 `#error`），不会静默回落到平台默认。
@@ -74,6 +84,8 @@ broker 线程（驱动 timer manager、派发 watcher 事件）的栈大小由**
 > （`src/ns_broker.c`）。调小 broker 栈前必须确认用户 handler 的最深调用不会溢栈。
 > broker 自身的固定栈开销（用户帧之前）约 512 B（@64-bit）：`completions[16]`
 > 与 Zephyr waitset 的 `active[32]` 会同时存活。
+> **嵌入式默认 2 KB 小于 FreeRTOS 惯例的 idle 任务栈**（`configMINIMAL_STACK_SIZE`
+> = 1024 words）—— 这是本项目的 RAM 取舍，handler 较深时应显式调大。
 > 可观测手段：Zephyr 用 `k_thread_stack_space_get()`（需 `CONFIG_THREAD_STACK_INFO`），
 > FreeRTOS 用 `uxTaskGetStackHighWaterMark()`。
 

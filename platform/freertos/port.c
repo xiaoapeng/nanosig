@@ -58,10 +58,20 @@
 #define NANOSIG_FREERTOS_WAITSET_CAP 32u
 #endif
 
-/** 平台线程任务的 FreeRTOS 栈深度（字数，StackType_t 单位）。后端内部默认值，
- *  **不是配置面**（不是宏，避免被误当成可配旋钮）；对外可配的编译期旋钮只有
- *  broker 线程的 NANOSIG_BROKER_STACK_SIZE（字节，见 src/ns_broker.c）。 */
-static const size_t k_ns_freertos_default_stack_words = 1024u;
+/** 平台线程任务的默认栈大小，**字节**。后端内部默认值（`stack_size == 0`
+ *  时使用），不是配置面；对外可配的编译期旋钮只有 broker 线程的
+ *  `NANOSIG_BROKER_STACK_SIZE`（字节，见 src/ns_broker.c）。
+ *  2 KB 是作者明确的取舍：优先省 RAM，代价是小于 FreeRTOS 惯例的 idle 任务栈
+ *  （`configMINIMAL_STACK_SIZE`，1024 words），而 broker 线程还要执行用户的
+ *  watcher handler。靠 `configCHECK_FOR_STACK_OVERFLOW` + 用户自行评估 handler
+ *  深度兜底。 */
+#define NS_FREERTOS_DEFAULT_STACK_BYTES 2048u
+
+/** 可接受的最小栈大小，**字节**。nanosig 策略值，**不**沿用
+ *  `configMINIMAL_STACK_SIZE`（那是 FreeRTOS 给 idle 任务的惯例深度，1024 words，
+ *  并非 `xTaskCreate` 强制的下限）。改为字节制后语义与公共 API 一致，
+ *  不再需要"最小可接受请求 = (words-1)*sizeof+1"那层换算了。 */
+#define NS_FREERTOS_MIN_STACK_BYTES 1024u
 
 /** 平台线程任务的 FreeRTOS 优先级。 */
 #ifndef NANOSIG_FREERTOS_TASK_PRIORITY
@@ -355,18 +365,26 @@ static void ns_freertos_task_entry(void *arg)
     vTaskDelete(NULL);
 }
 
+/* 字节 → words，**向上取整**：保证实际栈字节数 >= 请求字节数。
+   拆成 / 与 % 避免 `bytes + sizeof - 1` 在极大值上回绕。 */
+static size_t ns_freertos_bytes_to_words(size_t bytes)
+{
+    return (bytes / sizeof(StackType_t))
+         + ((bytes % sizeof(StackType_t)) ? 1u : 0u);
+}
+
 int ns_platform_thread_stack_range(size_t *min_out, size_t *max_out)
 {
-    /* configMINIMAL_STACK_SIZE 是 words 值（xTaskCreate 的深度单位是 StackType_t），
-       xTaskCreate 本身并不强制它；本检查是以 FreeRTOS 自身配置为基准的 nanosig 策略。
+    /* 下限是 nanosig 策略值 NS_FREERTOS_MIN_STACK_BYTES（字节），不再沿用
+       configMINIMAL_STACK_SIZE —— 那是 FreeRTOS 给 idle 任务的惯例深度
+       （words），xTaskCreate 本身并不强制它。
 
        返回的 min 是**最小可接受请求字节数**，不是"下限字节数"：请求会向上取整到
-       sizeof(StackType_t) 的整数倍，所以 floor-字节数 - sizeof(StackType_t) 这一档
-       仍会被补回 floor 而被接受。min - 1 才是必然被拒的那个值。
-       例（64 位 harness，StackType_t = 8 字节，configMINIMAL_STACK_SIZE = 1024）：
-       floor = 8192 B，min = 8185 B，8184 B 被拒、8185 B 被接受。 */
+       sizeof(StackType_t) 的整数倍，所以 floor - sizeof(StackType_t) 这一档
+       仍会被补回 floor 而被接受，`min - 1` 才是必然被拒的那个值。 */
     if(min_out != NULL){
-        *min_out = ((size_t)configMINIMAL_STACK_SIZE - 1u) * sizeof(StackType_t) + 1u;
+        size_t floor_words = ns_freertos_bytes_to_words((size_t)NS_FREERTOS_MIN_STACK_BYTES);
+        *min_out = (floor_words - 1u) * sizeof(StackType_t) + 1u;
     }
     if(max_out != NULL) *max_out = SIZE_MAX;
     return NS_OK;
@@ -381,6 +399,7 @@ int ns_platform_thread_init(
 {
     BaseType_t rc;
     configSTACK_DEPTH_TYPE depth;
+    size_t words;
 
     (void)debug_name;
 
@@ -391,19 +410,16 @@ int ns_platform_thread_init(
     thread->task = NULL;
     thread->join_sem = NULL;
 
-    if(stack_size == 0u){
-        depth = (configSTACK_DEPTH_TYPE)k_ns_freertos_default_stack_words;
-    }else{
-        /* 字节 → words，**向上取整**：保证实际栈字节数 >= 请求字节数。
-           拆成 / 与 % 避免 `bytes + sizeof - 1` 在极大值上回绕。 */
-        size_t words = (stack_size / sizeof(StackType_t))
-                     + ((stack_size % sizeof(StackType_t)) ? 1u : 0u);
-        if(words < (size_t)configMINIMAL_STACK_SIZE) return NS_E_INVAL;
-        /* configSTACK_DEPTH_TYPE 的位宽由 FreeRTOS 配置决定（默认 uint32_t），
-           用它的最大值做上界，避免截断。 */
-        if(words > (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0)) return NS_E_INVAL;
-        depth = (configSTACK_DEPTH_TYPE)words;
-    }
+    /* 0 = 后端默认（NS_FREERTOS_DEFAULT_STACK_BYTES，字节）。默认值与显式值
+       走同一条字节→words 换算，避免两条路径的语义分叉。 */
+    if(stack_size == 0u) stack_size = (size_t)NS_FREERTOS_DEFAULT_STACK_BYTES;
+
+    words = ns_freertos_bytes_to_words(stack_size);
+    if(words < ns_freertos_bytes_to_words((size_t)NS_FREERTOS_MIN_STACK_BYTES)) return NS_E_INVAL;
+    /* configSTACK_DEPTH_TYPE 的位宽由 FreeRTOS 配置决定（默认 uint32_t），
+       用它的最大值做上界，避免截断。 */
+    if(words > (size_t)(configSTACK_DEPTH_TYPE)(~(configSTACK_DEPTH_TYPE)0)) return NS_E_INVAL;
+    depth = (configSTACK_DEPTH_TYPE)words;
 
     thread->entry = entry;
     thread->arg = arg;

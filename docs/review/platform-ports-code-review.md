@@ -978,7 +978,9 @@ platform/windows/port.c:443
 
 #### 作者建议
 
-（待作者补充）
+作者决定：嵌入式默认栈改为 **2048 字节**（FreeRTOS 与 Zephyr 一致），host 保持外部宏 0 = 平台默认。
+为此 FreeRTOS 后端的下限也从 configMINIMAL_STACK_SIZE（1024 words，FreeRTOS 给 idle 任务的惯例值）改为 **nanosig 策略值 1024 字节**，否则 2048 字节（= 256 words @8B/word harness）仍会被旧下限拒绝。
+代价（作者已知悉并接受）：broker 线程的栈小于 FreeRTOS 惯例的 idle 任务栈，而它还要执行用户的 watcher handler；由 configCHECK_FOR_STACK_OVERFLOW + 用户自行评估 handler 深度兜底。下限同时改为字节制，顺带消除 FREERTOS-008 里 min 的字节/words 混合语义。
 
 #### 可重现的失败场景
 
@@ -1000,6 +1002,8 @@ src/ns_broker.c:551
 CMakeLists.txt:55
 CMakeLists.txt:172
 platform/README.md:67
+
+---
 
 ## 现在关闭的问题
 

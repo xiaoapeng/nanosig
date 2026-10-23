@@ -40,7 +40,7 @@
 #endif
 
 /** 平台线程的内核栈默认字节数（stack_size == 0 时使用）。 */
-#define NS_ZEPHYR_DEFAULT_THREAD_STACK_SIZE 4096
+#define NS_ZEPHYR_DEFAULT_THREAD_STACK_SIZE 2048
 
 /** 平台线程内核栈的最小字节数。**nanosig 策略值，不是 Zephyr 平台保证**：
  *  Zephyr 3.7 没有 Z_MIN_THREAD_STACK_SIZE，k_thread_stack_alloc 也不做下限检查，
