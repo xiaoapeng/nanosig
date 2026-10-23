@@ -164,10 +164,11 @@ entries:
       - "test/unit/test_loop.c:177"
   - id: "CORE-019"
     module: "nanosig-core"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "test"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/nanosig-core-code-review.md#CORE-019"
     locations:
       - "test/unit/test_cpp_compat_compile.cpp:212"
@@ -188,64 +189,9 @@ entries:
 
 ---
 
+- **CORE-019（2026-10-24）**: 新增 test/unit/test_cpp_compat_runtime.cpp（带 main 的运行时测试，逐字段断言 C++ 分支默认值并验证默认配置能被 ns_loop_create 接受）；api-checks 的 C++ 检查加 -Werror=missing-field-initializers 抓漏写字段；删除原先永不执行的 std::abort() 死代码 — commit `59577e7`
+
 ## 现在打开的问题
-
-<a id="CORE-019"></a>
-### CORE-019: `NS_LOOP_CONFIG_DEFAULT()` 的 C++ 分支从未被真正执行验证，新加的 `std::abort()` 是死代码
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: test
-
-#### 问题描述
-
-`test/unit/test_cpp_compat_compile.cpp` 用 `-fsyntax-only` 编译（`cmake/ApiCompileChecks.cmake:159`）且**没有 `main`**，`cpp_test_all()` 是 `static` 且从未被调用。
-
-本次改动在该文件里新加的断言：
-
-```cpp
-if(cfg.stack_size != 0u) {
-    std::abort();  /* 默认配置的 stack_size 必须是 0（= 后端默认栈大小） */
-}
-```
-
-因此是**永远不可能触发的死代码** —— 它读起来像运行时断言，实际提供零运行时覆盖。
-
-后果：C++ 分支 `ns_loop_config_t{ NS_CAPACITY_1024, 0u, nullptr, 0u }`（`include/nanosig/nanosig_loop.h:63`）是**位置初始化**，每次 `ns_loop_config_t` 增字段都必须手工同步。一旦有人把 `0u` 写成 `1u`，或把字段顺序改了导致位置错位，**编译期不会有任何诊断**：
-
-- 少写一个初始化成员只会触发 `-Wmissing-field-initializers`（实测 clang `-Wall -Wextra` 会报），而 api-compile-checks **没有开 `-Werror`**，警告不会让 CI 变红；
-- 位置写错（值填到别的字段）则连警告都没有。
-
-而这恰恰是本次改动最容易腐化的地方 —— C++ 分支正是被手工改过的那一处。
-
-#### review 建议
-
-二选一：
-
-(a) **补一个真正会运行的 C++ 运行时测试**：新增一个带自己 `main` 的 `.cpp`，注册为 ctest target，断言 `NS_LOOP_CONFIG_DEFAULT().stack_size == 0`，并（更好）断言 C++ 分支与 C 的指定初始化器产出等价的结构体。这才兑现 `std::abort()` 注释所暗示的意图。
-
-(b) 若暂不引入新的 C++ 运行时测试目标：删掉那个死代码 `std::abort()`，只保留 `static_assert(sizeof(cfg.stack_size) == sizeof(size_t))`，并给 api-compile-checks 的 C++ 检查加上 `-Werror=missing-field-initializers`（只把这一类警告升级为错误，不影响其它检查），让"C++ 位置初始化漏成员"变成硬失败。
-
-无论选哪条，`include/nanosig/nanosig_loop.h` 的 C++ 位置初始化都应配一条注释，指明它必须与 C 分支的字段列表同步。
-
-#### 作者建议
-
-采纳方案 1 + 补一条：两者覆盖不同的失效模式，缺一不可。
-(a) 新增 test/unit/test_cpp_compat_runtime.cpp（带 main 的真实可执行测试，注册为 ctest）：逐字段断言 C++ 分支的默认值（顺序错位、默认值写错都会被抓），并断言 NS_LOOP_CONFIG_DEFAULT() 能被 ns_loop_create 真正接受。
-(b) cmake/ApiCompileChecks.cmake 的 C++ 检查加 -Werror=missing-field-initializers：抓「新增字段但忘了同步位置初始化」—— 这一类运行时断言抓不到（漏写的成员被值初始化为 0，而期望默认值恰好也是 0）。
-
-#### 可重现的失败场景
-
-`cmake/ApiCompileChecks.cmake:158-160` 用 `-std=c++11 -fsyntax-only -Wall -Wextra` 编译该 TU，无 `-Werror`；文件内无 `main`（实测 `grep -c 'int main'` = 0）。
-
-实证：把 C++ 分支改成少一个初始化成员后，`clang++ -std=c++11 -Wall -Wextra -fsyntax-only` 只输出 `warning: missing field 'd' initializer`，**退出码 0** —— api-compile-checks 仍判通过。
-
-#### 定位
-test/unit/test_cpp_compat_compile.cpp:212
-cmake/ApiCompileChecks.cmake:159
-include/nanosig/nanosig_loop.h:63
-
----
 
 ## 现在关闭的问题
 
@@ -641,6 +587,65 @@ src/nanosig.c:140
 src/nanosig.c:156
 src/nanosig.c:159
 include/nanosig/nanosig_loop.h:74
+
+---
+
+<a id="CORE-019"></a>
+### CORE-019: `NS_LOOP_CONFIG_DEFAULT()` 的 C++ 分支从未被真正执行验证，新加的 `std::abort()` 是死代码
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: test
+- **关闭原因**: 修复 commit 59577e7
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+
+`test/unit/test_cpp_compat_compile.cpp` 用 `-fsyntax-only` 编译（`cmake/ApiCompileChecks.cmake:159`）且**没有 `main`**，`cpp_test_all()` 是 `static` 且从未被调用。
+
+本次改动在该文件里新加的断言：
+
+```cpp
+if(cfg.stack_size != 0u) {
+    std::abort();  /* 默认配置的 stack_size 必须是 0（= 后端默认栈大小） */
+}
+```
+
+因此是**永远不可能触发的死代码** —— 它读起来像运行时断言，实际提供零运行时覆盖。
+
+后果：C++ 分支 `ns_loop_config_t{ NS_CAPACITY_1024, 0u, nullptr, 0u }`（`include/nanosig/nanosig_loop.h:63`）是**位置初始化**，每次 `ns_loop_config_t` 增字段都必须手工同步。一旦有人把 `0u` 写成 `1u`，或把字段顺序改了导致位置错位，**编译期不会有任何诊断**：
+
+- 少写一个初始化成员只会触发 `-Wmissing-field-initializers`（实测 clang `-Wall -Wextra` 会报），而 api-compile-checks **没有开 `-Werror`**，警告不会让 CI 变红；
+- 位置写错（值填到别的字段）则连警告都没有。
+
+而这恰恰是本次改动最容易腐化的地方 —— C++ 分支正是被手工改过的那一处。
+
+#### review 建议
+
+二选一：
+
+(a) **补一个真正会运行的 C++ 运行时测试**：新增一个带自己 `main` 的 `.cpp`，注册为 ctest target，断言 `NS_LOOP_CONFIG_DEFAULT().stack_size == 0`，并（更好）断言 C++ 分支与 C 的指定初始化器产出等价的结构体。这才兑现 `std::abort()` 注释所暗示的意图。
+
+(b) 若暂不引入新的 C++ 运行时测试目标：删掉那个死代码 `std::abort()`，只保留 `static_assert(sizeof(cfg.stack_size) == sizeof(size_t))`，并给 api-compile-checks 的 C++ 检查加上 `-Werror=missing-field-initializers`（只把这一类警告升级为错误，不影响其它检查），让"C++ 位置初始化漏成员"变成硬失败。
+
+无论选哪条，`include/nanosig/nanosig_loop.h` 的 C++ 位置初始化都应配一条注释，指明它必须与 C 分支的字段列表同步。
+
+#### 作者建议
+
+采纳方案 1 + 补一条：两者覆盖不同的失效模式，缺一不可。
+(a) 新增 test/unit/test_cpp_compat_runtime.cpp（带 main 的真实可执行测试，注册为 ctest）：逐字段断言 C++ 分支的默认值（顺序错位、默认值写错都会被抓），并断言 NS_LOOP_CONFIG_DEFAULT() 能被 ns_loop_create 真正接受。
+(b) cmake/ApiCompileChecks.cmake 的 C++ 检查加 -Werror=missing-field-initializers：抓「新增字段但忘了同步位置初始化」—— 这一类运行时断言抓不到（漏写的成员被值初始化为 0，而期望默认值恰好也是 0）。
+
+#### 可重现的失败场景
+
+`cmake/ApiCompileChecks.cmake:158-160` 用 `-std=c++11 -fsyntax-only -Wall -Wextra` 编译该 TU，无 `-Werror`；文件内无 `main`（实测 `grep -c 'int main'` = 0）。
+
+实证：把 C++ 分支改成少一个初始化成员后，`clang++ -std=c++11 -Wall -Wextra -fsyntax-only` 只输出 `warning: missing field 'd' initializer`，**退出码 0** —— api-compile-checks 仍判通过。
+
+#### 定位
+test/unit/test_cpp_compat_compile.cpp:212
+cmake/ApiCompileChecks.cmake:159
+include/nanosig/nanosig_loop.h:63
 
 ---
 
