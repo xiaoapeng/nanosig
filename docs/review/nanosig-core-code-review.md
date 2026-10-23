@@ -230,7 +230,9 @@ if(cfg.stack_size != 0u) {
 
 #### 作者建议
 
-（待作者补充）
+采纳方案 1 + 补一条：两者覆盖不同的失效模式，缺一不可。
+(a) 新增 test/unit/test_cpp_compat_runtime.cpp（带 main 的真实可执行测试，注册为 ctest）：逐字段断言 C++ 分支的默认值（顺序错位、默认值写错都会被抓），并断言 NS_LOOP_CONFIG_DEFAULT() 能被 ns_loop_create 真正接受。
+(b) cmake/ApiCompileChecks.cmake 的 C++ 检查加 -Werror=missing-field-initializers：抓「新增字段但忘了同步位置初始化」—— 这一类运行时断言抓不到（漏写的成员被值初始化为 0，而期望默认值恰好也是 0）。
 
 #### 可重现的失败场景
 
