@@ -503,6 +503,31 @@ static size_t ns_macos_waitset_make_changes(
     return count;
 }
 
+/* 已生效变更的反向操作：ADD 的反向是 DELETE，DELETE 的反向是按注册标志重新 ADD。
+   回滚尽力而为——失败也没有补救手段，但不能把无人认领的 knote 留在内核里。 */
+static void ns_macos_waitset_revert_change(
+    ns_platform_waitset_t *waitset,
+    const struct kevent *applied,
+    const ns_platform_waitable_t *waitable)
+{
+    struct kevent inverse;
+    uint16_t flags = EV_DELETE;
+
+    if((applied->flags & EV_ADD) == 0u){
+        flags = (uint16_t)(EV_ADD | EV_ENABLE);
+        if((waitable != NULL) && (waitable->edge_triggered != 0)){
+            flags = (uint16_t)(flags | EV_CLEAR);
+        }
+    }
+
+    EV_SET(&inverse, applied->ident, applied->filter, flags, 0u, 0, (void *)waitable);
+
+    for(;;){
+        if(kevent(waitset->kq, &inverse, 1, NULL, 0, NULL) == 0) return;
+        if(errno != EINTR) return;
+    }
+}
+
 static int ns_macos_waitset_apply_changes(
     ns_platform_waitset_t *waitset,
     struct kevent *changes,
@@ -517,12 +542,24 @@ static int ns_macos_waitset_apply_changes(
         changes[i].udata = (void *)waitable;
     }
 
-    for(;;){
-        if(kevent(waitset->kq, changes, (int)change_count, NULL, 0, NULL) == 0) return NS_OK;
-        if(errno == EINTR) continue;
-        ns_merrln(PLATFORM, "kevent failed: %s", strerror(errno));
-        return NS_E_INVAL;
+    /* kevent 对变更列表逐条应用、首错即停：整批提交时前面的条目已经生效，而调用方
+       收到失败会立刻释放 waitable，内核里就留下一条 registered_waitset 为 NULL、
+       因而 ns_platform_waitset_remove 永远摘不掉的悬垂 knote。逐条提交，失败时把
+       已生效的条目反向回滚，使 add/remove 保持全有或全无。 */
+    for(i = 0u; i < change_count; i++){
+        for(;;){
+            if(kevent(waitset->kq, &changes[i], 1, NULL, 0, NULL) == 0) break;
+            if(errno == EINTR) continue;
+            ns_merrln(PLATFORM, "kevent failed: %s", strerror(errno));
+            while(i > 0u){
+                i--;
+                ns_macos_waitset_revert_change(waitset, &changes[i], waitable);
+            }
+            return NS_E_INVAL;
+        }
     }
+
+    return NS_OK;
 }
 
 int ns_platform_waitset_add(
@@ -570,7 +607,7 @@ int ns_platform_waitset_remove(
         0,
         EV_DELETE);
 
-    rc = ns_macos_waitset_apply_changes(waitset, changes, change_count, NULL);
+    rc = ns_macos_waitset_apply_changes(waitset, changes, change_count, waitable);
     if(rc != NS_OK) return rc;
 
     waitset->count--;

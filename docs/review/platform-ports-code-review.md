@@ -513,7 +513,13 @@ test/unit/test_platform_backend.c:690-714
 方向 1 最干净，且与 Linux（单 fd 单 `epoll_ctl`，原子）的行为模型一致。
 
 #### 作者建议
-（待作者补充）
+采纳方向 1：逐条提交 + 反向回滚。已实现于 platform/macos/port.c——新增
+`ns_macos_waitset_revert_change()`（ADD 回滚为 DELETE；DELETE 回滚为
+`EV_ADD|EV_ENABLE`，`edge_triggered` 时补回 `EV_CLEAR`），`apply_changes` 每轮只提交一条
+变更，失败时先逐条回滚已生效条目再返回 `NS_E_INVAL`；`remove` 路径改为把 `waitable`
+传给 `apply_changes`，使 DELETE 的回滚能还原 `EV_CLEAR`。对外行为不变：add/remove 仍是
+全有或全无，失败时 `count` 与 `registered_waitset` 均不改变。回归测试
+`test_waitset_partial_add_rollback`（kqueue fd + `IN|OUT`，修复前必失败）。
 
 #### 可重现的失败场景
 macOS 实测（直接调用平台层，非经 broker）：
