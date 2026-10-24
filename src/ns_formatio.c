@@ -743,7 +743,6 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
     char item_size;
     int valid_len;
     int array_len;
-    int array_reality_len;
     int remainder;
     int space_pad_len = 0;
     int n = 0;
@@ -773,8 +772,12 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
 
     array_len = precision / item_size;
     remainder = precision % item_size;
-    array_reality_len = array_len - (remainder ? 1 : 0);
-    valid_len = (array_reality_len * (item_size * 2)) + (array_reality_len - 1);
+    /* 可见长度按"实际会吐出的字符"算：完整 item 每个 2*item_size 字符，item 之间 1 个空格，
+       尾部半截 item 再多 1 个空格 + 2*item_size 字符。不能由 precision 反推，否则
+       precision < item_size 时会得到负数，padding 反而超出请求宽度。 */
+    valid_len = (array_len * (item_size * 2)) + ((array_len > 0) ? (array_len - 1) : 0);
+    if (remainder)
+        valid_len += 1 + (item_size * 2);
     if (field_width > valid_len)
         space_pad_len = field_width - valid_len;
 

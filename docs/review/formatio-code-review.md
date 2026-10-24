@@ -365,7 +365,10 @@ if (field_width > valid_len)
 
 #### 作者建议
 
-（待作者补充）
+采纳：`valid_len` 改为按实际输出字符计算——完整 item 每项 `2*item_size`、item 之间 1 个空格、
+余数分支再加 `1 + 2*item_size`，不再由 precision 反推，并删掉 `array_reality_len`。
+`test_array_q` 补 `%20.0hhq` / `%20.1q` 宽度断言；原先锁住错误行为的 `%.3q` / `%.1q`
+黄金值（未请求宽度却带 9 个空格）同步改为 9 字符。
 
 #### 可重现的失败场景
 

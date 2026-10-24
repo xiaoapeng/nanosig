@@ -936,6 +936,14 @@ static int test_array_q(void)
     EXPECT_EQ(n, 8);
     EXPECT_EQ(strcmp(buf, "12EFCDAB"), 0);
 
+    /* 宽度：precision 不满一个 item 时 padding 不得反向膨胀（FORMATIO-024） */
+    n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", arr4);
+    EXPECT_EQ(n, 20);
+    EXPECT_EQ((int)strlen(buf), 20);
+    n = ns_snprintf(buf, sizeof(buf), "%20.1q", (const unsigned int[]){ 0x11223344u, 0u, 0u, 0u });
+    EXPECT_EQ(n, 20);
+    EXPECT_EQ((int)strlen(buf), 20);
+
     /* 限定符：l → sizeof(unsigned long)（LP64 8 字节 / LLP64 4 字节），
        ll → 8 字节，h → 2 字节，hh → 1 字节。按实际宽度断言，避免写死 LP64。 */
     n = ns_snprintf(buf, sizeof(buf), "%.8lq", arr8);
@@ -968,15 +976,15 @@ static int test_array_q(void)
     EXPECT_EQ(n, 12);
     EXPECT_EQ(strcmp(buf, "12efcdab    "), 0);
 
-    /* 精度非 item_size 倍数 → 余数 '??' 补位；%.3q：9 空格 + " " + "??" + "efcdab" */
+    /* 精度非 item_size 倍数 → 余数 '??' 补位；未请求宽度时不得凭空插 padding */
     n = ns_snprintf(buf, sizeof(buf), "%.3q", arr4);
-    EXPECT_EQ(n, 18);
-    EXPECT_EQ(strcmp(buf, "         " " ??efcdab"), 0);
+    EXPECT_EQ(n, 9);
+    EXPECT_EQ(strcmp(buf, " ??efcdab"), 0);
 
-    /* %.1q 负 valid_len 边界：9 空格 + " " + "??????" + "ab" */
+    /* %.1q：precision 小于一个 item，同样只输出 " " + "??????" + "ab" */
     n = ns_snprintf(buf, sizeof(buf), "%.1q", arr4);
-    EXPECT_EQ(n, 18);
-    EXPECT_EQ(strcmp(buf, "         " " ??????ab"), 0);
+    EXPECT_EQ(n, 9);
+    EXPECT_EQ(strcmp(buf, " ??????ab"), 0);
 
     return 0;
 }

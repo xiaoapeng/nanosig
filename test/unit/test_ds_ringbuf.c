@@ -86,12 +86,17 @@ static int test_invalid_inputs(void)
     uint8_t storage[5];
     uint8_t out[8];
     ns_ringbuf_t invalid;
+    ns_ringbuf_t oversized;
 
     memset(&invalid, 0, sizeof(invalid));
 
     if(expect_true(ns_ringbuf_init(NULL, storage, (uint32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_ringbuf_init(&invalid, NULL, (uint32_t)sizeof(storage)) == NS_E_INVAL) != 0) return 1;
     if(expect_true(ns_ringbuf_init(&invalid, storage, 0u) == NS_E_INVAL) != 0) return 1;
+    /* size 上限：init 只保存指针不触碰后端内存，因此不需要真的分配 1.43 GiB */
+    if(expect_true(ns_ringbuf_init(&oversized, storage, UINT32_MAX / 3u) == NS_OK) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(&oversized, storage, (UINT32_MAX / 3u) + 1u) == NS_E_PARAM) != 0) return 1;
+    if(expect_true(ns_ringbuf_init(&oversized, storage, UINT32_MAX) == NS_E_PARAM) != 0) return 1;
     if(expect_true(ns_ringbuf_total_size(NULL) == -1) != 0) return 1;
     if(expect_true(ns_ringbuf_total_size(&invalid) == 0) != 0) return 1;
     if(expect_true(ns_ringbuf_size(&invalid) == 0) != 0) return 1;

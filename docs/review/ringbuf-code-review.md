@@ -310,7 +310,8 @@ if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX) == NS_E_PARAM) != 
 ```
 
 #### 作者建议
-（待作者补充）
+采纳：在 `test_invalid_inputs` 中补上界三条断言（`UINT32_MAX / 3u` 接受、`+1u` 与 `UINT32_MAX`
+返回 `NS_E_PARAM`），使用独立变量避免干扰既有 `invalid` 用例。
 
 #### 可重现的失败场景
 ```c
