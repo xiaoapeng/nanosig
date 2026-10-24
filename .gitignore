@@ -4,6 +4,7 @@ tmp/
 build-linux*
 .cache/
 .omc/
+.opencode/
 .claude/
 .codegraph/
 .vscode/
