@@ -487,6 +487,10 @@ def validate(docs, strict_archive=False):
                     if f"#### {section_title}" not in text:
                         add("error", name, entry_id, "missing-subsection",
                             f"打开条目缺少 #### {section_title}")
+                # 过渡期：影响面（调用者清单）先以 warning 提示，补齐后升级为 error。
+                if "#### 影响面" not in text:
+                    add("warning", name, entry_id, "missing-impact",
+                        "打开条目缺少 #### 影响面（见 AGENTS.md §2.2）")
             elif body_entry["section"] == "closed":
                 if not re.search(r"^- \*\*状态\*\*:\s*关闭-", text, re.M):
                     add("error", name, entry_id, "body-status",
