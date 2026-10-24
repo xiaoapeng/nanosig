@@ -74,6 +74,11 @@ static int ns_hashtbl_resize(struct ns_hashtbl *hashtbl)
     unsigned int i;
     struct ns_list_node *new_table;
 
+    /* 再翻倍就回绕：mask 到 2^31-1 时 new_mask 为 UINT32_MAX，new_mask+1 在 unsigned int
+       下变成 0，分配 0 字节后按 old_size 写入越界。上限处直接拒绝扩容。 */
+    if(hashtbl->mask >= (UINT32_MAX >> 1))
+        return NS_E_NOMEM;
+
     new_table = (struct ns_list_node *)ns_platform_alloc(
         sizeof(struct ns_list_node) * (size_t)(new_mask + 1));
     if(new_table == NULL)

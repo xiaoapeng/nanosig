@@ -242,6 +242,15 @@ int ns_platform_event_init(ns_platform_event_t *event, const char *debug_name)
         return NS_E_NOMEM;
     }
 
+#ifdef F_SETNOSIGPIPE
+    /* 读端已关闭时写 pipe 会投递 SIGPIPE 直接终止进程；改为只让 write 返回 EPIPE。 */
+    if(fcntl(fds[1], F_SETNOSIGPIPE, 1) < 0){
+        (void)ns_macos_close_fd(fds[0]);
+        (void)ns_macos_close_fd(fds[1]);
+        return NS_E_NOMEM;
+    }
+#endif
+
     event->waitable.primitive = fds[0];
     event->signal_handle = fds[1];
     return NS_OK;

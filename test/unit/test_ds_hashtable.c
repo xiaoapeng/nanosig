@@ -315,6 +315,43 @@ static int test_tiny_load_factor_bounded(void)
 }
 
 /* try_remake 渐进式重建：扩容后新桶被标记为待重建，查找/插入触发重建 */
+/* 扩容上限守卫：表已到 2^31 个桶时拒绝扩容（再翻倍 new_mask+1 会在 unsigned int 下回绕） */
+static int test_resize_upper_bound(void)
+{
+    ns_hashtbl_t tbl;
+    struct ns_hashtbl *hashtbl;
+    struct ns_hashtbl_node *node;
+    unsigned int saved_mask;
+    unsigned int saved_threshold;
+    uint32_t key = 0x11223344u;
+
+    tbl = ns_hashtbl_create(NS_HASHTBL_DEFAULT_LOADFACTOR);
+    if(tbl == NULL) return 1;
+    hashtbl = (struct ns_hashtbl *)tbl;
+
+    node = ns_hashtbl_node_new_refresh(tbl, &key, 4, 4);
+    if(node == NULL){ ns_hashtbl_destroy(tbl); return 1; }
+
+    saved_mask = hashtbl->mask;
+    saved_threshold = hashtbl->threshold;
+    hashtbl->mask = 0x7FFFFFFFu;   /* 真实表已长到 2^31 个桶 */
+    hashtbl->threshold = 1u;       /* 逼出扩容分支 */
+
+    if(expect_true(ns_hashtbl_insert(tbl, node) == NS_E_NOMEM) != 0){
+        hashtbl->mask = saved_mask;
+        hashtbl->threshold = saved_threshold;
+        ns_hashtbl_node_delete(tbl, node);
+        ns_hashtbl_destroy(tbl);
+        return 1;
+    }
+
+    hashtbl->mask = saved_mask;
+    hashtbl->threshold = saved_threshold;
+    ns_hashtbl_node_delete(tbl, node);
+    ns_hashtbl_destroy(tbl);
+    return 0;
+}
+
 static int test_try_remake(void)
 {
     ns_hashtbl_t tbl;
@@ -787,6 +824,7 @@ int main(void)
     if(test_string_key() != 0) return 1;
     if(test_auto_resize() != 0) return 1;
     if(test_tiny_load_factor_bounded() != 0) return 1;
+    if(test_resize_upper_bound() != 0) return 1;
     if(test_try_remake() != 0) return 1;
     if(test_for_each_safe() != 0) return 1;
     if(test_for_each_with_string_safe() != 0) return 1;

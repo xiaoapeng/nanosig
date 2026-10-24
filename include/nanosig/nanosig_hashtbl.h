@@ -19,7 +19,7 @@
 #include <nanosig/nanosig_types.h>
 
 #include <stdint.h>
-#include <string.h>   /* 遍历宏调用点展开需要的 strncmp/memcmp */
+#include <string.h>   /* 遍历宏调用点展开需要的 strlen/memcmp */
 
 #ifdef __cplusplus
 extern "C" {

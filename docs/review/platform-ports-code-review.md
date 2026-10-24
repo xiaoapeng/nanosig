@@ -663,11 +663,13 @@ init/deinit 并发与等待类调用并发，**从未**声明 `signal` 不得与
 但库内 API 能被一次正常调用杀死进程，仍建议加这一行加固。
 
 #### 作者建议
-（待作者补充）
+采纳加固方案：`ns_platform_event_init` 创建 pipe 后对写端执行
+`fcntl(fds[1], F_SETNOSIGPIPE, 1)`（`#ifdef F_SETNOSIGPIPE` 内，失败则关闭两个 fd 返回
+`NS_E_NOMEM`）。读端关闭后再写只得到 `EPIPE`，进程不再被 SIGPIPE 终止，原有 errno 分支
+即可返回 `NS_E_INVAL`。未补测试：验证该路径需要真的杀掉宿主进程或违反 signal/deinit
+不并发的调用前提，不适合放进进程内单元测试。
 
 #### 可重现的失败场景
-macOS 实测（最小复现，不经 nanosig API 以外的手段）：
-
 ```c
 int fds[2]; pipe(fds);
 close(fds[0]);                       /* 等价于 event 的 waitable 侧已释放 */

@@ -314,7 +314,7 @@ include/nanosig/nanosig_hashtbl.h:62
 把注释改为 `/* 遍历宏调用点展开需要的 strlen/memcmp */`。
 
 #### 作者建议
-（待作者补充）
+采纳：注释已改为 `strlen/memcmp`。
 
 #### 可重现的失败场景
 无功能影响。验证方式：`grep -rn "strncmp" include/nanosig/nanosig_hashtbl.h src/ds/ns_hashtbl.c`
@@ -364,7 +364,10 @@ if(hashtbl->mask >= (UINT32_MAX >> 1))   /* 不能再翻倍 */
 上限检查。
 
 #### 作者建议
-（待作者补充）
+采纳 review 建议，放在 `ns_hashtbl_resize` 入口：`mask >= (UINT32_MAX >> 1)` 时返回
+`NS_E_NOMEM`（不额外定义新返回码）。这样 `insert` 在表已到上限时显式失败，而不是走进
+`new_mask + 1` 回绕。上限处即无法再插新键。新增 `test_resize_upper_bound`：伪造
+`mask = 0x7FFFFFFF`、`threshold = 1` 后插入应得 `NS_E_NOMEM`（修复前 34 GB memset 直接崩溃）。
 
 #### 可重现的失败场景
 ```c
