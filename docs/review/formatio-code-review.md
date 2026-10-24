@@ -58,10 +58,11 @@ entries:
       - "src/ns_formatio.c:421-426"
   - id: "FORMATIO-024"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/formatio-code-review.md#FORMATIO-024"
     locations:
       - "src/ns_formatio.c:754-759"
@@ -242,6 +243,8 @@ entries:
 | FORMATIO-007 | `ns_stream_puts` FUNCTION 逐字节 → 设计权衡(缓存已摊销 flush)，关闭-已拒绝 | 关闭-已拒绝 | 2026-08-09 |
 
 ---
+
+- **FORMATIO-024（2026-10-24）**: %q/%Q 的 valid_len 改为按实际输出字符累加，precision < item_size 时 padding 不再反向膨胀；同步修正 %.3q/%.1q 黄金值 — commit `f2f64b2`
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
@@ -319,76 +322,6 @@ src/ns_formatio.c:705-711
 
 ---
 
-<a id="FORMATIO-024"></a>
-### FORMATIO-024: `%q`/`%Q` 字段宽度在 precision 小于单个元素时下溢，宽度反而变大
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-
-`vprintf_array`（src/ns_formatio.c:718-810）用 precision 反推可见长度：
-
-```c
-array_len = precision / item_size;                       /* :754 */
-remainder = precision % item_size;
-array_reality_len = array_len - (remainder ? 1 : 0);     /* :756 可为 0 或 -1 */
-valid_len = (array_reality_len * (item_size * 2)) + (array_reality_len - 1);  /* :757 */
-if (field_width > valid_len)
-    space_pad_len = field_width - valid_len;
-```
-
-当 `precision < item_size`（例如 `%.0hhq`、`%.1q`）时 `array_reality_len` 为 0 乃至负数
-（`array_len == 0` 且 `remainder != 0` 时是 -1），`valid_len` 计算为 -1 或更小的负数，
-`space_pad_len = field_width - valid_len` 因此**超出请求宽度**：
-
-- `"%20.0hhq"` → 输出 21 个字符（20 空格 + 换行不算，实测 n=21、strlen=21），宽度 20 被突破；
-- `"%10.0hhq"` → n=11；
-- `"%20.1q"`（`q` 的 item_size = sizeof(unsigned int) = 4）→ 30 个填充空格 + `" ??????44"`，
-  n=39，远超请求的宽度 20。
-
-另外 partial item 分支（src/ns_formatio.c:781-803）会额外输出 `2*remainder+1` 个字符
-（`" ??"` 占位 + 分隔空格），这部分没有被计入 `valid_len`，因此 `precision % item_size != 0`
-时宽度一律偏大。数据字节本身输出正确，问题集中在 padding 计算。
-
-#### review 建议
-
-不要从 precision 反推可见长度，改为在输出过程中累加实际字符数（与 `vprintf_number` 的
-`reality_count` 同思路），或至少在计算 padding 前修正：
-
-- `array_reality_len` 为 0 时应令 `valid_len = 0`（避免负数与 `-1` 下溢）；
-- partial item 的 `2 * remainder + 1` 个字符要计入 `valid_len`；
-- `space_pad_len` 计算后防御性钳制 `>= 0`。
-
-补 `%20.0hhq`、`%10.1hhq`、`%20.1q`、`%20.5q` 的宽度断言用例。
-
-#### 作者建议
-
-采纳：`valid_len` 改为按实际输出字符计算——完整 item 每项 `2*item_size`、item 之间 1 个空格、
-余数分支再加 `1 + 2*item_size`，不再由 precision 反推，并删掉 `array_reality_len`。
-`test_array_q` 补 `%20.0hhq` / `%20.1q` 宽度断言；原先锁住错误行为的 `%.3q` / `%.1q`
-黄金值（未请求宽度却带 9 个空格）同步改为 9 字符。
-
-#### 可重现的失败场景
-
-```c
-char buf[128];
-int n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", "");
-/* 实际 n=21、strlen=21（全空格），请求宽度 20 */
-n = ns_snprintf(buf, sizeof(buf), "%20.1q",
-                (const unsigned[]){0x11223344u, 0u, 0u, 0u});
-/* 实际 n=39、strlen=39，请求宽度 20；多出 30 个填充空格 */
-```
-
-#### 定位
-src/ns_formatio.c:754-759
-src/ns_formatio.c:781-803
-
----
-
-<a id="FORMATIO-025"></a>
-<a id="FORMATIO-026"></a>
 <a id="FORMATIO-027"></a>
 ### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
 
@@ -1060,6 +993,81 @@ ns_snprintf(buf, sizeof(buf), "%.0f", 3.5);   /* "4"，而 %.0e 3.5 给 "3e+00" 
 #### 定位
 src/ns_formatio.c:459-469
 src/ns_formatio.c:421-426
+
+---
+
+<a id="FORMATIO-024"></a>
+### FORMATIO-024: `%q`/`%Q` 字段宽度在 precision 小于单个元素时下溢，宽度反而变大
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 修复 commit f2f64b2
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+
+`vprintf_array`（src/ns_formatio.c:718-810）用 precision 反推可见长度：
+
+```c
+array_len = precision / item_size;                       /* :754 */
+remainder = precision % item_size;
+array_reality_len = array_len - (remainder ? 1 : 0);     /* :756 可为 0 或 -1 */
+valid_len = (array_reality_len * (item_size * 2)) + (array_reality_len - 1);  /* :757 */
+if (field_width > valid_len)
+    space_pad_len = field_width - valid_len;
+```
+
+当 `precision < item_size`（例如 `%.0hhq`、`%.1q`）时 `array_reality_len` 为 0 乃至负数
+（`array_len == 0` 且 `remainder != 0` 时是 -1），`valid_len` 计算为 -1 或更小的负数，
+`space_pad_len = field_width - valid_len` 因此**超出请求宽度**：
+
+- `"%20.0hhq"` → 输出 21 个字符（20 空格 + 换行不算，实测 n=21、strlen=21），宽度 20 被突破；
+- `"%10.0hhq"` → n=11；
+- `"%20.1q"`（`q` 的 item_size = sizeof(unsigned int) = 4）→ 30 个填充空格 + `" ??????44"`，
+  n=39，远超请求的宽度 20。
+
+另外 partial item 分支（src/ns_formatio.c:781-803）会额外输出 `2*remainder+1` 个字符
+（`" ??"` 占位 + 分隔空格），这部分没有被计入 `valid_len`，因此 `precision % item_size != 0`
+时宽度一律偏大。数据字节本身输出正确，问题集中在 padding 计算。
+
+#### review 建议
+
+不要从 precision 反推可见长度，改为在输出过程中累加实际字符数（与 `vprintf_number` 的
+`reality_count` 同思路），或至少在计算 padding 前修正：
+
+- `array_reality_len` 为 0 时应令 `valid_len = 0`（避免负数与 `-1` 下溢）；
+- partial item 的 `2 * remainder + 1` 个字符要计入 `valid_len`；
+- `space_pad_len` 计算后防御性钳制 `>= 0`。
+
+补 `%20.0hhq`、`%10.1hhq`、`%20.1q`、`%20.5q` 的宽度断言用例。
+
+#### 作者建议
+
+采纳：`valid_len` 改为按实际输出字符计算——完整 item 每项 `2*item_size`、item 之间 1 个空格、
+余数分支再加 `1 + 2*item_size`，不再由 precision 反推，并删掉 `array_reality_len`。
+`test_array_q` 补 `%20.0hhq` / `%20.1q` 宽度断言；原先锁住错误行为的 `%.3q` / `%.1q`
+黄金值（未请求宽度却带 9 个空格）同步改为 9 字符。
+
+#### 可重现的失败场景
+
+```c
+char buf[128];
+int n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", "");
+/* 实际 n=21、strlen=21（全空格），请求宽度 20 */
+n = ns_snprintf(buf, sizeof(buf), "%20.1q",
+                (const unsigned[]){0x11223344u, 0u, 0u, 0u});
+/* 实际 n=39、strlen=39，请求宽度 20；多出 30 个填充空格 */
+```
+
+#### 定位
+src/ns_formatio.c:754-759
+src/ns_formatio.c:781-803
+
+---
+
+<a id="FORMATIO-025"></a>
+<a id="FORMATIO-026"></a>
 
 ---
 
