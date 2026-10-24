@@ -14,6 +14,11 @@
 #include <unistd.h>  /* close()：构造已关闭 eventfd 的 drain 用例 */
 #endif
 
+#if defined(__APPLE__)
+#include <sys/event.h>  /* kqueue 探针：验证部分失败变更的回滚 */
+#include <unistd.h>     /* close() */
+#endif
+
 #include <nanosig/nanosig_port.h>
 
 #include "test_helpers.h"
@@ -923,6 +928,57 @@ static int test_waitset_events_zero(void)
 }
 #endif
 
+/** kqueue fd 支持 EVFILT_READ 而拒绝 EVFILT_WRITE：IN|OUT 注册必然在第二条变更失败，
+ *  用于验证失败时已生效的那条被回滚（否则残留 knote 会为未注册的 waitable 产出 completion） */
+#ifdef __APPLE__
+static int test_waitset_partial_add_rollback(void)
+{
+    ns_platform_waitset_t ws;
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t cc[4];
+    struct kevent trig;
+    size_t cnt = 0u;
+    int kq = kqueue();
+
+    if(kq < 0) return 1;
+
+    EV_SET(&trig, 1u, EVFILT_USER, EV_ADD | EV_CLEAR, 0u, 0, NULL);
+    if(kevent(kq, &trig, 1, NULL, 0, NULL) != 0){ (void)close(kq); return 1; }
+
+    if(ns_platform_waitset_init(&ws) != NS_OK){ (void)close(kq); return 1; }
+
+    w.primitive = kq;
+    w.user_data = (void *)0xDEAD;
+    w.registered_waitset = NULL;
+    w.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT;
+    w.edge_triggered = 0;
+
+    if(ns_platform_waitset_add(&ws, &w) != NS_E_INVAL) goto fail;
+
+    /* 让 inner kqueue 变可读：残留的 EVFILT_READ knote 会在这里冒出一个 completion */
+    EV_SET(&trig, 1u, EVFILT_USER, 0u, NOTE_TRIGGER, 0, NULL);
+    (void)kevent(kq, &trig, 1, NULL, 0, NULL);
+
+    if(ns_platform_waitset_wait(&ws, 200000u, cc, 4u, &cnt) != NS_OK) goto fail;
+    if(cnt != 0u) goto fail;
+
+    /* 只剩单条变更时注册与摘除都仍要成功 */
+    w.events = NS_WAITABLE_EVENT_IN;
+    if(ns_platform_waitset_add(&ws, &w) != NS_OK) goto fail;
+    if(ns_platform_waitset_remove(&ws, &w) != NS_OK) goto fail;
+    if(ns_platform_waitset_deinit(&ws) != NS_OK) goto fail;
+
+    (void)close(kq);
+    return 0;
+
+fail:
+    (void)ns_platform_waitset_remove(&ws, &w);
+    (void)ns_platform_waitset_deinit(&ws);
+    (void)close(kq);
+    return 1;
+}
+#endif
+
 /** 同一 waitable 只能注册到一个 waitset */
 static int test_waitset_two_waitsets(void)
 {
@@ -1122,6 +1178,9 @@ int main(void)
     if(test_waitset_max_completions_truncate() != 0){ fprintf(stderr, "test_waitset_max_completions_truncate failed\n"); return 1; }
 #if defined(__linux__) || defined(__APPLE__)
     if(test_waitset_events_zero() != 0){ fprintf(stderr, "test_waitset_events_zero failed\n"); return 1; }
+#endif
+#ifdef __APPLE__
+    if(test_waitset_partial_add_rollback() != 0){ fprintf(stderr, "test_waitset_partial_add_rollback failed\n"); return 1; }
 #endif
     if(test_waitset_two_waitsets() != 0){ fprintf(stderr, "test_waitset_two_waitsets failed\n"); return 1; }
     if(test_waitset_lifecycle_readd() != 0){ fprintf(stderr, "test_waitset_lifecycle_readd failed\n"); return 1; }
