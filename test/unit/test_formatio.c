@@ -921,70 +921,67 @@ static int test_pointer(void)
 
 static int test_array_q(void)
 {
-    static const uint8_t arr4[4] = { 0xAB, 0xCD, 0xEF, 0x12 };
-    static const uint8_t arr8[8] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 };
+    static const unsigned int arr_u32[4] = { 0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF11u };
+    static const unsigned short arr_u16[4] = { 0x0102u, 0x0304u, 0x0506u, 0x0708u };
+    static const unsigned char arr_u8[4] = { 0x01u, 0x02u, 0x03u, 0x04u };
+    static const unsigned long arr_ul[2] = { 0x0102030405060708ul, 0x1112131415161718ul };
+    static const unsigned long long arr_ull[2] = {
+        0x0102030405060708ull, 0x1112131415161718ull
+    };
     char buf[256];
     int n;
 
-    /* %q 无限定符 → item_size = sizeof(unsigned int) = 4（小端字节序） */
-    n = ns_snprintf(buf, sizeof(buf), "%.4q", arr4);
-    EXPECT_EQ(n, 8);
-    EXPECT_EQ(strcmp(buf, "12efcdab"), 0);
+    /* 精度 = 元素个数（不是字节数）。%q 默认 item = unsigned int，按高低位顺序输出。 */
+    n = ns_snprintf(buf, sizeof(buf), "%.4q", arr_u32);
+    EXPECT_EQ(n, 35);
+    EXPECT_EQ(strcmp(buf, "11223344 55667788 99aabbcc ddeeff11"), 0);
 
     /* %Q 大写 */
-    n = ns_snprintf(buf, sizeof(buf), "%.4Q", arr4);
-    EXPECT_EQ(n, 8);
-    EXPECT_EQ(strcmp(buf, "12EFCDAB"), 0);
+    n = ns_snprintf(buf, sizeof(buf), "%.4Q", arr_u32);
+    EXPECT_EQ(n, 35);
+    EXPECT_EQ(strcmp(buf, "11223344 55667788 99AABBCC DDEEFF11"), 0);
 
-    /* 宽度：precision 不满一个 item 时 padding 不得反向膨胀（FORMATIO-024） */
-    n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", arr4);
-    EXPECT_EQ(n, 20);
-    EXPECT_EQ((int)strlen(buf), 20);
-    n = ns_snprintf(buf, sizeof(buf), "%20.1q", (const unsigned int[]){ 0x11223344u, 0u, 0u, 0u });
-    EXPECT_EQ(n, 20);
-    EXPECT_EQ((int)strlen(buf), 20);
+    /* 限定符改的是元素宽度：h → 2 字节，hh → 1 字节 */
+    n = ns_snprintf(buf, sizeof(buf), "%.4hq", arr_u16);
+    EXPECT_EQ(n, 19);
+    EXPECT_EQ(strcmp(buf, "0102 0304 0506 0708"), 0);
 
-    /* 限定符：l → sizeof(unsigned long)（LP64 8 字节 / LLP64 4 字节），
-       ll → 8 字节，h → 2 字节，hh → 1 字节。按实际宽度断言，避免写死 LP64。 */
-    n = ns_snprintf(buf, sizeof(buf), "%.8lq", arr8);
-    if(sizeof(unsigned long) == 8u){
-        EXPECT_EQ(n, 16);
-        EXPECT_EQ(strcmp(buf, "0807060504030201"), 0);
-    } else {
-        EXPECT_EQ(n, 17);
-        EXPECT_EQ(strcmp(buf, "04030201 08070605"), 0);
-    }
-
-    n = ns_snprintf(buf, sizeof(buf), "%.8llq", arr8);
-    EXPECT_EQ(n, 16);
-    EXPECT_EQ(strcmp(buf, "0807060504030201"), 0);
-
-    n = ns_snprintf(buf, sizeof(buf), "%.4hq", arr8);
-    EXPECT_EQ(n, 9);
-    EXPECT_EQ(strcmp(buf, "0201 0403"), 0);
-
-    n = ns_snprintf(buf, sizeof(buf), "%.4hhq", arr8);
+    n = ns_snprintf(buf, sizeof(buf), "%.4hhq", arr_u8);
     EXPECT_EQ(n, 11);
     EXPECT_EQ(strcmp(buf, "01 02 03 04"), 0);
 
-    /* 宽度 > valid_len 与左对齐 */
-    n = ns_snprintf(buf, sizeof(buf), "%12.4q", arr4);
-    EXPECT_EQ(n, 12);
-    EXPECT_EQ(strcmp(buf, "    12efcdab"), 0);
+    /* l → sizeof(unsigned long)（LP64 8 字节 / LLP64 4 字节），ll → 8 字节 */
+    n = ns_snprintf(buf, sizeof(buf), "%.2lq", arr_ul);
+    if(sizeof(unsigned long) == 8u){
+        EXPECT_EQ(n, 33);
+        EXPECT_EQ(strcmp(buf, "0102030405060708 1112131415161718"), 0);
+    } else {
+        EXPECT_EQ(n, 17);
+        EXPECT_EQ(strcmp(buf, "05060708 15161718"), 0);
+    }
 
-    n = ns_snprintf(buf, sizeof(buf), "%-12.4q", arr4);
-    EXPECT_EQ(n, 12);
-    EXPECT_EQ(strcmp(buf, "12efcdab    "), 0);
+    n = ns_snprintf(buf, sizeof(buf), "%.2llq", arr_ull);
+    EXPECT_EQ(n, 33);
+    EXPECT_EQ(strcmp(buf, "0102030405060708 1112131415161718"), 0);
 
-    /* 精度非 item_size 倍数 → 余数 '??' 补位；未请求宽度时不得凭空插 padding */
-    n = ns_snprintf(buf, sizeof(buf), "%.3q", arr4);
-    EXPECT_EQ(n, 9);
-    EXPECT_EQ(strcmp(buf, " ??efcdab"), 0);
+    /* `.*` 传入的同样是元素个数 */
+    n = ns_snprintf(buf, sizeof(buf), "%.*q", 1, arr_u32);
+    EXPECT_EQ(n, 8);
+    EXPECT_EQ(strcmp(buf, "11223344"), 0);
 
-    /* %.1q：precision 小于一个 item，同样只输出 " " + "??????" + "ab" */
-    n = ns_snprintf(buf, sizeof(buf), "%.1q", arr4);
-    EXPECT_EQ(n, 9);
-    EXPECT_EQ(strcmp(buf, " ??????ab"), 0);
+    /* 宽度按元素个数换算出的可见长度补齐 */
+    n = ns_snprintf(buf, sizeof(buf), "%20.2q", arr_u32);
+    EXPECT_EQ(n, 20);
+    EXPECT_EQ(strcmp(buf, "   11223344 55667788"), 0);
+
+    n = ns_snprintf(buf, sizeof(buf), "%-20.2q", arr_u32);
+    EXPECT_EQ(n, 20);
+    EXPECT_EQ(strcmp(buf, "11223344 55667788   "), 0);
+
+    /* 0 个元素 → 只输出宽度个空格（FORMATIO-024 的回归点） */
+    n = ns_snprintf(buf, sizeof(buf), "%20.0hhq", arr_u8);
+    EXPECT_EQ(n, 20);
+    EXPECT_EQ((int)strlen(buf), 20);
 
     return 0;
 }
