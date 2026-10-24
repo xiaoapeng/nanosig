@@ -159,10 +159,11 @@ entries:
       - "platform/windows/port.c:152"
   - id: "PORT-028"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-25"
     location: "docs/review/platform-ports-code-review.md#PORT-028"
     locations:
       - "platform/macos/port.c:529"
@@ -414,74 +415,6 @@ entries:
 - **PORT-034（2026-10-24）**: epoll_wait 返回后立即 timerfd_settime(it_value=0) 撤弦并清空过期计数，覆盖正常/EINTR/出错全部返回路径；新增 test_waitset_timeout_early_return_disarms — commit `93be19d`
 
 ## 现在打开的问题
-
-<a id="PORT-028"></a>
-### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-- **置信度**: 中（macOS 侧本机实测；Linux 侧为 epoll 语义推断，本机为 Darwin 未能实测）
-
-#### 问题描述
-`triggered_events` 的位语义在三宿主不统一，同一"对端正常关闭"场景报出的位不同：
-
-- Linux（platform/linux/port.c:413-423）：`EPOLLHUP → NS_WAITABLE_EVENT_IN`，
-  `EPOLLERR → NS_WAITABLE_EVENT_ERR`。对端关闭后的连接/管道（EPOLLHUP / EPOLLRDHUP）
-  只报 IN，**不会报 ERR**；
-- macOS（platform/macos/port.c:523-533）：`EV_EOF → NS_WAITABLE_EVENT_ERR`，同时
-  `EVFILT_READ → IN`。对端**有序半关闭**（管道写端 close、socket `shutdown(SHUT_WR)`）
-  在 kqueue 上必然带 `EV_EOF`，于是 macOS 把每个正常 EOF 都报成 `IN|ERR`；
-- Windows（platform/windows/port.c:438、446-448）：恒报 `IN`。
-
-后果：`handler(watcher, triggered_events)`（include/nanosig/nanosig_broker.h:55）中按
-`triggered_events & NS_WAITABLE_EVENT_ERR` 判定"出错/断开"的代码，在 macOS 上会把**正常的对端
-关闭**当错误处理，在 Linux 上则永远不进 ERR 分支——同一段 handler 代码两端走不同分支。
-
-公共文档未规定该映射：`include/nanosig/nanosig_port.h:77-79` 只有"可读 / 可写 / 错误"三行
-注释，platform/README.md:36 只列出位名，故不属 §2.4 文档仲裁范围。
-
-#### review 建议
-先定契约再对齐实现。建议在 `nanosig_port.h` 的 `NS_WAITABLE_EVENT_ERR` 处补一句
-"对端有序关闭（EOF）只置 `NS_WAITABLE_EVENT_IN`；`NS_WAITABLE_EVENT_ERR` 仅在底层等待原语
-报告真实错误（EPOLLERR / EV_ERROR）时置位"，随后 macOS 删除 `EV_EOF → ERR` 映射
-（EV_EOF 的语义"该向不再可读/可写"已由 filter 本身与 IN/OUT 位表达），Linux 保持
-`EPOLLHUP → IN`。若确实需要区分"对端关闭"，应新增独立事件位而非复用 ERR——那属公共头变更，
-需作者决策。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-macOS 实测：
-
-```c
-pipe(p);
-ns_waitable_init(&w); w.primitive = p[0]; w.events = NS_WAITABLE_EVENT_IN;
-ns_platform_waitset_add(&ws, &w);
-write(p[1], "abc", 3);
-close(p[1]);                       /* 有序 EOF，且仍有 3 字节未读 */
-ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
-/* macOS: cnt == 1, cc[0].triggered_events == 0x5 (IN|ERR) */
-/* 把数据读空后再次 wait：仍为 0x5 —— 正常关闭持续被报成"错误" */
-```
-
-Linux 同一场景为 `EPOLLIN|EPOLLHUP → 0x1 (IN)`，不含 ERR（本机未实测，按 epoll 语义推断）。
-
-#### 影响面
-`triggered_events` 的产生点在三个后端的 `waitset_wait`（platform/macos/port.c、
-platform/linux/port.c、platform/windows/port.c），消费方是 src/ns_broker.c 的
-`ns_broker_dispatch_pending_events` 与用户的 `handler(watcher, triggered_events)`。
-受影响的是所有用 `triggered_events & NS_WAITABLE_EVENT_ERR` 判断"连接断开/出错"的 handler：
-macOS 上正常关闭会误入错误分支，Linux/Windows 永不进入。
-
-#### 定位
-platform/macos/port.c:529
-platform/macos/port.c:530
-platform/linux/port.c:420
-platform/windows/port.c:438
-include/nanosig/nanosig_port.h:77
-include/nanosig/nanosig_broker.h:55
 
 ## 现在关闭的问题
 
@@ -1703,6 +1636,79 @@ include/nanosig/nanosig_port.h:503
 platform/README.md:41
 
 ---
+
+---
+
+<a id="PORT-028"></a>
+### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 中（macOS 侧本机实测；Linux 侧为 epoll 语义推断，本机为 Darwin 未能实测）
+- **关闭原因**: 修复 commit d696a3f：macOS 删除 EV_EOF→ERR 映射，三宿主 EOF 语义统一为只置 IN；ERR 的定义写入 nanosig_port.h；新增 POSIX 用例 test_waitset_eof_reports_in_only（修复前在 macOS 上实测 0x5 失败）。
+- **关闭日期**: 2026-10-25
+
+#### 问题描述
+`triggered_events` 的位语义在三宿主不统一，同一"对端正常关闭"场景报出的位不同：
+
+- Linux（platform/linux/port.c:413-423）：`EPOLLHUP → NS_WAITABLE_EVENT_IN`，
+  `EPOLLERR → NS_WAITABLE_EVENT_ERR`。对端关闭后的连接/管道（EPOLLHUP / EPOLLRDHUP）
+  只报 IN，**不会报 ERR**；
+- macOS（platform/macos/port.c:523-533）：`EV_EOF → NS_WAITABLE_EVENT_ERR`，同时
+  `EVFILT_READ → IN`。对端**有序半关闭**（管道写端 close、socket `shutdown(SHUT_WR)`）
+  在 kqueue 上必然带 `EV_EOF`，于是 macOS 把每个正常 EOF 都报成 `IN|ERR`；
+- Windows（platform/windows/port.c:438、446-448）：恒报 `IN`。
+
+后果：`handler(watcher, triggered_events)`（include/nanosig/nanosig_broker.h:55）中按
+`triggered_events & NS_WAITABLE_EVENT_ERR` 判定"出错/断开"的代码，在 macOS 上会把**正常的对端
+关闭**当错误处理，在 Linux 上则永远不进 ERR 分支——同一段 handler 代码两端走不同分支。
+
+公共文档未规定该映射：`include/nanosig/nanosig_port.h:77-79` 只有"可读 / 可写 / 错误"三行
+注释，platform/README.md:36 只列出位名，故不属 §2.4 文档仲裁范围。
+
+#### review 建议
+先定契约再对齐实现。建议在 `nanosig_port.h` 的 `NS_WAITABLE_EVENT_ERR` 处补一句
+"对端有序关闭（EOF）只置 `NS_WAITABLE_EVENT_IN`；`NS_WAITABLE_EVENT_ERR` 仅在底层等待原语
+报告真实错误（EPOLLERR / EV_ERROR）时置位"，随后 macOS 删除 `EV_EOF → ERR` 映射
+（EV_EOF 的语义"该向不再可读/可写"已由 filter 本身与 IN/OUT 位表达），Linux 保持
+`EPOLLHUP → IN`。若确实需要区分"对端关闭"，应新增独立事件位而非复用 ERR——那属公共头变更，
+需作者决策。
+
+#### 作者建议
+
+采纳 review 建议：macOS 删除 EV_EOF→ERR 映射，EV_EOF 的语义由 filter 位表达为 IN（与 Linux 的 EPOLLHUP→IN 一致）；nanosig_port.h 注明 ERR 只表示底层真实错误（EPOLLERR / EV_ERROR / WAIT_FAILED），handler 不得用 ERR 判断连接断开。新增 test_waitset_eof_reports_in_only 锁定契约。
+
+#### 可重现的失败场景
+macOS 实测：
+
+```c
+pipe(p);
+ns_waitable_init(&w); w.primitive = p[0]; w.events = NS_WAITABLE_EVENT_IN;
+ns_platform_waitset_add(&ws, &w);
+write(p[1], "abc", 3);
+close(p[1]);                       /* 有序 EOF，且仍有 3 字节未读 */
+ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
+/* macOS: cnt == 1, cc[0].triggered_events == 0x5 (IN|ERR) */
+/* 把数据读空后再次 wait：仍为 0x5 —— 正常关闭持续被报成"错误" */
+```
+
+Linux 同一场景为 `EPOLLIN|EPOLLHUP → 0x1 (IN)`，不含 ERR（本机未实测，按 epoll 语义推断）。
+
+#### 影响面
+`triggered_events` 的产生点在三个后端的 `waitset_wait`（platform/macos/port.c、
+platform/linux/port.c、platform/windows/port.c），消费方是 src/ns_broker.c 的
+`ns_broker_dispatch_pending_events` 与用户的 `handler(watcher, triggered_events)`。
+受影响的是所有用 `triggered_events & NS_WAITABLE_EVENT_ERR` 判断"连接断开/出错"的 handler：
+macOS 上正常关闭会误入错误分支，Linux/Windows 永不进入。
+
+#### 定位
+platform/macos/port.c:529
+platform/macos/port.c:530
+platform/linux/port.c:420
+platform/windows/port.c:438
+include/nanosig/nanosig_port.h:77
+include/nanosig/nanosig_broker.h:55
 
 ---
 
