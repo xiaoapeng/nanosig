@@ -291,11 +291,18 @@ static NS_NOINLINE void streamout_finish(struct ns_stream_base *stream)
     }
 }
 
+/* 宽度/精度的上限：格式串可能来自外部输入，宽度无界会让填充循环白转上亿次。 */
+#define FORMAT_MAX_FIELD (1 << 20)
+
 static inline int skip_atoi(const char **s)
 {
     int i = 0;
-    while (isdigit((int)(**s)))
+    while (isdigit((int)(**s))) {
+        /* 每步即钳制：i 永远不超过上限，因此永远不会发生有符号溢出 */
         i = i * 10 + (*((*s)++) - '0');
+        if (i > FORMAT_MAX_FIELD)
+            i = FORMAT_MAX_FIELD;
+    }
     return i;
 }
 
@@ -964,9 +971,12 @@ static int streamout_vprintf(struct ns_stream_base *stream,
             ++fmt;
             field_width = va_arg(args, int);
             if (field_width < 0) {
-                field_width = -field_width;
+                /* INT_MIN 取负是 UB，且负宽度语义就是"左对齐 + 正的宽度" */
+                field_width = (field_width == INT_MIN) ? FORMAT_MAX_FIELD : -field_width;
                 flags |= FORMAT_LEFT;
             }
+            if (field_width > FORMAT_MAX_FIELD)
+                field_width = FORMAT_MAX_FIELD;
         }
 
         precision = -1;
@@ -980,6 +990,8 @@ static int streamout_vprintf(struct ns_stream_base *stream,
             }
             if (precision < 0)
                 precision = 0;
+            else if (precision > FORMAT_MAX_FIELD)
+                precision = FORMAT_MAX_FIELD;
         }
 
         qualifier = NS_FORMAT_QUALIFIER_NONE;

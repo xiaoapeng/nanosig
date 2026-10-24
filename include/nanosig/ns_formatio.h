@@ -72,6 +72,8 @@ extern struct ns_stream_function _ns_stdout;
  * %q/%Q（数组）与 %b（二进制）。与 C99 `snprintf` 存在以下文档化差异：
  * - `%g`/`%G` 等价于 `%f`，不剥除尾随零、不按指数范围切换到 `%e`；
  * * 宽度/`*` 负精度被钳为 0（C99 规定"视同未指定"）；
+ * - 宽度与精度上限为 `1 << 20`（1048576）：更大的字面值或 `*` 实参按上限处理，
+ *   避免无界的填充循环（格式串可能来自外部输入）；`%*d` 传 `INT_MIN` 同样按上限处理；
  * - `%q`/`%Q` 的精度是**元素个数**（不是字节数），元素宽度由长度修饰符决定：
  *   `hh` = `unsigned char`、`h` = `unsigned short`、缺省 = `unsigned int`、
  *   `l` = `unsigned long`、`ll` = `unsigned long long`；每个元素输出 `2*sizeof(元素)`
