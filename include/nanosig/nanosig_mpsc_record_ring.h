@@ -80,8 +80,9 @@ typedef struct ns_mpsc_record_ring  {
  * @pre @p ring 和 @p storage 不为 NULL。
  * @pre @p storage 的起始地址必须对齐到 `NS_MPSC_RECORD_RING_ALIGNMENT`。
  * @pre @p capacity 必须是 2 的幂且不小于 `sizeof(size_t) * 3`。
- * @pre 在 32 位目标上，`@p capacity` 不得超过 `NS_MPSC_META_STRIDE_MASK * 2`
- *     （即 131072），否则 meta 的 16 位 stride 字段不足以表示 record 总大小。
+ * @pre 在 32 位目标上，`@p capacity` 不得超过 65536 字节（`capacity / 2` 必须能装进
+ *     meta 的 16 位 stride 字段），否则本函数返回 `NS_E_INVAL`。64 位目标的该上限为
+ *     4 GiB（stride 字段 32 位），实际不可分配。
  *
  * @param[out] ring       待初始化的环结构。
  * @param[in]  storage    调用方提供的存储区域。
