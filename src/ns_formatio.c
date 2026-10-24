@@ -743,7 +743,6 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
     char item_size;
     int valid_len;
     int array_len;
-    int remainder;
     int space_pad_len = 0;
     int n = 0;
 
@@ -770,14 +769,9 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
             break;
     }
 
-    array_len = precision / item_size;
-    remainder = precision % item_size;
-    /* 可见长度按"实际会吐出的字符"算：完整 item 每个 2*item_size 字符，item 之间 1 个空格，
-       尾部半截 item 再多 1 个空格 + 2*item_size 字符。不能由 precision 反推，否则
-       precision < item_size 时会得到负数，padding 反而超出请求宽度。 */
+    /* 精度是元素个数，不是字节数：每个元素输出 2*item_size 个 hex 字符，元素之间 1 个空格。 */
+    array_len = precision;
     valid_len = (array_len * (item_size * 2)) + ((array_len > 0) ? (array_len - 1) : 0);
-    if (remainder)
-        valid_len += 1 + (item_size * 2);
     if (field_width > valid_len)
         space_pad_len = field_width - valid_len;
 
@@ -800,29 +794,6 @@ static int vprintf_array(struct ns_stream_base *stream, const uint8_t *array,
             streamout_in_byte(stream, digits[(item[j] >> 4) & 0x0f]);
             streamout_in_byte(stream, digits[(item[j]) & 0x0f]);
         }
-    }
-    if (remainder) {
-        streamout_in_byte(stream, ' ');
-        n++;
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        for (int i = 0; i < (item_size - remainder); i++, n += 2) {
-            streamout_in_byte(stream, '?');
-            streamout_in_byte(stream, '?');
-        }
-        for (int j = remainder - 1; j >= 0; j--, n += 2) {
-            streamout_in_byte(stream, digits[(item[j] >> 4) & 0x0f]);
-            streamout_in_byte(stream, digits[(item[j]) & 0x0f]);
-        }
-#else
-        for (int j = 0; j < remainder; j++, n += 2) {
-            streamout_in_byte(stream, digits[(item[j] >> 4) & 0x0f]);
-            streamout_in_byte(stream, digits[(item[j]) & 0x0f]);
-        }
-        for (int i = 0; i < (item_size - remainder); i++, n += 2) {
-            streamout_in_byte(stream, '?');
-            streamout_in_byte(stream, '?');
-        }
-#endif
     }
 
     if (flags & FORMAT_LEFT) {
