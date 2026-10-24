@@ -27,10 +27,11 @@ entries:
       - "platform/linux/port.c:532"
   - id: "PORT-021"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-021"
     locations:
       - "platform/README.md:156"
@@ -70,10 +71,11 @@ entries:
       - "platform/linux/port.c:141"
   - id: "PORT-016"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "test"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-016"
     locations:
       - "test/unit/test_platform_backend.c:905-939"
@@ -135,10 +137,11 @@ entries:
       - "platform/README.md:41"
   - id: "PORT-026"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-026"
     locations:
       - "platform/windows/port.c:352"
@@ -182,10 +185,11 @@ entries:
       - "include/nanosig/nanosig_broker.h:55"
   - id: "PORT-029"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-029"
     locations:
       - "platform/README.md:135"
@@ -360,10 +364,11 @@ entries:
       - "platform/README.md:67"
   - id: "PORT-034"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-034"
     locations:
       - "platform/linux/port.c:598"
@@ -410,87 +415,17 @@ entries:
 
 - **PORT-027（2026-10-24）**: macOS event pipe 写端加 F_SETNOSIGPIPE，读端已关闭时写只返回 EPIPE，不再以 SIGPIPE 终止进程 — commit `f2f64b2`
 
+- **PORT-021（2026-10-24）**: 重新核对后仅 macOS wakeup "暴露为 waitable" 仍过期，已改为只能经 ns_platform_wakeup_wait 等待；其余 4 处已随 GLOBAL-006 修复或原判断有误，定位收敛到 platform/README.md:156 — commit `43fe3ec`
+
+- **PORT-029（2026-10-24）**: platform/README.md 的 Windows 句柄谓词改为 h != NULL && h != INVALID_HANDLE_VALUE；单次 wait 的 completion 条数改为"可返回多个（WFMO 报告首个 + 零超时扫描其余）" — commit `43fe3ec`
+
+- **PORT-016（2026-10-24）**: test_waitset_events_zero 去掉 #if 守卫，Windows 断言 NS_E_INVAL 且不写入注册状态，POSIX 断言 NS_OK + signal 后不触发 — commit `03ee7f1`
+
+- **PORT-026（2026-10-24）**: Windows waitset 与 FreeRTOS/Zephyr 对齐为 IN-only：掩码不含 IN（含 events==0）或含 OUT/ERR 时 add 返回 NS_E_INVAL，不再静默降级为 IN — commit `03ee7f1`
+
+- **PORT-034（2026-10-24）**: epoll_wait 返回后立即 timerfd_settime(it_value=0) 撤弦并清空过期计数，覆盖正常/EINTR/出错全部返回路径；新增 test_waitset_timeout_early_return_disarms — commit `93be19d`
+
 ## 现在打开的问题
-
-<a id="PORT-021"></a>
-### PORT-021: 平台文档仍描述重构前的原语
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-`bafb78d` 改写了平台所有权模型，但以下描述未同步：
-
-- `platform/README.md:93`："wakeup 使用 kqueue `EVFILT_USER`，通过 wakeup 自身的
-  kqueue fd 暴露为 waitable"——重构后 wakeup 不再暴露 waitable，`NS_WAITABLE_GET`
-  已删除；
-- `platform/README.md:102`：Windows 线程写 `CreateThread`，实现是
-  `_beginthreadex`（`platform/windows/port.c:256`），属 PLATFORM-013 已修文档的回归；
-- `docs/agents/platform/AGENTS.md:67`：同上 `CreateThread`；
-- `docs/agents/platform/AGENTS.md:69`：仍写 "`k_malloc`/`k_free` for internal state"，
-  与 PORT-020 的实际实现（`k_aligned_alloc`）不一致；
-- `docs/ARCHITECTURE.md:271`：跨模块表格同样写 `CreateThread`。
-
-#### review 建议
-按上述逐行更新；`docs/ARCHITECTURE.md` 的同一措辞记入 `global-review.md`
-（跨模块问题按规范写全局文档）。
-
-#### 作者建议
-修订后重新核对，本条实际只剩 **1 处** 仍然过期；其余 3 处在写条目之后已被修复，或原本就判断有误：
-
-- platform/README.md:156（原 :93）：macOS wakeup "暴露为 waitable" —— **仍过期，本次已改**；
-- platform/README.md:102 的 `CreateThread`：已随 GLOBAL-006 同批改为 `_beginthreadex`；
-- docs/agents/platform/AGENTS.md:67：现写作 `_beginthreadex`（not `CreateThread`），已修；
-- docs/agents/platform/AGENTS.md:69 的 `k_malloc`/`k_free`：**当时即误报**——platform/zephyr/port.c:128
-  至今仍是 `k_malloc`，文档与代码一致，不存在 `k_aligned_alloc`；
-- docs/ARCHITECTURE.md:271：已随 GLOBAL-006 改为 `_beginthreadex`。
-
-#### 影响面
-纯文档，无代码调用者。受影响的是照 README 编写 macOS wakeup 等待代码的读者
-（会去找一个不存在的 waitable 转换）。
-
-#### 可重现的失败场景
-照 README 在 macOS 上调用 wakeup 侧转换宏（`NS_WAITABLE_GET`）→ 编译错误，
-宏已不存在；照 Windows 小节期望 `CreateThread` 语义（如继承句柄/线程退出码）→
-与实际 `_beginthreadex` 行为不符。
-
-#### 定位
-platform/README.md:156
-
----
-
-<a id="PORT-016"></a>
-### PORT-016: 测试 `test_waitset_events_zero` 未覆盖 Windows 路径
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: test
-
-#### 问题描述
-`test_waitset_events_zero` 用 `#if defined(__linux__) || defined(__APPLE__)` 条件编译，仅在 POSIX 平台运行，Windows 路径未覆盖。
-
-#### review 建议
-去掉条件编译守卫，改为三平台通用测试。
-
-#### 作者建议
-与 PORT-026 一并修：Windows 改为 IN-only（掩码不含 IN 或含 OUT/ERR 时 `add` 返回
-`NS_E_INVAL`），因此 `events == 0` 在 Windows 上的期望是"注册被拒绝"，在 Linux/macOS 上
-是"注册成功且永不触发"。用例已去掉 `#if` 守卫，按平台断言各自的契约。
-
-#### 影响面
-`test/unit/test_platform_backend.c` 的 `test_waitset_events_zero`，Windows CI 首次编译并运行该用例。
-
-#### 可重现的失败场景
-
-test/unit/test_platform_backend.c 的 test_waitset_events_zero 被
-`#if defined(__linux__) || defined(__APPLE__)` 包裹，Windows 构建不编译该测试，
-waitset events=0 路径无覆盖。
-
-#### 定位
-test/unit/test_platform_backend.c:905-939
-
----
 
 <a id="PORT-025"></a>
 ### PORT-025: macOS 允许两个 waitable 注册同一 fd，`remove` 其中一个会静默废掉另一个
@@ -566,93 +501,6 @@ platform/README.md:41
 
 ---
 
-<a id="PORT-026"></a>
-### PORT-026: Windows 后端完全忽略 `waitable->events`，恒报 `NS_WAITABLE_EVENT_IN`
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-- **置信度**: 高（代码走查；本机为 macOS，未在 Windows 上运行）
-
-#### 问题描述
-`ns_platform_waitset_add`（platform/windows/port.c:323-339）**从不读取** `waitable->events`：
-既不校验掩码，也不记录关注位。`ns_platform_waitset_wait`（:374-457）在报告 completion 时
-硬编码 `triggered_events = NS_WAITABLE_EVENT_IN`（:438、:447）。于是 Windows 的行为是
-"任何 waitable 一律按 IN 上报"：
-
-- 只注册 `NS_WAITABLE_EVENT_OUT` 或只注册 `NS_WAITABLE_EVENT_ERR` 的 watcher 在 Windows 上
-  `add` 返回 `NS_OK`，随后只要该 handle 变为 signaled 就以 `NS_WAITABLE_EVENT_IN` 触发
-  handler——调用方按"可读"分支去读一个只申请了"可写"的句柄；
-- Linux（platform/linux/port.c:402-411，掩码映射 `EPOLLIN/EPOLLOUT/EPOLLERR`）与 macOS
-  （platform/macos/port.c:419-446，掩码决定是否生成 `EVFILT_READ/EVFILT_WRITE`）都按掩码
-  注册，掩码在三宿主中语义不一致；
-- FreeRTOS / Zephyr 对含 OUT/ERR 的掩码直接返回 `NS_E_INVAL`，这一点已文档化
-  （include/nanosig/nanosig_port.h:506-508）。Windows 既未跟随 RTOS 的"拒绝"，也未实现
-  掩码语义，属第三种行为。
-
-公共文档未规定 Windows 忽略事件掩码：`include/nanosig/nanosig_port.h:77-79` 只定义三个位，
-platform/README.md:100-109 的 Windows 小节只写"`edge_triggered` 参数忽略"，未提 `events`，
-故不属 §2.4 文档仲裁范围。测试侧同样未覆盖：test/unit/test_broker_event.c:221-223 的
-OUT 投递用例在 `_WIN32` 下直接 `return 0`（socketpair 不可用），Windows 的掩码行为无断言。
-
-#### 为何非重复（AGENTS.md §3.1）
-BROKER-036（`关闭-已修复`）讲的是 **`events == 0`** 被 host 后端接受、RTOS 后端拒绝；
-本条讲的是**非零掩码中的 OUT/ERR 位在 Windows 上被静默降级为 IN**。输入不同、代码位置不同
-（broker 校验函数 vs `platform/windows/port.c` 的 add/wait）、修复方向不同。
-
-#### review 建议
-三选一，需作者决策后统一到文档（这是公共契约变更，不是纯实现修复）：
-
-1. **（推荐）Windows `waitset_add` 拒绝非 IN 位**：与 FreeRTOS/Zephyr 对齐，`add` 返回
-   `NS_E_INVAL`；`nanosig_port.h:506-508` 的 `@note` 把 Windows 一并列入 IN-only 后端。
-   代价：今天在 Windows 上用 `IN|OUT` 掩码"能跑"的调用方会收到新错误码。
-2. **实现 OUT 语义**：WFMO 无法表达"可写/错误"，只能对 `NS_WAITABLE_EVENT_OUT` 额外用
-   `WaitForSingleObject(handle, 0)` 试探——但句柄的 signaled 状态被消费会破坏已有的
-   auto-reset 语义，不建议。
-3. **纯文档化**：明确写"Windows 忽略 OUT/ERR，一律按 IN 上报"，并在 `nanosig_port.h` 的
-   `NS_WAITABLE_EVENT_OUT/ERR` 处标注该限制。
-
-无论选哪个，都应补一个覆盖 `_WIN32` 的掩码用例（当前 `_WIN32` 分支被跳过）。
-
-#### 作者建议
-采纳方案 1：Windows 与 FreeRTOS / Zephyr 对齐，`ns_platform_waitset_add` 增加掩码校验——
-不含 `NS_WAITABLE_EVENT_IN`（含 `events == 0`）或含 `OUT`/`ERR` 时返回 `NS_E_INVAL`。
-不在 `ns_watcher_init` 层拦截，保持契约落在"该后端是否支持这个掩码"的地方。
-
-同步更新：`nanosig_port.h` 的 `ns_platform_waitset_add` `@note` 把 Windows 列入 IN-only；
-`platform/README.md` 的 Windows 小节补一条 IN-only 说明；`test_waitset_events_zero` 去掉
-`#if` 守卫，Windows 断言 `NS_E_INVAL`、POSIX 断言 `NS_OK` + 不触发（即 PORT-016）。
-
-#### 影响面
-`ns_platform_waitset_add` 的调用者：src/ns_broker.c 的 `ns_broker_add`（watcher 注册路径）。
-公共契约收紧：Windows 上今天用 `IN|OUT` 或只 `OUT` 能注册成功的调用方，之后会收到
-`NS_E_INVAL`，且错误发生在 `ns_broker_add` 而不是 `ns_watcher_init`。
-
-#### 可重现的失败场景
-Windows（按代码走查构造，未实测）：
-
-```c
-ns_watcher_t w = {0};
-ns_watcher_init(&w, handle, NS_WAITABLE_EVENT_OUT, 0, on_writable);  /* NS_OK */
-ns_broker_add(&w);                                                   /* NS_OK */
-/* handle 被 signal 后 handler 收到 triggered_events == NS_WAITABLE_EVENT_IN(0x1)，
-   而 Linux 上是 0x2(OUT) —— 调用方按 IN 分支去 read() 一个只申请了可写的句柄 */
-```
-
-同一段代码在 FreeRTOS / Zephyr 上 `ns_broker_add` 返回 `NS_E_INVAL`。
-
-#### 定位
-platform/windows/port.c:352
-platform/windows/port.c:470
-platform/windows/port.c:479
-platform/linux/port.c:402
-platform/macos/port.c:419
-include/nanosig/nanosig_port.h:534
-platform/README.md:175
-test/unit/test_platform_backend.c:908
-
----
-
 <a id="PORT-028"></a>
 ### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
 
@@ -714,114 +562,6 @@ platform/windows/port.c:438
 include/nanosig/nanosig_port.h:77
 include/nanosig/nanosig_broker.h:55
 
----
-
-<a id="PORT-029"></a>
-### PORT-029: platform/README.md 两处描述与实现不一致（句柄谓词、Windows completion 条数）
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-- **置信度**: 高
-
-#### 问题描述
-- platform/README.md:72 写"句柄有效性用平台头提供的 `ns_waitable_handle_is_valid(h)` 判定：
-  POSIX 为 `h >= 0`，**Windows 为 `h != NULL`**，RTOS 为 `h != NULL && h != (void *)~0`"。
-  但 `platform/windows/nanosig_platform_port.h:44-45` 的谓词（随 PORT-018 修复）已变为
-  `h != NULL && h != INVALID_HANDLE_VALUE`；
-- platform/README.md:225 写"Windows 后端单次 wait **最多返回 1 个 completion**（auto-reset event
-  语义）"。实际 `ns_platform_waitset_wait`（platform/windows/port.c:429-452）在 WFMO 报告首个
-  signaled handle 之后，还会用 `WaitForSingleObject(handles[i], 0u)` 扫描其余用户 handle，把
-  同时 signaled 的成员一并写入 completions——**单次可返回多个** completion。
-
-本条与 PORT-021（讲 platform/README.md:93 的 wakeup waitable 与 :102 的 `CreateThread`）同属
-"文档落后于实现"，但**具体行与具体主张均不同**，非 §3.1 意义上的重复：第一条是 PORT-018 修复后
-未同步的文档遗留，第二条是 Windows 多 completion 扫描（早于本次修复即存在）从未反映到文档。
-
-#### review 建议
-- platform/README.md:72 改为"Windows 为 `h != NULL && h != INVALID_HANDLE_VALUE`"；
-- platform/README.md:225 改为"单次 wait 可返回多个 completion：WFMO 报告首个，其余同时就绪的
-  成员由零超时等待扫描捕获"，并删除"auto-reset event 语义 ⇒ 最多 1 个"的推论。
-
-#### 作者建议
-采纳，两处均已按实现改写：句柄谓词改为 `h != NULL && h != INVALID_HANDLE_VALUE`；
-Windows completion 说明改为"可返回多个（WFMO 报告首个 + 零超时扫描其余）"。
-
-#### 影响面
-纯文档，无代码调用者。受影响的是按 README 规划 Windows waitset 行为的调用方
-（句柄有效性判断、completions 数组容量规划）。
-
-#### 可重现的失败场景
-- 照 README:72 的"Windows 只需判 NULL"口径编写调用方，把 `ns_waitable_init` 产出的
-  `INVALID_HANDLE_VALUE` 哨兵交给 `ns_platform_waitset_add`：期望注册成功（文档口径），
-  实际返回 `NS_E_INVAL`（实现口径）；
-- 照 README:225 假定 Windows 每次至多 1 个 completion 编写 `completions` 下标规划：两个用户
-  handle 同时 signaled 时一次拿到 2 个 completion，数组规划（如 `count <= 1`）失效。
-
-#### 定位
-platform/README.md:135
-platform/README.md:294
-platform/windows/nanosig_platform_port.h:44
-platform/windows/port.c:443
-
-<a id="PORT-034"></a>
-### PORT-034: Linux waitset 提前返回后未解散 timerfd，残留定时器在后续无限等待中造成虚假唤醒
-
-- **状态**: 打开
-- **严重度**: 🟡 中（前提：连续两次 wait，第一次带超时且被 fd 提前唤醒，第二次为无限等待；仅 Linux 后端；修复前由新增用例实测复现）
-- **类型**: bug
-
-#### 问题描述
-Linux 后端的微秒超时用常驻 epoll 的 timerfd 实现：每次 wait 前 `timerfd_settime` 上弦，
-然后以 `epoll_wait(..., -1)` 无限等。当某个 fd 在定时器到期前就绪（或 EINTR）而提前返回时，
-内核里的倒计时**仍在继续**，却没有任何路径去解散它。
-
-下一次调用若是无限等待，代码不会再上弦，也不会撤掉上一个，于是旧定时器到点自己 fire，
-`epoll_wait` 返回一个只含 timerfd sentinel 的结果：`out_count == 0`，函数返回 `NS_OK`。
-调用方看到"等待成功但没有任何事件"，且远早于预期，broker 白跑一轮再回去等。
-
-旧代码只在 `timer_armed == 0` 分支里 drain timerfd，armed 时直接 `continue`，因此复现路径一直存在。
-本条与 PORT-019（同一次 `epoll_wait` 内排在后面的就绪事件被丢弃）不是同一问题：
-PORT-019 是**同批丢失**，本条是**跨调用残留**。
-
-#### review 建议
-`epoll_wait` 一返回（无论正常、EINTR 还是出错）就在 `timer_armed` 为真时立即解散定时器：
-
-```c
-struct itimerspec off = {0};          /* it_value 全 0 = 撤弦，同时清空过期计数 */
-if(timerfd_settime(waitset->timer_fd, 0, &off, NULL) < 0){
-    /* 撤不掉就兜底读走计数，避免电平触发的 timerfd 持续就绪变成热自旋 */
-    do { rd = read(waitset->timer_fd, &dummy, sizeof(dummy)); } while(rd < 0 && errno == EINTR);
-}
-```
-
-用 `settime` 而非 `read`，是因为它同时清空"已到期计数"，正常路径不需要额外 read。
-同时删除 sentinel 分支里 `if(timer_armed) continue;` 的特判与残留 drain 分支。
-
-#### 作者建议
-采纳，按上述实现：撤弦放在 `epoll_wait` 返回后、处理事件前，覆盖全部返回路径；
-`settime` 失败时兜底 `read` 并打日志。新增
-`test_waitset_timeout_early_return_disarms`（200ms 定时器被 fd 提前唤醒 → 无限等待必须睡满
-600ms），修复前该用例 `cnt == 0`、耗时约 200ms，必然失败。
-
-#### 影响面
-`ns_platform_waitset_wait` 的唯一实现点（platform/linux/port.c）。
-上层调用者：src/ns_broker.c 的 broker 等待循环，以及直接调用 `ns_platform_waitset_wait` 的用户代码。
-仅 Linux 受影响：macOS 用 `kevent` 的 `timespec` 参数、Windows 用 `WaitableTimer` 句柄，
-都不存在跨调用的残留定时器。
-
-#### 可重现的失败场景
-1. signal 一个 eventfd，以 200ms 超时等待 → fd 已就绪，立即返回（定时器尚未到期）；
-2. 把 eventfd 读空，发起 `NS_PLATFORM_WAIT_INFINITE_US` 等待，另一线程 600ms 后才 signal；
-3. 修复前：约 200ms 时残留定时器 fire，本轮返回 `out_count == 0`，用例的 `cnt == 1` 与
-   耗时 ≥ 550ms 两条断言同时失败；
-4. 修复后：必须等到 fd 就绪，`cnt == 1`、耗时约 600ms。
-
-#### 定位
-
-platform/linux/port.c:598
-platform/linux/port.c:630
-test/unit/test_platform_backend.c:1097
 ---
 
 ## 现在关闭的问题
@@ -1736,6 +1476,294 @@ include/nanosig/nanosig_port.h:18
 include/nanosig/nanosig_port.h:307
 platform/linux/port.c:205
 platform/windows/port.c:152
+
+---
+
+<a id="PORT-021"></a>
+### PORT-021: 平台文档仍描述重构前的原语
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **关闭原因**: 修复 commit 43fe3ec
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`bafb78d` 改写了平台所有权模型，但以下描述未同步：
+
+- `platform/README.md:93`："wakeup 使用 kqueue `EVFILT_USER`，通过 wakeup 自身的
+  kqueue fd 暴露为 waitable"——重构后 wakeup 不再暴露 waitable，`NS_WAITABLE_GET`
+  已删除；
+- `platform/README.md:102`：Windows 线程写 `CreateThread`，实现是
+  `_beginthreadex`（`platform/windows/port.c:256`），属 PLATFORM-013 已修文档的回归；
+- `docs/agents/platform/AGENTS.md:67`：同上 `CreateThread`；
+- `docs/agents/platform/AGENTS.md:69`：仍写 "`k_malloc`/`k_free` for internal state"，
+  与 PORT-020 的实际实现（`k_aligned_alloc`）不一致；
+- `docs/ARCHITECTURE.md:271`：跨模块表格同样写 `CreateThread`。
+
+#### review 建议
+按上述逐行更新；`docs/ARCHITECTURE.md` 的同一措辞记入 `global-review.md`
+（跨模块问题按规范写全局文档）。
+
+#### 作者建议
+修订后重新核对，本条实际只剩 **1 处** 仍然过期；其余 3 处在写条目之后已被修复，或原本就判断有误：
+
+- platform/README.md:156（原 :93）：macOS wakeup "暴露为 waitable" —— **仍过期，本次已改**；
+- platform/README.md:102 的 `CreateThread`：已随 GLOBAL-006 同批改为 `_beginthreadex`；
+- docs/agents/platform/AGENTS.md:67：现写作 `_beginthreadex`（not `CreateThread`），已修；
+- docs/agents/platform/AGENTS.md:69 的 `k_malloc`/`k_free`：**当时即误报**——platform/zephyr/port.c:128
+  至今仍是 `k_malloc`，文档与代码一致，不存在 `k_aligned_alloc`；
+- docs/ARCHITECTURE.md:271：已随 GLOBAL-006 改为 `_beginthreadex`。
+
+#### 影响面
+纯文档，无代码调用者。受影响的是照 README 编写 macOS wakeup 等待代码的读者
+（会去找一个不存在的 waitable 转换）。
+
+#### 可重现的失败场景
+照 README 在 macOS 上调用 wakeup 侧转换宏（`NS_WAITABLE_GET`）→ 编译错误，
+宏已不存在；照 Windows 小节期望 `CreateThread` 语义（如继承句柄/线程退出码）→
+与实际 `_beginthreadex` 行为不符。
+
+#### 定位
+platform/README.md:156
+
+---
+
+<a id="PORT-029"></a>
+### PORT-029: platform/README.md 两处描述与实现不一致（句柄谓词、Windows completion 条数）
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **置信度**: 高
+- **关闭原因**: 修复 commit 43fe3ec
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+- platform/README.md:72 写"句柄有效性用平台头提供的 `ns_waitable_handle_is_valid(h)` 判定：
+  POSIX 为 `h >= 0`，**Windows 为 `h != NULL`**，RTOS 为 `h != NULL && h != (void *)~0`"。
+  但 `platform/windows/nanosig_platform_port.h:44-45` 的谓词（随 PORT-018 修复）已变为
+  `h != NULL && h != INVALID_HANDLE_VALUE`；
+- platform/README.md:225 写"Windows 后端单次 wait **最多返回 1 个 completion**（auto-reset event
+  语义）"。实际 `ns_platform_waitset_wait`（platform/windows/port.c:429-452）在 WFMO 报告首个
+  signaled handle 之后，还会用 `WaitForSingleObject(handles[i], 0u)` 扫描其余用户 handle，把
+  同时 signaled 的成员一并写入 completions——**单次可返回多个** completion。
+
+本条与 PORT-021（讲 platform/README.md:93 的 wakeup waitable 与 :102 的 `CreateThread`）同属
+"文档落后于实现"，但**具体行与具体主张均不同**，非 §3.1 意义上的重复：第一条是 PORT-018 修复后
+未同步的文档遗留，第二条是 Windows 多 completion 扫描（早于本次修复即存在）从未反映到文档。
+
+#### review 建议
+- platform/README.md:72 改为"Windows 为 `h != NULL && h != INVALID_HANDLE_VALUE`"；
+- platform/README.md:225 改为"单次 wait 可返回多个 completion：WFMO 报告首个，其余同时就绪的
+  成员由零超时等待扫描捕获"，并删除"auto-reset event 语义 ⇒ 最多 1 个"的推论。
+
+#### 作者建议
+采纳，两处均已按实现改写：句柄谓词改为 `h != NULL && h != INVALID_HANDLE_VALUE`；
+Windows completion 说明改为"可返回多个（WFMO 报告首个 + 零超时扫描其余）"。
+
+#### 影响面
+纯文档，无代码调用者。受影响的是按 README 规划 Windows waitset 行为的调用方
+（句柄有效性判断、completions 数组容量规划）。
+
+#### 可重现的失败场景
+- 照 README:72 的"Windows 只需判 NULL"口径编写调用方，把 `ns_waitable_init` 产出的
+  `INVALID_HANDLE_VALUE` 哨兵交给 `ns_platform_waitset_add`：期望注册成功（文档口径），
+  实际返回 `NS_E_INVAL`（实现口径）；
+- 照 README:225 假定 Windows 每次至多 1 个 completion 编写 `completions` 下标规划：两个用户
+  handle 同时 signaled 时一次拿到 2 个 completion，数组规划（如 `count <= 1`）失效。
+
+#### 定位
+platform/README.md:135
+platform/README.md:294
+platform/windows/nanosig_platform_port.h:44
+platform/windows/port.c:443
+
+---
+
+<a id="PORT-016"></a>
+### PORT-016: 测试 `test_waitset_events_zero` 未覆盖 Windows 路径
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: test
+- **关闭原因**: 修复 commit 03ee7f1
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`test_waitset_events_zero` 用 `#if defined(__linux__) || defined(__APPLE__)` 条件编译，仅在 POSIX 平台运行，Windows 路径未覆盖。
+
+#### review 建议
+去掉条件编译守卫，改为三平台通用测试。
+
+#### 作者建议
+与 PORT-026 一并修：Windows 改为 IN-only（掩码不含 IN 或含 OUT/ERR 时 `add` 返回
+`NS_E_INVAL`），因此 `events == 0` 在 Windows 上的期望是"注册被拒绝"，在 Linux/macOS 上
+是"注册成功且永不触发"。用例已去掉 `#if` 守卫，按平台断言各自的契约。
+
+#### 影响面
+`test/unit/test_platform_backend.c` 的 `test_waitset_events_zero`，Windows CI 首次编译并运行该用例。
+
+#### 可重现的失败场景
+
+test/unit/test_platform_backend.c 的 test_waitset_events_zero 被
+`#if defined(__linux__) || defined(__APPLE__)` 包裹，Windows 构建不编译该测试，
+waitset events=0 路径无覆盖。
+
+#### 定位
+test/unit/test_platform_backend.c:905-939
+
+---
+
+<a id="PORT-026"></a>
+### PORT-026: Windows 后端完全忽略 `waitable->events`，恒报 `NS_WAITABLE_EVENT_IN`
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 高（代码走查；本机为 macOS，未在 Windows 上运行）
+- **关闭原因**: 修复 commit 03ee7f1
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`ns_platform_waitset_add`（platform/windows/port.c:323-339）**从不读取** `waitable->events`：
+既不校验掩码，也不记录关注位。`ns_platform_waitset_wait`（:374-457）在报告 completion 时
+硬编码 `triggered_events = NS_WAITABLE_EVENT_IN`（:438、:447）。于是 Windows 的行为是
+"任何 waitable 一律按 IN 上报"：
+
+- 只注册 `NS_WAITABLE_EVENT_OUT` 或只注册 `NS_WAITABLE_EVENT_ERR` 的 watcher 在 Windows 上
+  `add` 返回 `NS_OK`，随后只要该 handle 变为 signaled 就以 `NS_WAITABLE_EVENT_IN` 触发
+  handler——调用方按"可读"分支去读一个只申请了"可写"的句柄；
+- Linux（platform/linux/port.c:402-411，掩码映射 `EPOLLIN/EPOLLOUT/EPOLLERR`）与 macOS
+  （platform/macos/port.c:419-446，掩码决定是否生成 `EVFILT_READ/EVFILT_WRITE`）都按掩码
+  注册，掩码在三宿主中语义不一致；
+- FreeRTOS / Zephyr 对含 OUT/ERR 的掩码直接返回 `NS_E_INVAL`，这一点已文档化
+  （include/nanosig/nanosig_port.h:506-508）。Windows 既未跟随 RTOS 的"拒绝"，也未实现
+  掩码语义，属第三种行为。
+
+公共文档未规定 Windows 忽略事件掩码：`include/nanosig/nanosig_port.h:77-79` 只定义三个位，
+platform/README.md:100-109 的 Windows 小节只写"`edge_triggered` 参数忽略"，未提 `events`，
+故不属 §2.4 文档仲裁范围。测试侧同样未覆盖：test/unit/test_broker_event.c:221-223 的
+OUT 投递用例在 `_WIN32` 下直接 `return 0`（socketpair 不可用），Windows 的掩码行为无断言。
+
+#### 为何非重复（AGENTS.md §3.1）
+BROKER-036（`关闭-已修复`）讲的是 **`events == 0`** 被 host 后端接受、RTOS 后端拒绝；
+本条讲的是**非零掩码中的 OUT/ERR 位在 Windows 上被静默降级为 IN**。输入不同、代码位置不同
+（broker 校验函数 vs `platform/windows/port.c` 的 add/wait）、修复方向不同。
+
+#### review 建议
+三选一，需作者决策后统一到文档（这是公共契约变更，不是纯实现修复）：
+
+1. **（推荐）Windows `waitset_add` 拒绝非 IN 位**：与 FreeRTOS/Zephyr 对齐，`add` 返回
+   `NS_E_INVAL`；`nanosig_port.h:506-508` 的 `@note` 把 Windows 一并列入 IN-only 后端。
+   代价：今天在 Windows 上用 `IN|OUT` 掩码"能跑"的调用方会收到新错误码。
+2. **实现 OUT 语义**：WFMO 无法表达"可写/错误"，只能对 `NS_WAITABLE_EVENT_OUT` 额外用
+   `WaitForSingleObject(handle, 0)` 试探——但句柄的 signaled 状态被消费会破坏已有的
+   auto-reset 语义，不建议。
+3. **纯文档化**：明确写"Windows 忽略 OUT/ERR，一律按 IN 上报"，并在 `nanosig_port.h` 的
+   `NS_WAITABLE_EVENT_OUT/ERR` 处标注该限制。
+
+无论选哪个，都应补一个覆盖 `_WIN32` 的掩码用例（当前 `_WIN32` 分支被跳过）。
+
+#### 作者建议
+采纳方案 1：Windows 与 FreeRTOS / Zephyr 对齐，`ns_platform_waitset_add` 增加掩码校验——
+不含 `NS_WAITABLE_EVENT_IN`（含 `events == 0`）或含 `OUT`/`ERR` 时返回 `NS_E_INVAL`。
+不在 `ns_watcher_init` 层拦截，保持契约落在"该后端是否支持这个掩码"的地方。
+
+同步更新：`nanosig_port.h` 的 `ns_platform_waitset_add` `@note` 把 Windows 列入 IN-only；
+`platform/README.md` 的 Windows 小节补一条 IN-only 说明；`test_waitset_events_zero` 去掉
+`#if` 守卫，Windows 断言 `NS_E_INVAL`、POSIX 断言 `NS_OK` + 不触发（即 PORT-016）。
+
+#### 影响面
+`ns_platform_waitset_add` 的调用者：src/ns_broker.c 的 `ns_broker_add`（watcher 注册路径）。
+公共契约收紧：Windows 上今天用 `IN|OUT` 或只 `OUT` 能注册成功的调用方，之后会收到
+`NS_E_INVAL`，且错误发生在 `ns_broker_add` 而不是 `ns_watcher_init`。
+
+#### 可重现的失败场景
+Windows（按代码走查构造，未实测）：
+
+```c
+ns_watcher_t w = {0};
+ns_watcher_init(&w, handle, NS_WAITABLE_EVENT_OUT, 0, on_writable);  /* NS_OK */
+ns_broker_add(&w);                                                   /* NS_OK */
+/* handle 被 signal 后 handler 收到 triggered_events == NS_WAITABLE_EVENT_IN(0x1)，
+   而 Linux 上是 0x2(OUT) —— 调用方按 IN 分支去 read() 一个只申请了可写的句柄 */
+```
+
+同一段代码在 FreeRTOS / Zephyr 上 `ns_broker_add` 返回 `NS_E_INVAL`。
+
+#### 定位
+platform/windows/port.c:352
+platform/windows/port.c:470
+platform/windows/port.c:479
+platform/linux/port.c:402
+platform/macos/port.c:419
+include/nanosig/nanosig_port.h:534
+platform/README.md:175
+test/unit/test_platform_backend.c:908
+
+---
+
+<a id="PORT-034"></a>
+### PORT-034: Linux waitset 提前返回后未解散 timerfd，残留定时器在后续无限等待中造成虚假唤醒
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中（前提：连续两次 wait，第一次带超时且被 fd 提前唤醒，第二次为无限等待；仅 Linux 后端；修复前由新增用例实测复现）
+- **类型**: bug
+- **关闭原因**: 修复 commit 93be19d
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+Linux 后端的微秒超时用常驻 epoll 的 timerfd 实现：每次 wait 前 `timerfd_settime` 上弦，
+然后以 `epoll_wait(..., -1)` 无限等。当某个 fd 在定时器到期前就绪（或 EINTR）而提前返回时，
+内核里的倒计时**仍在继续**，却没有任何路径去解散它。
+
+下一次调用若是无限等待，代码不会再上弦，也不会撤掉上一个，于是旧定时器到点自己 fire，
+`epoll_wait` 返回一个只含 timerfd sentinel 的结果：`out_count == 0`，函数返回 `NS_OK`。
+调用方看到"等待成功但没有任何事件"，且远早于预期，broker 白跑一轮再回去等。
+
+旧代码只在 `timer_armed == 0` 分支里 drain timerfd，armed 时直接 `continue`，因此复现路径一直存在。
+本条与 PORT-019（同一次 `epoll_wait` 内排在后面的就绪事件被丢弃）不是同一问题：
+PORT-019 是**同批丢失**，本条是**跨调用残留**。
+
+#### review 建议
+`epoll_wait` 一返回（无论正常、EINTR 还是出错）就在 `timer_armed` 为真时立即解散定时器：
+
+```c
+struct itimerspec off = {0};          /* it_value 全 0 = 撤弦，同时清空过期计数 */
+if(timerfd_settime(waitset->timer_fd, 0, &off, NULL) < 0){
+    /* 撤不掉就兜底读走计数，避免电平触发的 timerfd 持续就绪变成热自旋 */
+    do { rd = read(waitset->timer_fd, &dummy, sizeof(dummy)); } while(rd < 0 && errno == EINTR);
+}
+```
+
+用 `settime` 而非 `read`，是因为它同时清空"已到期计数"，正常路径不需要额外 read。
+同时删除 sentinel 分支里 `if(timer_armed) continue;` 的特判与残留 drain 分支。
+
+#### 作者建议
+采纳，按上述实现：撤弦放在 `epoll_wait` 返回后、处理事件前，覆盖全部返回路径；
+`settime` 失败时兜底 `read` 并打日志。新增
+`test_waitset_timeout_early_return_disarms`（200ms 定时器被 fd 提前唤醒 → 无限等待必须睡满
+600ms），修复前该用例 `cnt == 0`、耗时约 200ms，必然失败。
+
+#### 影响面
+`ns_platform_waitset_wait` 的唯一实现点（platform/linux/port.c）。
+上层调用者：src/ns_broker.c 的 broker 等待循环，以及直接调用 `ns_platform_waitset_wait` 的用户代码。
+仅 Linux 受影响：macOS 用 `kevent` 的 `timespec` 参数、Windows 用 `WaitableTimer` 句柄，
+都不存在跨调用的残留定时器。
+
+#### 可重现的失败场景
+1. signal 一个 eventfd，以 200ms 超时等待 → fd 已就绪，立即返回（定时器尚未到期）；
+2. 把 eventfd 读空，发起 `NS_PLATFORM_WAIT_INFINITE_US` 等待，另一线程 600ms 后才 signal；
+3. 修复前：约 200ms 时残留定时器 fire，本轮返回 `out_count == 0`，用例的 `cnt == 1` 与
+   耗时 ≥ 550ms 两条断言同时失败；
+4. 修复后：必须等到 fd 就绪，`cnt == 1`、耗时约 600ms。
+
+#### 定位
+
+platform/linux/port.c:598
+platform/linux/port.c:630
+test/unit/test_platform_backend.c:1097
 
 ---
 
