@@ -201,10 +201,11 @@ entries:
       - "include/nanosig/ns_formatio.h:118"
   - id: "FORMATIO-030"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "design"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/formatio-code-review.md#FORMATIO-030"
     locations:
       - "src/ns_formatio.c:773"
@@ -254,6 +255,8 @@ entries:
 ---
 
 - **FORMATIO-024（2026-10-24）**: %q/%Q 的 valid_len 改为按实际输出字符累加，precision < item_size 时 padding 不再反向膨胀；同步修正 %.3q/%.1q 黄金值 — commit `f2f64b2`
+
+- **FORMATIO-030（2026-10-24）**: %q/%Q 精度改为元素个数：array_len = precision，删除 ?? 半截元素分支；ns_formatio.h 文档化元素宽度映射；test_array_q 按元素语义重写 — commit `65eab91`
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
@@ -402,54 +405,6 @@ src/ns_formatio.c:969-976
 ---
 
 <a id="FORMATIO-028"></a>
-
-<a id="FORMATIO-030"></a>
-### FORMATIO-030: `%q`/`%Q` 的精度语义未在公共头文档化，实现按字节数，与设计意图（元素个数）不符
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: design
-
-#### 问题描述
-
-`vprintf_array` 用 `array_len = precision / item_size` 把精度当成**字节数**，而设计意图是**元素个数**。
-公开头 include/nanosig/ns_formatio.h 的差异列表只写了 `%q/%Q` 是 nanosig 扩展，未定义精度的单位，
-因此 `%.4q` 到底是 4 个元素还是 4 个字节无从判断：实现输出 1 个 `unsigned int`（8 个 hex 字符），
-按元素语义应为 4 个元素（35 个字符）。
-
-字节语义还带来一个只有它能触发的分支：精度不是 `item_size` 整数倍时输出 `??` 占位（半截元素），
-若精度是元素个数则该分支永远不可达。
-
-#### review 建议
-
-先由作者确定精度语义，再对齐实现与文档，二选一：
-1. 精度 = 元素个数：`array_len = precision`，删除 `??` 半截元素分支，`%.*q` 直接传数组长度；
-2. 精度 = 字节数：在 `ns_formatio.h` 明确写出单位为字节，并说明不足一个元素时以 `??` 补位。
-无论选哪个，都必须在公共头文档化，否则调用方无法判断该传 `len` 还是 `sizeof`。
-
-#### 作者建议
-
-采纳方案 1：精度 = 元素个数（作者确认这本来就是设计意图）。
-实现改为 `array_len = precision`，删除 `remainder` 与 `??` 补位分支；`ns_formatio.h` 的差异列表
-补上元素宽度映射（hh/h/缺省/l/ll）与负精度不输出的约定。测试按元素语义重写 `test_array_q`。
-
-#### 可重现的失败场景
-
-```c
-uint32_t a[4] = { 0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF11u };
-ns_snprintf(buf, n, "%.4q", a);
-/* 修复前："11223344"（1 个元素，8 字符）
-   修复后："11223344 55667788 99aabbcc ddeeff11"（4 个元素，35 字符） */
-```
-
-`ns_debug.c:148` 的 `%-47.*hhq` 传的是字节数，但 `hh` 下元素宽度为 1，语义一致，不受影响。
-
-#### 定位
-
-src/ns_formatio.c:773
-
-
----
 
 ## 现在关闭的问题
 
@@ -1126,6 +1081,55 @@ src/ns_formatio.c:781-803
 
 <a id="FORMATIO-025"></a>
 <a id="FORMATIO-026"></a>
+
+---
+
+<a id="FORMATIO-030"></a>
+### FORMATIO-030: `%q`/`%Q` 的精度语义未在公共头文档化，实现按字节数，与设计意图（元素个数）不符
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: design
+- **关闭原因**: 修复 commit 65eab91
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+
+`vprintf_array` 用 `array_len = precision / item_size` 把精度当成**字节数**，而设计意图是**元素个数**。
+公开头 include/nanosig/ns_formatio.h 的差异列表只写了 `%q/%Q` 是 nanosig 扩展，未定义精度的单位，
+因此 `%.4q` 到底是 4 个元素还是 4 个字节无从判断：实现输出 1 个 `unsigned int`（8 个 hex 字符），
+按元素语义应为 4 个元素（35 个字符）。
+
+字节语义还带来一个只有它能触发的分支：精度不是 `item_size` 整数倍时输出 `??` 占位（半截元素），
+若精度是元素个数则该分支永远不可达。
+
+#### review 建议
+
+先由作者确定精度语义，再对齐实现与文档，二选一：
+1. 精度 = 元素个数：`array_len = precision`，删除 `??` 半截元素分支，`%.*q` 直接传数组长度；
+2. 精度 = 字节数：在 `ns_formatio.h` 明确写出单位为字节，并说明不足一个元素时以 `??` 补位。
+无论选哪个，都必须在公共头文档化，否则调用方无法判断该传 `len` 还是 `sizeof`。
+
+#### 作者建议
+
+采纳方案 1：精度 = 元素个数（作者确认这本来就是设计意图）。
+实现改为 `array_len = precision`，删除 `remainder` 与 `??` 补位分支；`ns_formatio.h` 的差异列表
+补上元素宽度映射（hh/h/缺省/l/ll）与负精度不输出的约定。测试按元素语义重写 `test_array_q`。
+
+#### 可重现的失败场景
+
+```c
+uint32_t a[4] = { 0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF11u };
+ns_snprintf(buf, n, "%.4q", a);
+/* 修复前："11223344"（1 个元素，8 字符）
+   修复后："11223344 55667788 99aabbcc ddeeff11"（4 个元素，35 字符） */
+```
+
+`ns_debug.c:148` 的 `%-47.*hhq` 传的是字节数，但 `hh` 下元素宽度为 1，语义一致，不受影响。
+
+#### 定位
+
+src/ns_formatio.c:773
 
 ---
 
