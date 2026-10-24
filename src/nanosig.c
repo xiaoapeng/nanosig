@@ -203,7 +203,7 @@ int ns_loop_destroy(ns_loop_t *loop)
     return rc;
 }
 
-static void __attribute__((no_sanitize("function")))
+static NS_NO_SANITIZE_FUNCTION void
 ns_loop_dispatch_pending(ns_loop_t *loop)
 {
     void *record = NULL;

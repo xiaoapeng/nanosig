@@ -310,10 +310,12 @@ typedef enum ns_capacity {
 #define NS_USED
 #endif
 
-#if NS_HAS_ATTRIBUTE(no_sanitize_address)
-#define NS_NO_SANITIZE_ADDRESS __attribute__((no_sanitize_address))
+/* Clang 的 -fsanitize=function 会校验间接调用与函数指针声明类型是否一致；
+   GCC 无此 sanitizer，且不认 "function" 参数（会报 -Wattributes 后忽略）。 */
+#if defined(__clang__) && NS_HAS_ATTRIBUTE(no_sanitize)
+#define NS_NO_SANITIZE_FUNCTION __attribute__((no_sanitize("function")))
 #else
-#define NS_NO_SANITIZE_ADDRESS
-#endif
+#define NS_NO_SANITIZE_FUNCTION
+#endif  /* NS_NO_SANITIZE_FUNCTION: 关闭 function 类型检查，供 ABI 兼容的间接调用使用。 */
 
 #endif /* NANOSIG_TYPES_H */
