@@ -108,10 +108,11 @@ entries:
       - "src/ns_broker.c:239"
   - id: "PORT-024"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-024"
     locations:
       - "platform/macos/port.c:448"
@@ -397,6 +398,8 @@ entries:
 
 - **PORT-031（2026-10-22）**: POSIX 后端把栈大小请求向上取整到页粒度（4096）后再交给 pthread_attr_setstacksize，下界判定仍用原始请求；新增非页粒度请求的单测用例 — commit `9b149fd`
 
+- **PORT-024（2026-10-24）**: macOS waitset 变更改为逐条提交，部分失败时反向回滚已生效条目；add/remove 保持全有或全无，并补 test_waitset_partial_add_rollback 回归用例 — commit `3092099`
+
 ## 现在打开的问题
 
 <a id="PORT-021"></a>
@@ -464,96 +467,6 @@ waitset events=0 路径无覆盖。
 
 #### 定位
 test/unit/test_platform_backend.c:690-714
-
----
-
-<a id="PORT-024"></a>
-### PORT-024: macOS `waitset_add` 在 kqueue 变更列表部分失败时泄漏 knote，且该 knote 无法回收
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-- **置信度**: 高（本机 macOS 实测复现）
-
-#### 问题描述
-`ns_macos_waitset_apply_changes`（platform/macos/port.c:448-468）把整批 kevent 变更一次提交，
-用"返回值非 0 即整体失败"处理。但 `kevent()` 对变更列表是**逐条应用、遇到第一条错误即停止**：
-错误条目之后的变更不生效，**之前的变更已经生效**（本机三组探针确认：[无效, 有效] 时有效条目
-不生效；[有效, 无效] 时有效条目已生效）。
-
-而 `ns_macos_waitset_make_changes`（:419-446）在 `events` 同时含 IN 与 OUT 时生成 2 条变更
-（EVFILT_READ + EVFILT_WRITE），并非每种 fd 都同时支持两个 filter：kqueue fd 的 EVFILT_WRITE
-返回 EINVAL、`/dev/null` 两个 filter 都返回 EINVAL（本机实测）。
-
-后果（`ns_platform_waitset_add` :470-495）：
-
-- 第一条变更（EVFILT_READ）已在 kqueue 上注册并携带 `udata = &caller_waitable`，但函数返回
-  `NS_E_INVAL`，`waitset->count` 不增、`waitable->registered_waitset` 保持 NULL；
-- 该 waitable 在库视角"未注册"，但 kqueue 里仍有它的 knote，`ns_macos_waitset_wait`（:584-605）
-  只按下标读 `udata`，会**照常为它产出 completion**；
-- `ns_platform_waitset_remove`（:505-521）因 `registered_waitset != waitset` 立即返回
-  `NS_E_INVAL`，调用方**没有任何 API 能摘掉这条 knote**；
-- 调用方收到 `NS_E_INVAL` 后按合同可立即释放该 waitable（`ns_watcher_t` 常为栈上对象），
-  kqueue 中 `udata` 即成悬垂指针；下一次 `waitset_wait` 把该 completion 交给
-  `ns_broker_dispatch_pending_events`（src/ns_broker.c:336）解引用 `w->user_data` → use-after-free。
-
-同一根因在删除路径方向相反：`EV_DELETE` 列表若第一条已注册、第二条未注册，`kevent` 返回 -1，
-但第一条**已经被删除**——调用方看到 `NS_E_INVAL`（认为仍注册），实际该 waitable 已从 kqueue 摘除
-（本机实测）。
-
-#### review 建议
-不要再把 `kevent()` 的返回值当作"整批成败"：
-1. 每条变更单独提交（`change_count == 1`），失败时对**已生效**的变更做反向回滚
-   （add 失败回滚 EV_DELETE，delete 失败回滚 EV_ADD）；或
-2. 提交时带 `EV_RECEIPT`，逐条读回错误事件，按实际生效的条目更新内部状态与 `udata`；或
-3. 最小改动：`add` 失败后对该 fd 本次涉及的 filter 集合补发一次 `EV_DELETE` 清场，保证不留下
-   无法回收的 knote；`remove` 失败时不要跳过 `count--` 与 `registered_waitset = NULL`，而应按
-   "部分摘除"的实际结果重算。
-
-方向 1 最干净，且与 Linux（单 fd 单 `epoll_ctl`，原子）的行为模型一致。
-
-#### 作者建议
-采纳方向 1：逐条提交 + 反向回滚。已实现于 platform/macos/port.c——新增
-`ns_macos_waitset_revert_change()`（ADD 回滚为 DELETE；DELETE 回滚为
-`EV_ADD|EV_ENABLE`，`edge_triggered` 时补回 `EV_CLEAR`），`apply_changes` 每轮只提交一条
-变更，失败时先逐条回滚已生效条目再返回 `NS_E_INVAL`；`remove` 路径改为把 `waitable`
-传给 `apply_changes`，使 DELETE 的回滚能还原 `EV_CLEAR`。对外行为不变：add/remove 仍是
-全有或全无，失败时 `count` 与 `registered_waitset` 均不改变。回归测试
-`test_waitset_partial_add_rollback`（kqueue fd + `IN|OUT`，修复前必失败）。
-
-#### 可重现的失败场景
-macOS 实测（直接调用平台层，非经 broker）：
-
-```c
-int inner = kqueue();   /* kqueue fd：EVFILT_READ 可注册，EVFILT_WRITE 返回 EINVAL */
-ns_platform_waitset_init(&ws);
-ns_waitable_init(&w);
-w.primitive = inner;
-w.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT;
-w.user_data = (void *)0xDEAD;
-
-ns_platform_waitset_add(&ws, &w);              /* -> -3 (NS_E_INVAL) */
-/* 此时 w.registered_waitset == NULL，但 kqueue 上留有一条 EVFILT_READ knote */
-
-/* 触发 inner kqueue 的 EVFILT_USER，使其可读 */
-ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
-/* cnt == 1，cc[0].waitable == &w，user_data == 0xDEAD —— 为"未注册"的 waitable 产出了 completion */
-
-ns_platform_waitset_remove(&ws, &w);           /* -> -3：摘不掉 */
-```
-
-实测输出：`add -> -3`、`wait -> cnt=1 / user_data=0xdead`、`remove -> -3`、
-`registered_waitset` 全程为 NULL。其余 macOS 版本与 Apple Silicon/Intel 差异未复核，
-但"逐条应用、首错停止"是 kevent 内核语义。
-
-#### 定位
-platform/macos/port.c:448
-platform/macos/port.c:463
-platform/macos/port.c:470
-platform/macos/port.c:489
-platform/macos/port.c:505
-platform/macos/port.c:515
-src/ns_broker.c:336
 
 ---
 
@@ -1629,6 +1542,98 @@ platform/windows/port.c:271
 platform/freertos/port.c:387
 platform/zephyr/port.c:282
 include/nanosig/nanosig_port.h:480
+
+---
+
+<a id="PORT-024"></a>
+### PORT-024: macOS `waitset_add` 在 kqueue 变更列表部分失败时泄漏 knote，且该 knote 无法回收
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测复现）
+- **关闭原因**: 修复 commit 3092099
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`ns_macos_waitset_apply_changes`（platform/macos/port.c:448-468）把整批 kevent 变更一次提交，
+用"返回值非 0 即整体失败"处理。但 `kevent()` 对变更列表是**逐条应用、遇到第一条错误即停止**：
+错误条目之后的变更不生效，**之前的变更已经生效**（本机三组探针确认：[无效, 有效] 时有效条目
+不生效；[有效, 无效] 时有效条目已生效）。
+
+而 `ns_macos_waitset_make_changes`（:419-446）在 `events` 同时含 IN 与 OUT 时生成 2 条变更
+（EVFILT_READ + EVFILT_WRITE），并非每种 fd 都同时支持两个 filter：kqueue fd 的 EVFILT_WRITE
+返回 EINVAL、`/dev/null` 两个 filter 都返回 EINVAL（本机实测）。
+
+后果（`ns_platform_waitset_add` :470-495）：
+
+- 第一条变更（EVFILT_READ）已在 kqueue 上注册并携带 `udata = &caller_waitable`，但函数返回
+  `NS_E_INVAL`，`waitset->count` 不增、`waitable->registered_waitset` 保持 NULL；
+- 该 waitable 在库视角"未注册"，但 kqueue 里仍有它的 knote，`ns_macos_waitset_wait`（:584-605）
+  只按下标读 `udata`，会**照常为它产出 completion**；
+- `ns_platform_waitset_remove`（:505-521）因 `registered_waitset != waitset` 立即返回
+  `NS_E_INVAL`，调用方**没有任何 API 能摘掉这条 knote**；
+- 调用方收到 `NS_E_INVAL` 后按合同可立即释放该 waitable（`ns_watcher_t` 常为栈上对象），
+  kqueue 中 `udata` 即成悬垂指针；下一次 `waitset_wait` 把该 completion 交给
+  `ns_broker_dispatch_pending_events`（src/ns_broker.c:336）解引用 `w->user_data` → use-after-free。
+
+同一根因在删除路径方向相反：`EV_DELETE` 列表若第一条已注册、第二条未注册，`kevent` 返回 -1，
+但第一条**已经被删除**——调用方看到 `NS_E_INVAL`（认为仍注册），实际该 waitable 已从 kqueue 摘除
+（本机实测）。
+
+#### review 建议
+不要再把 `kevent()` 的返回值当作"整批成败"：
+1. 每条变更单独提交（`change_count == 1`），失败时对**已生效**的变更做反向回滚
+   （add 失败回滚 EV_DELETE，delete 失败回滚 EV_ADD）；或
+2. 提交时带 `EV_RECEIPT`，逐条读回错误事件，按实际生效的条目更新内部状态与 `udata`；或
+3. 最小改动：`add` 失败后对该 fd 本次涉及的 filter 集合补发一次 `EV_DELETE` 清场，保证不留下
+   无法回收的 knote；`remove` 失败时不要跳过 `count--` 与 `registered_waitset = NULL`，而应按
+   "部分摘除"的实际结果重算。
+
+方向 1 最干净，且与 Linux（单 fd 单 `epoll_ctl`，原子）的行为模型一致。
+
+#### 作者建议
+采纳方向 1：逐条提交 + 反向回滚。已实现于 platform/macos/port.c——新增
+`ns_macos_waitset_revert_change()`（ADD 回滚为 DELETE；DELETE 回滚为
+`EV_ADD|EV_ENABLE`，`edge_triggered` 时补回 `EV_CLEAR`），`apply_changes` 每轮只提交一条
+变更，失败时先逐条回滚已生效条目再返回 `NS_E_INVAL`；`remove` 路径改为把 `waitable`
+传给 `apply_changes`，使 DELETE 的回滚能还原 `EV_CLEAR`。对外行为不变：add/remove 仍是
+全有或全无，失败时 `count` 与 `registered_waitset` 均不改变。回归测试
+`test_waitset_partial_add_rollback`（kqueue fd + `IN|OUT`，修复前必失败）。
+
+#### 可重现的失败场景
+macOS 实测（直接调用平台层，非经 broker）：
+
+```c
+int inner = kqueue();   /* kqueue fd：EVFILT_READ 可注册，EVFILT_WRITE 返回 EINVAL */
+ns_platform_waitset_init(&ws);
+ns_waitable_init(&w);
+w.primitive = inner;
+w.events = NS_WAITABLE_EVENT_IN | NS_WAITABLE_EVENT_OUT;
+w.user_data = (void *)0xDEAD;
+
+ns_platform_waitset_add(&ws, &w);              /* -> -3 (NS_E_INVAL) */
+/* 此时 w.registered_waitset == NULL，但 kqueue 上留有一条 EVFILT_READ knote */
+
+/* 触发 inner kqueue 的 EVFILT_USER，使其可读 */
+ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
+/* cnt == 1，cc[0].waitable == &w，user_data == 0xDEAD —— 为"未注册"的 waitable 产出了 completion */
+
+ns_platform_waitset_remove(&ws, &w);           /* -> -3：摘不掉 */
+```
+
+实测输出：`add -> -3`、`wait -> cnt=1 / user_data=0xdead`、`remove -> -3`、
+`registered_waitset` 全程为 NULL。其余 macOS 版本与 Apple Silicon/Intel 差异未复核，
+但"逐条应用、首错停止"是 kevent 内核语义。
+
+#### 定位
+platform/macos/port.c:448
+platform/macos/port.c:463
+platform/macos/port.c:470
+platform/macos/port.c:489
+platform/macos/port.c:505
+platform/macos/port.c:515
+src/ns_broker.c:336
 
 ---
 
