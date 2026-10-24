@@ -79,19 +79,6 @@ entries:
     location: "docs/review/platform-ports-code-review.md#PORT-016"
     locations:
       - "test/unit/test_platform_backend.c:905-939"
-  - id: "PORT-017"
-    module: "platform-ports"
-    status: "closed-fixed"
-    severity: "medium"
-    type: "doc"
-    section: "closed"
-    closed_date: "2026-09-21"
-    location: "docs/review/platform-ports-code-review.md#PORT-017"
-    locations:
-      - "include/nanosig/nanosig_port.h:316-346"
-      - "platform/linux/port.c:199-219"
-      - "platform/macos/port.c:240-266"
-      - "platform/windows/port.c:151-170"
   - id: "PORT-023"
     module: "platform-ports"
     status: "closed-fixed"
@@ -122,10 +109,11 @@ entries:
       - "src/ns_broker.c:336"
   - id: "PORT-025"
     module: "platform-ports"
-    status: "open"
+    status: "closed-rejected"
     severity: "high"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-25"
     location: "docs/review/platform-ports-code-review.md#PORT-025"
     locations:
       - "platform/macos/port.c:479"
@@ -427,80 +415,6 @@ entries:
 
 ## 现在打开的问题
 
-<a id="PORT-025"></a>
-### PORT-025: macOS 允许两个 waitable 注册同一 fd，`remove` 其中一个会静默废掉另一个
-
-- **状态**: 打开
-- **严重度**: 🟠 高
-- **类型**: bug
-- **置信度**: 高（本机 macOS 实测复现）
-
-#### 问题描述
-`ns_platform_waitset_add`（platform/macos/port.c:470-495）只用
-`waitable->registered_waitset != NULL` 判重，**不检查该 fd 是否已被另一个 waitable 注册**。
-kqueue 的 knote 以 (fd, filter) 为键，第二次 `EV_ADD` 直接覆盖 `udata`（本机实测），于是：
-
-- 两个不同 waitable 对同一 fd `add` 都返回 `NS_OK`，但只有**后注册者**能收到 completion，
-  先注册者静默永不触发；
-- `remove` 先注册者时，`ns_macos_waitset_make_changes(..., EV_DELETE)`（:508-513）把该
-  (fd, filter) 的 knote 整个删掉，后注册者的 knote 随之消失，但它自己的
-  `registered_waitset` 仍指向该 waitset——此后它**既不触发、也摘不掉**（后续 `remove`
-  因 knote 已不在而返回 `NS_E_INVAL`，`remove` 的前置检查通过但底层 knote 已丢失）。
-
-对照另外两个宿主后端：Linux `epoll_ctl(EPOLL_CTL_ADD)` 对已注册 fd 返回 `EEXIST` →
-`NS_E_EXISTS`（platform/linux/port.c:439-440）；Windows 用 `ns_waitset_find` 按 handle 判重 →
-`NS_E_EXISTS`（platform/windows/port.c:331）。macOS 是三宿主里唯一不判重的后端，同一段调用方
-代码在 Linux/Windows 上拿到 `NS_E_EXISTS`、在 macOS 上拿到 `NS_OK` 并静默失效。
-
-`include/nanosig/nanosig_port.h:503-504` 与 platform/README.md:41 只承诺"同一 **waitable** 已注册
-返回 `NS_E_EXISTS`"，未规定"两个 waitable 注册同一句柄/fd"的行为，故不属 `docs/review/AGENTS.md`
-§2.4 的"已文档化设计"。与 PORT-014（关闭-延期，讲同一 waitable 的多事件合并）不同：本条讲两个
-不同 waitable 撞同一 fd 时的判重缺失及其连带失效，根因与修复方向均不同。
-
-#### review 建议
-在 `ns_platform_waitset_add` 增加按 fd 的判重（仿 Windows 的 `ns_waitset_find`），命中返回
-`NS_E_EXISTS`，并把"同一 fd 不可被两个 waitable 同时注册"补进 `nanosig_port.h` 中
-`ns_platform_waitset_add` 的契约（三宿主一致）。若不打算判重，则至少要文档化该情形为未定义，
-但 `remove` 的连带失效（静默废掉另一个已注册 waitable）仍需修复——后者本身就是缺陷。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-macOS 实测：
-
-```c
-pipe(p);
-ns_waitable_init(&a); a.primitive = p[0]; a.events = NS_WAITABLE_EVENT_IN;
-ns_waitable_init(&b); b.primitive = p[0]; b.events = NS_WAITABLE_EVENT_IN;
-
-ns_platform_waitset_add(&ws, &a);     /* macOS: NS_OK；Linux/Windows: NS_E_EXISTS */
-ns_platform_waitset_add(&ws, &b);     /* macOS: NS_OK */
-write(p[1], "x", 1);
-ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
-/* cnt == 1，cc[0].waitable == &b —— a 永不触发 */
-
-ns_platform_waitset_remove(&ws, &a);  /* NS_OK，但把 b 的 knote 一并删掉 */
-write(p[1], "x", 1);
-ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
-/* cnt == 0，而 b.registered_waitset 仍指向 ws */
-
-ns_platform_waitset_remove(&ws, &b);  /* NS_E_INVAL：b 再也摘不掉 */
-```
-
-实测输出依次为：`add A=0`、`add B=0`、`wait cnt=1 -> B`、`remove A=0`、`wait cnt=0`、`remove B=-3`。
-
-#### 定位
-platform/macos/port.c:479
-platform/macos/port.c:492
-platform/macos/port.c:508
-platform/linux/port.c:439
-platform/windows/port.c:331
-include/nanosig/nanosig_port.h:503
-platform/README.md:41
-
----
-
 <a id="PORT-028"></a>
 ### PORT-028: 对端有序关闭（EOF）的事件位映射三宿主不一致
 
@@ -554,6 +468,13 @@ ns_platform_waitset_wait(&ws, 300000u, cc, 4, &cnt);
 
 Linux 同一场景为 `EPOLLIN|EPOLLHUP → 0x1 (IN)`，不含 ERR（本机未实测，按 epoll 语义推断）。
 
+#### 影响面
+`triggered_events` 的产生点在三个后端的 `waitset_wait`（platform/macos/port.c、
+platform/linux/port.c、platform/windows/port.c），消费方是 src/ns_broker.c 的
+`ns_broker_dispatch_pending_events` 与用户的 `handler(watcher, triggered_events)`。
+受影响的是所有用 `triggered_events & NS_WAITABLE_EVENT_ERR` 判断"连接断开/出错"的 handler：
+macOS 上正常关闭会误入错误分支，Linux/Windows 永不进入。
+
 #### 定位
 platform/macos/port.c:529
 platform/macos/port.c:530
@@ -561,8 +482,6 @@ platform/linux/port.c:420
 platform/windows/port.c:438
 include/nanosig/nanosig_port.h:77
 include/nanosig/nanosig_broker.h:55
-
----
 
 ## 现在关闭的问题
 
@@ -807,65 +726,6 @@ include/nanosig/nanosig_port.h:432-451
 #### 定位
 platform/windows/port.c:38
 platform/linux/port.c:141
-
----
-
-<a id="PORT-017"></a>
-### PORT-017: `ns_platform_event_*` 生命周期契约不完整（重复 init 泄漏 / 未初始化调用）
-
-- **状态**: 关闭-已修复
-- **严重度**: 🟡 中
-- **类型**: doc
-- **关闭原因**: 已按"文档保护"处置：include/nanosig/nanosig_port.h:316-346 的 event 文档块补 `@warning`（重复 init 泄漏底层 fd/HANDLE）与 `@pre`（signal/drain/deinit 前须成功 init，deinit 另需已 waitset_remove）。无代码改动，未加运行时守卫。
-- **关闭日期**: 2026-09-21
-
-#### 问题描述
-
-`ns_platform_event_t` 是本次 event 重构新增的 caller-owned 平台原语。其公共文档块
-include/nanosig/nanosig_port.h:316-346 只描述字段语义与四条"硬语义"，未声明两条
-生命周期前提：
-
-1. **init 非幂等**：对同一 event 重复调用 `ns_platform_event_init` 而不先 `deinit`
-   会覆盖 `waitable` / `signal_handle`，泄漏第一次分配的资源（Linux `eventfd`
-   一个 fd、macOS `pipe` 两个 fd、Windows `CreateEvent` 一个 HANDLE）。三个后端
-   init 都是"无条件新建资源、不检查旧状态"，见 platform/linux/port.c:199-219、
-   platform/macos/port.c:240-266、platform/windows/port.c:151-170。
-2. **未初始化调用**：在未成功 `init` 的对象上调用 `signal` / `drain` / `deinit`
-   会读取未初始化的 `waitable.registered_waitset` 与 `signal_handle`，属未定义行为，
-   但头文件未声明 `@pre`。
-
-仓库对同类问题（signal / watcher 重复 init）在审计处置中选择"文档免责 +
-头文件 `@warning`"（见 P9 F1/F2），本问题应与之一致处置。
-
-#### review 建议
-
-在 `nanosig_port.h` 的 event 文档块补充生命周期约束：
-
-- `@pre`：`signal` / `drain` / `deinit` 前必须已成功 `init`；`deinit` 另需已
-  `ns_platform_waitset_remove`（后者已在硬语义条目中）。
-- `@warning`：对同一 event 重复 `init` 而未 `deinit` 会泄漏底层 fd / HANDLE；
-  需 `init` 一次、`deinit` 一次。
-
-#### 作者建议
-
-（2026-09-21 作者决定：文档保护，不加运行时守卫。）理由：① 与 P9 F1/F2（signal / watcher 重复 init）的处置保持一致；② `ns_platform_event_t` 是 caller-owned 且不要求清零，运行时守卫无法可靠区分"未初始化垃圾句柄"与"已初始化合法句柄"，可靠检测需强制 zero-init 或新增 magic/状态字段，代价与收益不成比例；③ 重复 init 仅在调用方违规时发生，对正常路径无正确性影响。处置方式：仅补 `@warning` + `@pre` 文档。
-
-#### 可重现的失败场景
-
-```c
-ns_platform_event_t e;
-ns_platform_event_init(&e, "x");   /* 分配 eventfd / pipe / CreateEvent #1 */
-ns_platform_event_init(&e, "x");   /* 覆盖句柄，资源 #1 永久泄漏 */
-```
-
-`grep -nE "@pre|@warning" include/nanosig/nanosig_port.h`（event 段落 :316-346）
-→ 仅硬语义条目，无 init 配对与前置条件声明。
-
-#### 定位
-include/nanosig/nanosig_port.h:316-346
-platform/linux/port.c:199-219
-platform/macos/port.c:240-266
-platform/windows/port.c:151-170
 
 ---
 
@@ -1764,6 +1624,85 @@ if(timerfd_settime(waitset->timer_fd, 0, &off, NULL) < 0){
 platform/linux/port.c:598
 platform/linux/port.c:630
 test/unit/test_platform_backend.c:1097
+
+---
+
+<a id="PORT-025"></a>
+### PORT-025: macOS 允许两个 waitable 注册同一 fd，`remove` 其中一个会静默废掉另一个
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测复现）
+- **关闭原因**: 作者决定不修（同一 fd 重复注册属调用方错误；按 fd 判重需额外映射）。决策已随代码落地：platform/macos/port.c:573 的 shortcut 注释声明了限制与升级条件（出现丢事件或 waitset 无法 deinit 时改为按 fd 判重），reviewer 依 AGENTS.md §2.8 不得重复提出。
+- **关闭日期**: 2026-10-25
+
+#### 问题描述
+`ns_platform_waitset_add`（platform/macos/port.c:470-495）只用
+`waitable->registered_waitset != NULL` 判重，**不检查该 fd 是否已被另一个 waitable 注册**。
+kqueue 的 knote 以 (fd, filter) 为键，第二次 `EV_ADD` 直接覆盖 `udata`（本机实测），于是：
+
+- 两个不同 waitable 对同一 fd `add` 都返回 `NS_OK`，但只有**后注册者**能收到 completion，
+  先注册者静默永不触发；
+- `remove` 先注册者时，`ns_macos_waitset_make_changes(..., EV_DELETE)`（:508-513）把该
+  (fd, filter) 的 knote 整个删掉，后注册者的 knote 随之消失，但它自己的
+  `registered_waitset` 仍指向该 waitset——此后它**既不触发、也摘不掉**（后续 `remove`
+  因 knote 已不在而返回 `NS_E_INVAL`，`remove` 的前置检查通过但底层 knote 已丢失）。
+
+对照另外两个宿主后端：Linux `epoll_ctl(EPOLL_CTL_ADD)` 对已注册 fd 返回 `EEXIST` →
+`NS_E_EXISTS`（platform/linux/port.c:439-440）；Windows 用 `ns_waitset_find` 按 handle 判重 →
+`NS_E_EXISTS`（platform/windows/port.c:331）。macOS 是三宿主里唯一不判重的后端，同一段调用方
+代码在 Linux/Windows 上拿到 `NS_E_EXISTS`、在 macOS 上拿到 `NS_OK` 并静默失效。
+
+`include/nanosig/nanosig_port.h:503-504` 与 platform/README.md:41 只承诺"同一 **waitable** 已注册
+返回 `NS_E_EXISTS`"，未规定"两个 waitable 注册同一句柄/fd"的行为，故不属 `docs/review/AGENTS.md`
+§2.4 的"已文档化设计"。与 PORT-014（关闭-延期，讲同一 waitable 的多事件合并）不同：本条讲两个
+不同 waitable 撞同一 fd 时的判重缺失及其连带失效，根因与修复方向均不同。
+
+#### review 建议
+在 `ns_platform_waitset_add` 增加按 fd 的判重（仿 Windows 的 `ns_waitset_find`），命中返回
+`NS_E_EXISTS`，并把"同一 fd 不可被两个 waitable 同时注册"补进 `nanosig_port.h` 中
+`ns_platform_waitset_add` 的契约（三宿主一致）。若不打算判重，则至少要文档化该情形为未定义，
+但 `remove` 的连带失效（静默废掉另一个已注册 waitable）仍需修复——后者本身就是缺陷。
+
+#### 作者建议
+
+不修。同一 fd 由调用方重复注册属违反使用约定；按 fd 判重需要维护 fd→waitable 映射，代价与收益不匹配。已在代码现场留下决策标记（platform/macos/port.c:573 的 shortcut 注释），声明升级条件：出现丢事件或 waitset 无法 deinit 时改为按 fd 判重。
+
+#### 可重现的失败场景
+macOS 实测：
+
+```c
+pipe(p);
+ns_waitable_init(&a); a.primitive = p[0]; a.events = NS_WAITABLE_EVENT_IN;
+ns_waitable_init(&b); b.primitive = p[0]; b.events = NS_WAITABLE_EVENT_IN;
+
+ns_platform_waitset_add(&ws, &a);     /* macOS: NS_OK；Linux/Windows: NS_E_EXISTS */
+ns_platform_waitset_add(&ws, &b);     /* macOS: NS_OK */
+write(p[1], "x", 1);
+ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
+/* cnt == 1，cc[0].waitable == &b —— a 永不触发 */
+
+ns_platform_waitset_remove(&ws, &a);  /* NS_OK，但把 b 的 knote 一并删掉 */
+write(p[1], "x", 1);
+ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt);
+/* cnt == 0，而 b.registered_waitset 仍指向 ws */
+
+ns_platform_waitset_remove(&ws, &b);  /* NS_E_INVAL：b 再也摘不掉 */
+```
+
+实测输出依次为：`add A=0`、`add B=0`、`wait cnt=1 -> B`、`remove A=0`、`wait cnt=0`、`remove B=-3`。
+
+#### 定位
+platform/macos/port.c:479
+platform/macos/port.c:492
+platform/macos/port.c:508
+platform/linux/port.c:439
+platform/windows/port.c:331
+include/nanosig/nanosig_port.h:503
+platform/README.md:41
+
+---
 
 ---
 

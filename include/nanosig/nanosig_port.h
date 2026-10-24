@@ -75,6 +75,9 @@ extern "C" {
 
 #define NS_WAITABLE_EVENT_IN   (1u << 0) /**< 可读 / signaled */
 #define NS_WAITABLE_EVENT_OUT  (1u << 1) /**< 可写 */
+/* ERR 只表示底层等待原语报告的真实错误（EPOLLERR / EV_ERROR / WAIT_FAILED）。
+   对端有序关闭（EOF、EPOLLHUP、EV_EOF）只置 IN，不置 ERR——三宿主语义一致，
+   handler 不得用 ERR 判断"连接断开"。 */
 #define NS_WAITABLE_EVENT_ERR  (1u << 2) /**< 错误 */
 
 /* ================================================================== */

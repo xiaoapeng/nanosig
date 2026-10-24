@@ -580,6 +580,8 @@ int ns_platform_waitset_add(
     int rc;
 
     if((waitset == NULL) || ns_macos_waitable_fd_is_invalid(waitable)) return NS_E_INVAL;
+    /* shortcut: 同一 fd 允许被多个 waitable 注册（kqueue 以 (fd, filter) 为键，
+       后注册者覆盖前者）；出现丢事件或 waitset 无法 deinit 时改为按 fd 判重。 */
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(waitset->count >= NS_MACOS_WAITSET_MAX_ENTRIES) return NS_E_TOO_MANY_HANDLES;
 
@@ -631,7 +633,8 @@ static uint32_t ns_macos_waitset_from_kevent(const struct kevent *event)
     if(event->filter == EVFILT_READ) events |= NS_WAITABLE_EVENT_IN;
     if(event->filter == EVFILT_WRITE) events |= NS_WAITABLE_EVENT_OUT;
     if((event->flags & EV_ERROR) != 0u) events |= NS_WAITABLE_EVENT_ERR;
-    if((event->flags & EV_EOF) != 0u) events |= NS_WAITABLE_EVENT_ERR;
+    /* EV_EOF（对端有序关闭）只由 filter 位表达成 IN，不映射为 ERR：与 Linux 的
+       EPOLLHUP → IN 一致，否则 handler 会把正常断开当成错误。 */
 
     return events;
 }

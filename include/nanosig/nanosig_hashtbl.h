@@ -57,6 +57,8 @@ struct ns_hashtbl {
     unsigned int                            count;      /* 元素个数 */
 };
 
+/* shortcut: 这两个函数用下划线前缀发布在公共头里（遍历宏内部调用）；
+   出现与工具链/运行时符号冲突时改为 ns_hashtbl_find_list_head*。 */
 extern struct ns_list_node *_ns_hashtbl_find_list_head(
     ns_hashtbl_t hashtbl, const void *key, ns_hashtbl_kv_len_t key_len);
 extern struct ns_list_node *_ns_hashtbl_find_list_head_with_string(

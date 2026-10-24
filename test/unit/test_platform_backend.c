@@ -990,6 +990,39 @@ fail:
 }
 #endif
 
+/** 对端有序关闭（EOF）只报 IN，不报 ERR：macOS 不再把 EV_EOF 映射成 ERR（PORT-028） */
+#if defined(__linux__) || defined(__APPLE__)
+static int test_waitset_eof_reports_in_only(void)
+{
+    ns_platform_waitset_t ws;
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t cc[4];
+    int fds[2];
+    size_t cnt = 0u;
+
+    if(pipe(fds) < 0) return 1;
+
+    EXPECT_OK(ns_platform_waitset_init(&ws) == NS_OK);
+    ns_waitable_init(&w);
+    w.primitive = fds[0];
+    w.events = NS_WAITABLE_EVENT_IN;
+    EXPECT_OK(ns_platform_waitset_add(&ws, &w) == NS_OK);
+
+    EXPECT_OK(close(fds[1]) == 0); /* 对端关闭 → EOF */
+
+    EXPECT_OK(ns_platform_waitset_wait(&ws, 500000u, cc, 4u, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK((cc[0].triggered_events & NS_WAITABLE_EVENT_ERR) == 0u);
+    EXPECT_OK((cc[0].triggered_events & NS_WAITABLE_EVENT_IN) != 0u);
+
+    EXPECT_OK(ns_platform_waitset_remove(&ws, &w) == NS_OK);
+    EXPECT_OK(close(fds[0]) == 0);
+    EXPECT_OK(ns_platform_waitset_deinit(&ws) == NS_OK);
+
+    return 0;
+}
+#endif
+
 /** 同一 waitable 只能注册到一个 waitset */
 static int test_waitset_two_waitsets(void)
 {
@@ -1244,6 +1277,9 @@ int main(void)
     if(test_waitset_capacity() != 0){ fprintf(stderr, "test_waitset_capacity failed\n"); return 1; }
     if(test_waitset_max_completions_truncate() != 0){ fprintf(stderr, "test_waitset_max_completions_truncate failed\n"); return 1; }
     if(test_waitset_events_zero() != 0){ fprintf(stderr, "test_waitset_events_zero failed\n"); return 1; }
+#if defined(__linux__) || defined(__APPLE__)
+    if(test_waitset_eof_reports_in_only() != 0){ fprintf(stderr, "test_waitset_eof_reports_in_only failed\n"); return 1; }
+#endif
 #ifdef __APPLE__
     if(test_waitset_partial_add_rollback() != 0){ fprintf(stderr, "test_waitset_partial_add_rollback failed\n"); return 1; }
 #endif

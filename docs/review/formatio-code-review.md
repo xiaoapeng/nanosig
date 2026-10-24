@@ -330,6 +330,12 @@ ns_snprintf(buf, sizeof(buf), "%e", 1e-320);   /* 实际 "0.000000e-309"（数�
 `log10_of_positive` 对 1e-310 的估计值为 -307.94997197808431（真实值 -310），
 对 5e-324 为 -307.95184826398543（真实值 -323.306），二者几乎相同，可见与输入无关。
 
+#### 影响面
+`log10_of_positive` 的唯一调用点是 src/ns_formatio.c:674（`vprintf_float_e`），
+影响 `%e`/`%E` 与回退到 `%e` 的 `%g`/`%G`；对外经 `ns_printf` / `ns_snprintf` /
+`ns_vprintf` 全族生效。触发条件是 `|x| ≲ 1e-309`（实测 DBL_MIN 与 DBL_MIN/2 仍正确），
+格式串与数值都由调用方提供时可达。
+
 #### 定位
 src/ns_formatio.c:171-190
 src/ns_formatio.c:646-657

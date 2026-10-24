@@ -118,10 +118,11 @@ entries:
       - "src/ds/ns_hashtbl.c:318"
   - id: "HASHTBL-106"
     module: "hashtable"
-    status: "open"
+    status: "closed-rejected"
     severity: "low"
     type: "cleanup"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-25"
     location: "docs/review/hashtable-code-review.md#HASHTBL-106"
     locations:
       - "include/nanosig/nanosig_hashtbl.h:60"
@@ -267,40 +268,6 @@ entries:
 
 
 ## 现在打开的问题
-
-<a id="HASHTBL-106"></a>
-### HASHTBL-106: 公共头文件导出 `_ns_hashtbl_find_list_head*`，占用保留标识符命名空间
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: cleanup
-
-#### 问题描述
-`include/nanosig/nanosig_hashtbl.h:60` 与 `:62` 声明了两个下划线开头的函数
-`_ns_hashtbl_find_list_head` / `_ns_hashtbl_find_list_head_with_string`。C11 7.1.3 规定
-"所有以下划线开头的标识符在文件作用域内保留供实现使用"，把这类名字放进公开头文件会与
-工具链/运行时内部符号存在理论上的冲突面；同时它们被遍历宏直接调用，属于事实上的公共 API，
-却以"内部符号"的命名风格出现，使用者无法判断可用性。项目中 `ns_formatio.h:59` 的 `_ns_stdout`
-属同类模式，属既定风格，故仅记为 cleanup。
-
-#### review 建议
-二选一：
-1. 改名为 `ns_hashtbl_find_list_head` / `ns_hashtbl_find_list_head_with_string`，与
-   `ns_hashtbl_*` 公共命名空间对齐（调用点仅在遍历宏内部，改动面很小）；
-2. 若坚持保留下划线前缀，则在头文件中补 `@note 内部接口，仅供应宏使用，不保证稳定` 说明。
-
-#### 作者建议
-（待作者补充）
-
-#### 可重现的失败场景
-无功能影响。可用于验证命名问题的检查：`grep -rn "^extern .*_[a-z]" include/nanosig/` 会同时列出
-本文件与 `ns_formatio.h` 的同类符号，说明该模式在公开头文件中重复出现，而非孤例。
-
-#### 定位
-include/nanosig/nanosig_hashtbl.h:60
-include/nanosig/nanosig_hashtbl.h:62
-
----
 
 ## 现在关闭的问题
 
@@ -755,6 +722,43 @@ src/ds/ns_hashtbl.c:261
 
 #### 定位
 include/nanosig/nanosig_hashtbl.h:22
+
+---
+
+<a id="HASHTBL-106"></a>
+### HASHTBL-106: 公共头文件导出 `_ns_hashtbl_find_list_head*`，占用保留标识符命名空间
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟢 较低
+- **类型**: cleanup
+- **关闭原因**: 作者决定不修（既定命名风格，重命名属公共 API 变更且无功能收益）。include/nanosig/nanosig_hashtbl.h:59 已留 shortcut 注释，声明升级条件为与工具链/运行时符号冲突；reviewer 依 AGENTS.md §2.8 不得重复提出。
+- **关闭日期**: 2026-10-25
+
+#### 问题描述
+`include/nanosig/nanosig_hashtbl.h:60` 与 `:62` 声明了两个下划线开头的函数
+`_ns_hashtbl_find_list_head` / `_ns_hashtbl_find_list_head_with_string`。C11 7.1.3 规定
+"所有以下划线开头的标识符在文件作用域内保留供实现使用"，把这类名字放进公开头文件会与
+工具链/运行时内部符号存在理论上的冲突面；同时它们被遍历宏直接调用，属于事实上的公共 API，
+却以"内部符号"的命名风格出现，使用者无法判断可用性。项目中 `ns_formatio.h:59` 的 `_ns_stdout`
+属同类模式，属既定风格，故仅记为 cleanup。
+
+#### review 建议
+二选一：
+1. 改名为 `ns_hashtbl_find_list_head` / `ns_hashtbl_find_list_head_with_string`，与
+   `ns_hashtbl_*` 公共命名空间对齐（调用点仅在遍历宏内部，改动面很小）；
+2. 若坚持保留下划线前缀，则在头文件中补 `@note 内部接口，仅供应宏使用，不保证稳定` 说明。
+
+#### 作者建议
+
+不修。这两个符号以 `_` 前缀被遍历宏内部调用，属既定风格（ns_formatio.h 的 `_ns_stdout` 同理）；重命名属公共头 API 变更，收益仅为命名洁癖。已在 include/nanosig/nanosig_hashtbl.h:59 留 shortcut 注释声明升级条件：出现与工具链/运行时符号冲突时再改为 ns_hashtbl_find_list_head*。
+
+#### 可重现的失败场景
+无功能影响。可用于验证命名问题的检查：`grep -rn "^extern .*_[a-z]" include/nanosig/` 会同时列出
+本文件与 `ns_formatio.h` 的同类符号，说明该模式在公开头文件中重复出现，而非孤例。
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:60
+include/nanosig/nanosig_hashtbl.h:62
 
 ---
 
