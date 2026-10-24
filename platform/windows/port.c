@@ -352,6 +352,13 @@ int ns_platform_waitset_add(
     if((waitset == NULL) || ns_waitable_is_invalid(waitable)){
         return NS_E_INVAL;
     }
+    /* Windows 后端 IN-only：与 FreeRTOS / Zephyr 对齐。WFMO 只能表达"句柄已
+       signaled"，无法区分可读/可写/出错，因此拒绝不含 IN 或含 OUT/ERR 的掩码，
+       而不是把它们静默降级成 IN。 */
+    if((waitable->events & NS_WAITABLE_EVENT_IN) == 0u) return NS_E_INVAL;
+    if((waitable->events & (NS_WAITABLE_EVENT_OUT | NS_WAITABLE_EVENT_ERR)) != 0u){
+        return NS_E_INVAL;
+    }
     if(waitable->registered_waitset != NULL) return NS_E_EXISTS;
     if(ns_waitset_find(waitset, (HANDLE)waitable->primitive) >= 0) return NS_E_EXISTS;
     if(waitset->count >= NS_PLATFORM_WAITSET_USER_HANDLES) return NS_E_TOO_MANY_HANDLES;

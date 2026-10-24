@@ -76,7 +76,7 @@ entries:
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-016"
     locations:
-      - "test/unit/test_platform_backend.c:690-714"
+      - "test/unit/test_platform_backend.c:905-939"
   - id: "PORT-017"
     module: "platform-ports"
     status: "closed-fixed"
@@ -141,14 +141,14 @@ entries:
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-026"
     locations:
-      - "platform/windows/port.c:323"
-      - "platform/windows/port.c:438"
-      - "platform/windows/port.c:447"
+      - "platform/windows/port.c:352"
+      - "platform/windows/port.c:470"
+      - "platform/windows/port.c:479"
       - "platform/linux/port.c:402"
       - "platform/macos/port.c:419"
-      - "include/nanosig/nanosig_port.h:506"
-      - "platform/README.md:109"
-      - "test/unit/test_broker_event.c:221"
+      - "include/nanosig/nanosig_port.h:534"
+      - "platform/README.md:175"
+      - "test/unit/test_platform_backend.c:908"
   - id: "PORT-027"
     module: "platform-ports"
     status: "closed-fixed"
@@ -463,7 +463,12 @@ platform/README.md:156
 去掉条件编译守卫，改为三平台通用测试。
 
 #### 作者建议
-（待作者补充）
+与 PORT-026 一并修：Windows 改为 IN-only（掩码不含 IN 或含 OUT/ERR 时 `add` 返回
+`NS_E_INVAL`），因此 `events == 0` 在 Windows 上的期望是"注册被拒绝"，在 Linux/macOS 上
+是"注册成功且永不触发"。用例已去掉 `#if` 守卫，按平台断言各自的契约。
+
+#### 影响面
+`test/unit/test_platform_backend.c` 的 `test_waitset_events_zero`，Windows CI 首次编译并运行该用例。
 
 #### 可重现的失败场景
 
@@ -472,7 +477,7 @@ test/unit/test_platform_backend.c 的 test_waitset_events_zero 被
 waitset events=0 路径无覆盖。
 
 #### 定位
-test/unit/test_platform_backend.c:690-714
+test/unit/test_platform_backend.c:905-939
 
 ---
 
@@ -599,7 +604,18 @@ BROKER-036（`关闭-已修复`）讲的是 **`events == 0`** 被 host 后端接
 无论选哪个，都应补一个覆盖 `_WIN32` 的掩码用例（当前 `_WIN32` 分支被跳过）。
 
 #### 作者建议
-（待作者补充）
+采纳方案 1：Windows 与 FreeRTOS / Zephyr 对齐，`ns_platform_waitset_add` 增加掩码校验——
+不含 `NS_WAITABLE_EVENT_IN`（含 `events == 0`）或含 `OUT`/`ERR` 时返回 `NS_E_INVAL`。
+不在 `ns_watcher_init` 层拦截，保持契约落在"该后端是否支持这个掩码"的地方。
+
+同步更新：`nanosig_port.h` 的 `ns_platform_waitset_add` `@note` 把 Windows 列入 IN-only；
+`platform/README.md` 的 Windows 小节补一条 IN-only 说明；`test_waitset_events_zero` 去掉
+`#if` 守卫，Windows 断言 `NS_E_INVAL`、POSIX 断言 `NS_OK` + 不触发（即 PORT-016）。
+
+#### 影响面
+`ns_platform_waitset_add` 的调用者：src/ns_broker.c 的 `ns_broker_add`（watcher 注册路径）。
+公共契约收紧：Windows 上今天用 `IN|OUT` 或只 `OUT` 能注册成功的调用方，之后会收到
+`NS_E_INVAL`，且错误发生在 `ns_broker_add` 而不是 `ns_watcher_init`。
 
 #### 可重现的失败场景
 Windows（按代码走查构造，未实测）：
@@ -615,14 +631,14 @@ ns_broker_add(&w);                                                   /* NS_OK */
 同一段代码在 FreeRTOS / Zephyr 上 `ns_broker_add` 返回 `NS_E_INVAL`。
 
 #### 定位
-platform/windows/port.c:323
-platform/windows/port.c:438
-platform/windows/port.c:447
+platform/windows/port.c:352
+platform/windows/port.c:470
+platform/windows/port.c:479
 platform/linux/port.c:402
 platform/macos/port.c:419
-include/nanosig/nanosig_port.h:506
-platform/README.md:109
-test/unit/test_broker_event.c:221
+include/nanosig/nanosig_port.h:534
+platform/README.md:175
+test/unit/test_platform_backend.c:908
 
 ---
 
