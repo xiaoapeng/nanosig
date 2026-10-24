@@ -425,7 +425,7 @@ static void float_decentralized(double num, struct ns_double_components *compone
                ((components->fractional == 0U) || (components->fractional & 1U))) {
         ++components->fractional;
         /* precision == 0 时进位由下面基于 integral 奇偶的分支处理，此处不重复进位 */
-        if ((precision > 0U) &&
+        if ((precision > 0) &&
             ((double)components->fractional >= powers_of_10[precision])) {
             components->fractional = 0;
             ++components->integral;
