@@ -901,19 +901,27 @@ fail:
     return 1;
 }
 
-/** add events=0 → 成功，signal 后 wait 不返回 completion */
-#if defined(__linux__) || defined(__APPLE__)
+/** add events=0 的语义按后端契约分两种：
+ *  - Windows / FreeRTOS / Zephyr：IN-only，events==0 注册即被拒绝（NS_E_INVAL）；
+ *  - Linux / macOS：按掩码注册，events==0 合法但永不触发。 */
 static int test_waitset_events_zero(void)
 {
     ns_platform_waitset_t ws;
     ns_platform_waitable_t w;
     ns_platform_waitset_completion_t cc[4];
     size_t cnt = 0u;
+    int rc;
 
     EXPECT_OK(ns_platform_waitset_init(&ws) == NS_OK);
     w = test_create_raw_waitable();
     w.events = 0u; /* 不关注任何事件 */
-    EXPECT_OK(ns_platform_waitset_add(&ws, &w) == NS_OK);
+    rc = ns_platform_waitset_add(&ws, &w);
+
+#if defined(_WIN32)
+    if(rc != NS_E_INVAL) return 1;
+    if(w.registered_waitset != NULL) return 1;
+#else
+    EXPECT_OK(rc == NS_OK);
 
     test_signal_raw_waitable(w);
     /* timeout=0 非阻塞，events=0 不应触发 */
@@ -921,12 +929,13 @@ static int test_waitset_events_zero(void)
     EXPECT_OK(cnt == 0u);
 
     EXPECT_OK(ns_platform_waitset_remove(&ws, &w) == NS_OK);
+#endif
+
     test_destroy_raw_waitable(w);
     EXPECT_OK(ns_platform_waitset_deinit(&ws) == NS_OK);
 
     return 0;
 }
-#endif
 
 /** kqueue fd 支持 EVFILT_READ 而拒绝 EVFILT_WRITE：IN|OUT 注册必然在第二条变更失败，
  *  用于验证失败时已生效的那条被回滚（否则残留 knote 会为未注册的 waitable 产出 completion） */
@@ -1176,9 +1185,7 @@ int main(void)
     if(test_waitset_multi_pointer_identity() != 0){ fprintf(stderr, "test_waitset_multi_pointer_identity failed\n"); return 1; }
     if(test_waitset_capacity() != 0){ fprintf(stderr, "test_waitset_capacity failed\n"); return 1; }
     if(test_waitset_max_completions_truncate() != 0){ fprintf(stderr, "test_waitset_max_completions_truncate failed\n"); return 1; }
-#if defined(__linux__) || defined(__APPLE__)
     if(test_waitset_events_zero() != 0){ fprintf(stderr, "test_waitset_events_zero failed\n"); return 1; }
-#endif
 #ifdef __APPLE__
     if(test_waitset_partial_add_rollback() != 0){ fprintf(stderr, "test_waitset_partial_add_rollback failed\n"); return 1; }
 #endif

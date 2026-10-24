@@ -528,11 +528,15 @@ int ns_platform_waitset_deinit(ns_platform_waitset_t *waitset);
  * @param waitset waitset。
  * @param waitable 要注册的 waitable（含 events、edge_triggered、user_data）。
  * @return `NS_OK` 成功，`NS_E_EXISTS` 表示同一 waitable 已注册，
- *         `NS_E_TOO_MANY_HANDLES` 容量满。
+ *         `NS_E_TOO_MANY_HANDLES` 容量满，`NS_E_INVAL` 表示掩码不被该后端支持
+ *         （见下）或句柄无效。
  *
- * @note FreeRTOS 与 Zephyr 后端只接受 `NS_WAITABLE_EVENT_IN`：含 OUT/ERR 位的
- *       waitable 返回 `NS_E_INVAL`；Zephyr 还只接受 `k_poll_signal`（event 类）
- *       waitable。FreeRTOS 在加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
+ * @note Windows、FreeRTOS 与 Zephyr 后端只接受 `NS_WAITABLE_EVENT_IN`：不含 IN 位
+ *       （包括 `events == 0`）或含 OUT/ERR 位的 waitable 返回 `NS_E_INVAL`，
+ *       因此这三个后端的 `triggered_events` 恒为 `NS_WAITABLE_EVENT_IN`。
+ *       Linux / macOS 按掩码注册，`events == 0` 合法但永不触发。
+ *       Zephyr 还只接受 `k_poll_signal`（event 类）waitable。
+ *       FreeRTOS 在加入 queue set 前成员必须为空，否则也返回 `NS_E_INVAL`。
  *       无效句柄（`NULL` 或 `ns_waitable_init` 写入的 `(void *)~0` 哨兵）返回
  *       `NS_E_INVAL`，不注册：FreeRTOS / Zephyr 与 Linux / macOS 一致，避免把哨兵
  *       交给底层等待原语解引用。

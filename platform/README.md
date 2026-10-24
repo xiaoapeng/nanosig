@@ -172,6 +172,10 @@ Windows 后端：
 - 内存分配集中在平台层封装。
 - waitset 使用 `WaitForMultipleObjects`，容量上限 64 handle。
 - `edge_triggered` 参数忽略（WFMO 不支持）。
+- waitset 的 `events` 掩码 **IN-only**：只接受含 `NS_WAITABLE_EVENT_IN` 的掩码，
+  不含 IN（包括 `events == 0`）或含 OUT/ERR 时 `ns_platform_waitset_add` 返回
+  `NS_E_INVAL`，与 FreeRTOS / Zephyr 一致。WFMO 只能表达"句柄已 signaled"，
+  无法区分可读/可写/出错，故不做静默降级。
 
 桌面后端必须同步推进，不能让一个 OS 领先另一个完整阶段。
 
