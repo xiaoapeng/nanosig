@@ -18,10 +18,11 @@ entries:
     location: "docs/review/ringbuf-code-review.md#RINGBUF-005"
   - id: "RINGBUF-026"
     module: "ringbuf"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "test"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/ringbuf-code-review.md#RINGBUF-026"
     locations:
       - "src/ds/ns_ringbuf.c:35"
@@ -280,61 +281,10 @@ entries:
 
 ---
 
+- **RINGBUF-026（2026-10-24）**: test_invalid_inputs 补 size 上限三条断言，覆盖 NS_E_PARAM 拒绝路径 — commit `f2f64b2`
+
 ## 现在打开的问题
 
-
-<a id="RINGBUF-026"></a>
-### RINGBUF-026: `ns_ringbuf_init` 的 size 上限拒绝路径（`NS_E_PARAM`）无测试，而它是镜像法溢出安全论证的唯一防线
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: test
-
-#### 问题描述
-`src/ds/ns_ringbuf.c:35` 的 `if(size > (UINT32_MAX / 3u)) return NS_E_PARAM;` 是 RINGBUF-002/003（🔴 关键，`w + wl` / `r + offset` 中间加法溢出）修复的**全部**依据。
-`src/ds/ns_ringbuf.c:24` 的 `_Static_assert((UINT32_MAX / 3u) <= (uint32_t)INT32_MAX, ...)` 不能替代它：
-`UINT32_MAX / 2` 同样满足该断言（实测 `2147483647 <= 2147483647`），断言只锁住"size 族返回值转 `int32_t` 不截断"这条不变量，不锁 size 上界。
-
-`test/unit/test_ds_ringbuf.c:92-94` 的 `test_invalid_inputs` 只覆盖 `NS_E_INVAL` 三个分支（`ringbuf == NULL` / `buf == NULL` / `size == 0`），
-**`NS_E_PARAM` 分支零覆盖**：守卫若被误删或被放宽，现有全部测试仍然通过，而超限 ringbuf 的镜像指针会回绕（见失败场景）。
-
-与 RINGBUF-002/003 的区别（避免与历史条目重复）：那两条的根因是"溢出本身"，修复方向是改上限算术；
-本条的根因是"拒绝路径无回归测试"，修复方向是补用例，属于 RINGBUF-024 同类的覆盖缺口。
-
-#### review 建议
-在 `test_invalid_inputs`（`test/unit/test_ds_ringbuf.c:84-104`）中补三条断言（`init` 只保存指针，不触碰后端内存，因此不需要真的分配 1.43 GiB）：
-```c
-if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u) == NS_OK) != 0) return 1;
-if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u + 1u) == NS_E_PARAM) != 0) return 1;
-if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX) == NS_E_PARAM) != 0) return 1;
-```
-
-#### 作者建议
-采纳：在 `test_invalid_inputs` 中补上界三条断言（`UINT32_MAX / 3u` 接受、`+1u` 与 `UINT32_MAX`
-返回 `NS_E_PARAM`），使用独立变量避免干扰既有 `invalid` 用例。
-
-#### 可重现的失败场景
-```c
-/* 场景：上界守卫被删掉或放宽为 UINT32_MAX/2（该值仍能通过 ns_ringbuf.c:24 的 _Static_assert）。
-   此时镜像空间 2*size == UINT32_MAX - 1，w 贴近 2*size 时写指针加法在 uint32_t 中回绕： */
-ns_ringbuf_t rb;
-uint8_t store[5];
-ns_ringbuf_init(&rb, store, 5);
-rb.size = UINT32_MAX / 2u;             /* 模拟被放行的超限 size */
-rb.w    = (UINT32_MAX / 2u) * 2u - 5u; /* 4294967289 */
-rb.r    = rb.w - 5u;                   /* 5 字节可读 */
-
-ns_ringbuf_write_skip(&rb, 8u);
-/* 实测：返回 8；rb.w 回绕为 1（w < r），ns_ringbuf_size() 由 5 变成 11 > size，
-   镜像法的 w/r 单调递增不变量被破坏。现有测试集对此无任何断言。 */
-```
-
-#### 定位
-src/ds/ns_ringbuf.c:35
-src/ds/ns_ringbuf.c:24
-test/unit/test_ds_ringbuf.c:84-104
-
----
 
 ## 现在关闭的问题
 
@@ -402,3 +352,58 @@ test/unit/test_ds_ringbuf.c:84-104
 - **定位**: `include/nanosig/nanosig_ringbuf.h:24-33`
 - **关闭原因**: 文档风格偏好，当前 doc 不影响使用者理解。review agent 不再提同类 doc 问题。作者确认不修。
 - **关闭日期**: 2026-07-04
+
+<a id="RINGBUF-026"></a>
+### RINGBUF-026: `ns_ringbuf_init` 的 size 上限拒绝路径（`NS_E_PARAM`）无测试，而它是镜像法溢出安全论证的唯一防线
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: test
+- **关闭原因**: 修复 commit f2f64b2
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`src/ds/ns_ringbuf.c:35` 的 `if(size > (UINT32_MAX / 3u)) return NS_E_PARAM;` 是 RINGBUF-002/003（🔴 关键，`w + wl` / `r + offset` 中间加法溢出）修复的**全部**依据。
+`src/ds/ns_ringbuf.c:24` 的 `_Static_assert((UINT32_MAX / 3u) <= (uint32_t)INT32_MAX, ...)` 不能替代它：
+`UINT32_MAX / 2` 同样满足该断言（实测 `2147483647 <= 2147483647`），断言只锁住"size 族返回值转 `int32_t` 不截断"这条不变量，不锁 size 上界。
+
+`test/unit/test_ds_ringbuf.c:92-94` 的 `test_invalid_inputs` 只覆盖 `NS_E_INVAL` 三个分支（`ringbuf == NULL` / `buf == NULL` / `size == 0`），
+**`NS_E_PARAM` 分支零覆盖**：守卫若被误删或被放宽，现有全部测试仍然通过，而超限 ringbuf 的镜像指针会回绕（见失败场景）。
+
+与 RINGBUF-002/003 的区别（避免与历史条目重复）：那两条的根因是"溢出本身"，修复方向是改上限算术；
+本条的根因是"拒绝路径无回归测试"，修复方向是补用例，属于 RINGBUF-024 同类的覆盖缺口。
+
+#### review 建议
+在 `test_invalid_inputs`（`test/unit/test_ds_ringbuf.c:84-104`）中补三条断言（`init` 只保存指针，不触碰后端内存，因此不需要真的分配 1.43 GiB）：
+```c
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u) == NS_OK) != 0) return 1;
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX / 3u + 1u) == NS_E_PARAM) != 0) return 1;
+if(expect_true(ns_ringbuf_init(&invalid, storage, UINT32_MAX) == NS_E_PARAM) != 0) return 1;
+```
+
+#### 作者建议
+采纳：在 `test_invalid_inputs` 中补上界三条断言（`UINT32_MAX / 3u` 接受、`+1u` 与 `UINT32_MAX`
+返回 `NS_E_PARAM`），使用独立变量避免干扰既有 `invalid` 用例。
+
+#### 可重现的失败场景
+```c
+/* 场景：上界守卫被删掉或放宽为 UINT32_MAX/2（该值仍能通过 ns_ringbuf.c:24 的 _Static_assert）。
+   此时镜像空间 2*size == UINT32_MAX - 1，w 贴近 2*size 时写指针加法在 uint32_t 中回绕： */
+ns_ringbuf_t rb;
+uint8_t store[5];
+ns_ringbuf_init(&rb, store, 5);
+rb.size = UINT32_MAX / 2u;             /* 模拟被放行的超限 size */
+rb.w    = (UINT32_MAX / 2u) * 2u - 5u; /* 4294967289 */
+rb.r    = rb.w - 5u;                   /* 5 字节可读 */
+
+ns_ringbuf_write_skip(&rb, 8u);
+/* 实测：返回 8；rb.w 回绕为 1（w < r），ns_ringbuf_size() 由 5 变成 11 > size，
+   镜像法的 w/r 单调递增不变量被破坏。现有测试集对此无任何断言。 */
+```
+
+#### 定位
+src/ds/ns_ringbuf.c:35
+src/ds/ns_ringbuf.c:24
+test/unit/test_ds_ringbuf.c:84-104
+
+---

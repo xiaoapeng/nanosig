@@ -155,10 +155,11 @@ entries:
       - "test/unit/test_broker_event.c:221"
   - id: "PORT-027"
     module: "platform-ports"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/platform-ports-code-review.md#PORT-027"
     locations:
       - "platform/macos/port.c:249"
@@ -400,6 +401,8 @@ entries:
 
 - **PORT-024（2026-10-24）**: macOS waitset 变更改为逐条提交，部分失败时反向回滚已生效条目；add/remove 保持全有或全无，并补 test_waitset_partial_add_rollback 回归用例 — commit `3092099`
 
+- **PORT-027（2026-10-24）**: macOS event pipe 写端加 F_SETNOSIGPIPE，读端已关闭时写只返回 EPIPE，不再以 SIGPIPE 终止进程 — commit `f2f64b2`
+
 ## 现在打开的问题
 
 <a id="PORT-021"></a>
@@ -617,79 +620,6 @@ platform/macos/port.c:419
 include/nanosig/nanosig_port.h:506
 platform/README.md:109
 test/unit/test_broker_event.c:221
-
----
-
-<a id="PORT-027"></a>
-### PORT-027: macOS `event_signal` 写已关闭的 pipe 读端会触发 SIGPIPE，进程直接终止
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-- **置信度**: 高（本机 macOS 实测：写已关闭读端的 pipe → 进程被 SIGPIPE 杀死，退出码 141）
-
-#### 问题描述
-macOS 的 event 用 pipe 实现（platform/macos/port.c:232-246），`signal_handle` 是写端 fd。
-`ns_platform_event_signal`（:249-263）直接 `write(fds[1], ...)`，**没有任何 SIGPIPE 防护**：
-全树 `grep -rn "SIGPIPE\|F_SETNOSIGPIPE"` 在 src/、platform/、include/、test/ 下 **0 命中**。
-
-一旦读端已关闭而写端仍被写入，macOS 默认投递 SIGPIPE——**进程立即终止**，不是返错。
-`ns_platform_event_deinit`（:271-287）会关闭两个 fd，而 `nanosig_port.h:18` 明确
-"`ns_platform_event_signal` 允许跨线程调用"，头文件的 thread-safety 段落只禁止同一对象上的
-init/deinit 并发与等待类调用并发，**从未**声明 `signal` 不得与 `deinit` 并发；调用方按字面
-理解在另一线程 signal、主线程 deinit，就会命中该路径。
-
-这也与文档承诺冲突：`nanosig_port.h:307-308` 写"signal 遇底层缓冲已满（macOS pipe EAGAIN）
-视为成功返回 NS_OK，**仅真实写错误才返回错误码**"——EPIPE 正是"真实写错误"，但进程先死，
-调用方永远拿不到那个错误码。
-
-三宿主横向对比：Linux eventfd 写已关闭 fd 得 `EBADF` → `NS_E_INVAL`；Windows `SetEvent`
-在已关闭 handle 上返回 0 → `NS_E_INVAL`；只有 macOS 会**杀死进程**。wakeup 侧不受影响
-（`ns_macos_user_event_signal` 写的是 kqueue fd，不产生 SIGPIPE）。
-
-#### review 建议
-在 `ns_platform_event_init` 创建 pipe 后对写端关闭 SIGPIPE 语义：
-
-```c
-#ifdef F_SETNOSIGPIPE
-    if(fcntl(fds[1], F_SETNOSIGPIPE, 1) < 0) { /* 回滚两个 fd 并返回 NS_E_NOMEM */ }
-#endif
-```
-
-本机实测：`fcntl(F_SETNOSIGPIPE, 1)` 在 pipe 写端返回 0，之后对已关闭读端的写入返回
-`-1/EPIPE` 且进程存活（原有 errno 分支随即返回 `NS_E_INVAL`）。这样"文档承诺返回错误码"
-重新成立，且不改变正常路径。若作者判断该并发调用的前提本就应由调用方保证，退一步的方案是
-在 `nanosig_port.h` 的 event 段落补一条 `@warning`（`signal` 不得与 `deinit` 并发）——
-但库内 API 能被一次正常调用杀死进程，仍建议加这一行加固。
-
-#### 作者建议
-采纳加固方案：`ns_platform_event_init` 创建 pipe 后对写端执行
-`fcntl(fds[1], F_SETNOSIGPIPE, 1)`（`#ifdef F_SETNOSIGPIPE` 内，失败则关闭两个 fd 返回
-`NS_E_NOMEM`）。读端关闭后再写只得到 `EPIPE`，进程不再被 SIGPIPE 终止，原有 errno 分支
-即可返回 `NS_E_INVAL`。未补测试：验证该路径需要真的杀掉宿主进程或违反 signal/deinit
-不并发的调用前提，不适合放进进程内单元测试。
-
-#### 可重现的失败场景
-```c
-int fds[2]; pipe(fds);
-close(fds[0]);                       /* 等价于 event 的 waitable 侧已释放 */
-write(fds[1], "x", 1);               /* 进程收到 SIGPIPE */
-```
-
-本机运行结果：进程被信号终止，退出码 141（128+13），后续语句不执行——**不是**返回 -1。
-同一写操作若先 `fcntl(fds[1], F_SETNOSIGPIPE, 1)`，则返回 -1 / `EPIPE`，进程继续运行。
-落到 nanosig 上即：线程 A `ns_platform_event_signal(&e)` 与线程 B
-`ns_platform_event_deinit(&e)` 并发 → 进程死亡而非 `NS_E_INVAL`。
-
-#### 定位
-platform/macos/port.c:249
-platform/macos/port.c:256
-platform/macos/port.c:271
-platform/macos/port.c:281
-include/nanosig/nanosig_port.h:18
-include/nanosig/nanosig_port.h:307
-platform/linux/port.c:205
-platform/windows/port.c:152
 
 ---
 
@@ -1636,6 +1566,81 @@ platform/macos/port.c:489
 platform/macos/port.c:505
 platform/macos/port.c:515
 src/ns_broker.c:336
+
+---
+
+<a id="PORT-027"></a>
+### PORT-027: macOS `event_signal` 写已关闭的 pipe 读端会触发 SIGPIPE，进程直接终止
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **置信度**: 高（本机 macOS 实测：写已关闭读端的 pipe → 进程被 SIGPIPE 杀死，退出码 141）
+- **关闭原因**: 修复 commit f2f64b2
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+macOS 的 event 用 pipe 实现（platform/macos/port.c:232-246），`signal_handle` 是写端 fd。
+`ns_platform_event_signal`（:249-263）直接 `write(fds[1], ...)`，**没有任何 SIGPIPE 防护**：
+全树 `grep -rn "SIGPIPE\|F_SETNOSIGPIPE"` 在 src/、platform/、include/、test/ 下 **0 命中**。
+
+一旦读端已关闭而写端仍被写入，macOS 默认投递 SIGPIPE——**进程立即终止**，不是返错。
+`ns_platform_event_deinit`（:271-287）会关闭两个 fd，而 `nanosig_port.h:18` 明确
+"`ns_platform_event_signal` 允许跨线程调用"，头文件的 thread-safety 段落只禁止同一对象上的
+init/deinit 并发与等待类调用并发，**从未**声明 `signal` 不得与 `deinit` 并发；调用方按字面
+理解在另一线程 signal、主线程 deinit，就会命中该路径。
+
+这也与文档承诺冲突：`nanosig_port.h:307-308` 写"signal 遇底层缓冲已满（macOS pipe EAGAIN）
+视为成功返回 NS_OK，**仅真实写错误才返回错误码**"——EPIPE 正是"真实写错误"，但进程先死，
+调用方永远拿不到那个错误码。
+
+三宿主横向对比：Linux eventfd 写已关闭 fd 得 `EBADF` → `NS_E_INVAL`；Windows `SetEvent`
+在已关闭 handle 上返回 0 → `NS_E_INVAL`；只有 macOS 会**杀死进程**。wakeup 侧不受影响
+（`ns_macos_user_event_signal` 写的是 kqueue fd，不产生 SIGPIPE）。
+
+#### review 建议
+在 `ns_platform_event_init` 创建 pipe 后对写端关闭 SIGPIPE 语义：
+
+```c
+#ifdef F_SETNOSIGPIPE
+    if(fcntl(fds[1], F_SETNOSIGPIPE, 1) < 0) { /* 回滚两个 fd 并返回 NS_E_NOMEM */ }
+#endif
+```
+
+本机实测：`fcntl(F_SETNOSIGPIPE, 1)` 在 pipe 写端返回 0，之后对已关闭读端的写入返回
+`-1/EPIPE` 且进程存活（原有 errno 分支随即返回 `NS_E_INVAL`）。这样"文档承诺返回错误码"
+重新成立，且不改变正常路径。若作者判断该并发调用的前提本就应由调用方保证，退一步的方案是
+在 `nanosig_port.h` 的 event 段落补一条 `@warning`（`signal` 不得与 `deinit` 并发）——
+但库内 API 能被一次正常调用杀死进程，仍建议加这一行加固。
+
+#### 作者建议
+采纳加固方案：`ns_platform_event_init` 创建 pipe 后对写端执行
+`fcntl(fds[1], F_SETNOSIGPIPE, 1)`（`#ifdef F_SETNOSIGPIPE` 内，失败则关闭两个 fd 返回
+`NS_E_NOMEM`）。读端关闭后再写只得到 `EPIPE`，进程不再被 SIGPIPE 终止，原有 errno 分支
+即可返回 `NS_E_INVAL`。未补测试：验证该路径需要真的杀掉宿主进程或违反 signal/deinit
+不并发的调用前提，不适合放进进程内单元测试。
+
+#### 可重现的失败场景
+```c
+int fds[2]; pipe(fds);
+close(fds[0]);                       /* 等价于 event 的 waitable 侧已释放 */
+write(fds[1], "x", 1);               /* 进程收到 SIGPIPE */
+```
+
+本机运行结果：进程被信号终止，退出码 141（128+13），后续语句不执行——**不是**返回 -1。
+同一写操作若先 `fcntl(fds[1], F_SETNOSIGPIPE, 1)`，则返回 -1 / `EPIPE`，进程继续运行。
+落到 nanosig 上即：线程 A `ns_platform_event_signal(&e)` 与线程 B
+`ns_platform_event_deinit(&e)` 并发 → 进程死亡而非 `NS_E_INVAL`。
+
+#### 定位
+platform/macos/port.c:249
+platform/macos/port.c:256
+platform/macos/port.c:271
+platform/macos/port.c:281
+include/nanosig/nanosig_port.h:18
+include/nanosig/nanosig_port.h:307
+platform/linux/port.c:205
+platform/windows/port.c:152
 
 ---
 

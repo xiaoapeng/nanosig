@@ -128,19 +128,21 @@ entries:
       - "include/nanosig/nanosig_hashtbl.h:62"
   - id: "HASHTBL-107"
     module: "hashtable"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "doc"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/hashtable-code-review.md#HASHTBL-107"
     locations:
       - "include/nanosig/nanosig_hashtbl.h:22"
   - id: "HASHTBL-108"
     module: "hashtable"
-    status: "open"
+    status: "closed-fixed"
     severity: "low"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/hashtable-code-review.md#HASHTBL-108"
     locations:
       - "src/ds/ns_hashtbl.c:73"
@@ -259,6 +261,10 @@ entries:
 - **修复方式**: create 中 threshold 钳制下限到 1，消除每次 insert 都 resize 的病态（摊还 O(1)）。
 - **影响文件**: `src/ds/ns_hashtbl.c`、`test/unit/test_ds_hashtable.c`
 
+- **HASHTBL-108（2026-10-24）**: resize 入口拒绝 mask >= 2^31-1，避免 new_mask+1 回绕后 34 GB 越界写；上限时 insert 返回 NS_E_NOMEM，并补 test_resize_upper_bound — commit `f2f64b2`
+
+- **HASHTBL-107（2026-10-24）**: 头文件 include 注释改为 strlen/memcmp — commit `f2f64b2`
+
 
 ## 现在打开的问题
 
@@ -293,110 +299,6 @@ entries:
 #### 定位
 include/nanosig/nanosig_hashtbl.h:60
 include/nanosig/nanosig_hashtbl.h:62
-
----
-
-<a id="HASHTBL-107"></a>
-### HASHTBL-107: 头文件 include 注释仍写 `strncmp`，与 HASHTBL-101 修复后的宏实现不符
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: doc
-
-#### 问题描述
-`include/nanosig/nanosig_hashtbl.h:22` 的 IWYU 说明为
-`#include <string.h>   /* 遍历宏调用点展开需要的 strncmp/memcmp */`，但 HASHTBL-101 修复后
-遍历宏的过滤条件已改为 `ns_hashtbl_node_key_len(node) == strlen(string) && memcmp(...)`，
-`strncmp` 在本文件与 `src/ds/ns_hashtbl.c` 中已无任何调用点。真正需要的 `<string.h>` 符号是
-`strlen` / `memcmp`（以及 `.c` 里的 `memcpy`）。这条注释会让后续做 IWYU 清理的人误判依赖来源。
-
-#### review 建议
-把注释改为 `/* 遍历宏调用点展开需要的 strlen/memcmp */`。
-
-#### 作者建议
-采纳：注释已改为 `strlen/memcmp`。
-
-#### 可重现的失败场景
-无功能影响。验证方式：`grep -rn "strncmp" include/nanosig/nanosig_hashtbl.h src/ds/ns_hashtbl.c`
-只命中这条注释本身，无任何调用点。
-
-#### 定位
-include/nanosig/nanosig_hashtbl.h:22
-
----
-
-<a id="HASHTBL-108"></a>
-### HASHTBL-108: 扩容守卫 `mask != UINT32_MAX` 比真正的溢出点晚一次倍增
-
-- **状态**: 打开
-- **严重度**: 🟢 较低
-- **类型**: bug
-
-#### 问题描述
-`ns_hashtbl_insert` 用 `hashtbl->mask != UINT32_MAX` 作为扩容的最后闸门，但 `ns_hashtbl_resize`
-里的增长算式在**更早一次倍增**就已经溢出：`unsigned int new_mask = (hashtbl->mask << 1) + 1;`
-当 `mask == 0x7FFFFFFF`（2^31−1，正常的 2 的次幂减一序列中的一项）时，
-`new_mask` 为 `0xFFFFFFFF`，随后按 `unsigned int` 计算的 `(new_mask + 1)` 回绕成 0，
-于是 `ns_platform_alloc(0)` 返回非 NULL，而紧跟其后的
-`memset(new_table + old_size, 0, sizeof(struct ns_list_node) * old_size)` 却要写 2^30 * 16 = 34 GB，
-落到分配块之外——实测 ASAN 报 heap-buffer-overflow（写 34359738368 字节）。
-
-同一处还有 `hashtbl->threshold <<= 1`，threshold 为 2^31 时会回绕为 0。
-
-可达性说明：要走公开 API 到这里，表必须先真实增长到 2^31 个桶（约 34 GB 表内存），
-现实中不可达；另一条路径是调用方直接写 `struct ns_hashtbl` 的公开字段（结构体在头文件里是
-完整定义，`ns_hashtbl_create` 返回的正是它的指针），此时守卫判断为"可以继续扩容"。
-因此这条是守卫边界算错（少算一次倍增）的加固问题，不是现实可达的崩溃，故记 🟢。
-
-与已关闭的 HASHTBL-103（threshold==0 导致每次 insert 都 resize）根因和位置都不同：
-那条是 `threshold` 下限，本条是 `new_mask + 1` 的 `unsigned int` 回绕与守卫阈值不匹配。
-
-#### review 建议
-把守卫收敛到"下一次倍增不会回绕"，即在 `ns_hashtbl_resize` 入口（或 insert 的调用点）判断：
-
-```c
-if(hashtbl->mask >= (UINT32_MAX >> 1))   /* 不能再翻倍 */
-    return NS_E_NOMEM;                   /* 或定义专门的"表已到上限"返回码 */
-```
-
-并把 `new_table = ... sizeof(struct ns_list_node) * ((size_t)new_mask + 1)` 里的 `+1` 放到
-`size_t` 一侧计算，避免 `new_mask + 1` 在 `unsigned int` 下先回绕。`threshold` 的倍增同样建议加
-上限检查。
-
-#### 作者建议
-采纳 review 建议，放在 `ns_hashtbl_resize` 入口：`mask >= (UINT32_MAX >> 1)` 时返回
-`NS_E_NOMEM`（不额外定义新返回码）。这样 `insert` 在表已到上限时显式失败，而不是走进
-`new_mask + 1` 回绕。上限处即无法再插新键。新增 `test_resize_upper_bound`：伪造
-`mask = 0x7FFFFFFF`、`threshold = 1` 后插入应得 `NS_E_NOMEM`（修复前 34 GB memset 直接崩溃）。
-
-#### 可重现的失败场景
-```c
-ns_hashtbl_t t = ns_hashtbl_create(0.75f);
-struct ns_hashtbl *h = (struct ns_hashtbl *)t;
-h->mask = 0x7FFFFFFFu;   /* 结构体公开，等价于"表已长到 2^31 桶" */
-h->threshold = 1u;       /* 逼出扩容分支 */
-ns_hashtbl_insert(t, ns_hashtbl_node_new_refresh(t, "k", 1, 4));
-```
-
-实测（clang -fsanitize=address，macOS arm64）：
-
-```
-state: mask=0x7fffffff threshold=1  (guard mask != UINT32_MAX passes: 1)
-AddressSanitizer: heap-buffer-overflow on address ...
-WRITE of size 34359738368 ... __asan_memset
-#1 ns_hashtbl_insert ns_hashtbl.c:262
-```
-
-纯算术核对（无需建表）：
-`mask=0x7fffffff → new_mask=0xffffffff → (unsigned)(new_mask+1)=0 → alloc(0) 成功`，
-而 `sizeof(struct ns_list_node)*old_size = 34359738368`。
-
-#### 定位
-src/ds/ns_hashtbl.c:73
-src/ds/ns_hashtbl.c:78
-src/ds/ns_hashtbl.c:83
-src/ds/ns_hashtbl.c:99
-src/ds/ns_hashtbl.c:261
 
 ---
 
@@ -745,6 +647,114 @@ src/ds/ns_hashtbl.c:269
 src/ds/ns_hashtbl.c:293
 src/ds/ns_hashtbl.c:305
 src/ds/ns_hashtbl.c:318
+
+---
+
+<a id="HASHTBL-108"></a>
+### HASHTBL-108: 扩容守卫 `mask != UINT32_MAX` 比真正的溢出点晚一次倍增
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: bug
+- **关闭原因**: 修复 commit f2f64b2
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`ns_hashtbl_insert` 用 `hashtbl->mask != UINT32_MAX` 作为扩容的最后闸门，但 `ns_hashtbl_resize`
+里的增长算式在**更早一次倍增**就已经溢出：`unsigned int new_mask = (hashtbl->mask << 1) + 1;`
+当 `mask == 0x7FFFFFFF`（2^31−1，正常的 2 的次幂减一序列中的一项）时，
+`new_mask` 为 `0xFFFFFFFF`，随后按 `unsigned int` 计算的 `(new_mask + 1)` 回绕成 0，
+于是 `ns_platform_alloc(0)` 返回非 NULL，而紧跟其后的
+`memset(new_table + old_size, 0, sizeof(struct ns_list_node) * old_size)` 却要写 2^30 * 16 = 34 GB，
+落到分配块之外——实测 ASAN 报 heap-buffer-overflow（写 34359738368 字节）。
+
+同一处还有 `hashtbl->threshold <<= 1`，threshold 为 2^31 时会回绕为 0。
+
+可达性说明：要走公开 API 到这里，表必须先真实增长到 2^31 个桶（约 34 GB 表内存），
+现实中不可达；另一条路径是调用方直接写 `struct ns_hashtbl` 的公开字段（结构体在头文件里是
+完整定义，`ns_hashtbl_create` 返回的正是它的指针），此时守卫判断为"可以继续扩容"。
+因此这条是守卫边界算错（少算一次倍增）的加固问题，不是现实可达的崩溃，故记 🟢。
+
+与已关闭的 HASHTBL-103（threshold==0 导致每次 insert 都 resize）根因和位置都不同：
+那条是 `threshold` 下限，本条是 `new_mask + 1` 的 `unsigned int` 回绕与守卫阈值不匹配。
+
+#### review 建议
+把守卫收敛到"下一次倍增不会回绕"，即在 `ns_hashtbl_resize` 入口（或 insert 的调用点）判断：
+
+```c
+if(hashtbl->mask >= (UINT32_MAX >> 1))   /* 不能再翻倍 */
+    return NS_E_NOMEM;                   /* 或定义专门的"表已到上限"返回码 */
+```
+
+并把 `new_table = ... sizeof(struct ns_list_node) * ((size_t)new_mask + 1)` 里的 `+1` 放到
+`size_t` 一侧计算，避免 `new_mask + 1` 在 `unsigned int` 下先回绕。`threshold` 的倍增同样建议加
+上限检查。
+
+#### 作者建议
+采纳 review 建议，放在 `ns_hashtbl_resize` 入口：`mask >= (UINT32_MAX >> 1)` 时返回
+`NS_E_NOMEM`（不额外定义新返回码）。这样 `insert` 在表已到上限时显式失败，而不是走进
+`new_mask + 1` 回绕。上限处即无法再插新键。新增 `test_resize_upper_bound`：伪造
+`mask = 0x7FFFFFFF`、`threshold = 1` 后插入应得 `NS_E_NOMEM`（修复前 34 GB memset 直接崩溃）。
+
+#### 可重现的失败场景
+```c
+ns_hashtbl_t t = ns_hashtbl_create(0.75f);
+struct ns_hashtbl *h = (struct ns_hashtbl *)t;
+h->mask = 0x7FFFFFFFu;   /* 结构体公开，等价于"表已长到 2^31 桶" */
+h->threshold = 1u;       /* 逼出扩容分支 */
+ns_hashtbl_insert(t, ns_hashtbl_node_new_refresh(t, "k", 1, 4));
+```
+
+实测（clang -fsanitize=address，macOS arm64）：
+
+```
+state: mask=0x7fffffff threshold=1  (guard mask != UINT32_MAX passes: 1)
+AddressSanitizer: heap-buffer-overflow on address ...
+WRITE of size 34359738368 ... __asan_memset
+#1 ns_hashtbl_insert ns_hashtbl.c:262
+```
+
+纯算术核对（无需建表）：
+`mask=0x7fffffff → new_mask=0xffffffff → (unsigned)(new_mask+1)=0 → alloc(0) 成功`，
+而 `sizeof(struct ns_list_node)*old_size = 34359738368`。
+
+#### 定位
+src/ds/ns_hashtbl.c:73
+src/ds/ns_hashtbl.c:78
+src/ds/ns_hashtbl.c:83
+src/ds/ns_hashtbl.c:99
+src/ds/ns_hashtbl.c:261
+
+---
+
+<a id="HASHTBL-107"></a>
+### HASHTBL-107: 头文件 include 注释仍写 `strncmp`，与 HASHTBL-101 修复后的宏实现不符
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低
+- **类型**: doc
+- **关闭原因**: 修复 commit f2f64b2
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+`include/nanosig/nanosig_hashtbl.h:22` 的 IWYU 说明为
+`#include <string.h>   /* 遍历宏调用点展开需要的 strncmp/memcmp */`，但 HASHTBL-101 修复后
+遍历宏的过滤条件已改为 `ns_hashtbl_node_key_len(node) == strlen(string) && memcmp(...)`，
+`strncmp` 在本文件与 `src/ds/ns_hashtbl.c` 中已无任何调用点。真正需要的 `<string.h>` 符号是
+`strlen` / `memcmp`（以及 `.c` 里的 `memcpy`）。这条注释会让后续做 IWYU 清理的人误判依赖来源。
+
+#### review 建议
+把注释改为 `/* 遍历宏调用点展开需要的 strlen/memcmp */`。
+
+#### 作者建议
+采纳：注释已改为 `strlen/memcmp`。
+
+#### 可重现的失败场景
+无功能影响。验证方式：`grep -rn "strncmp" include/nanosig/nanosig_hashtbl.h src/ds/ns_hashtbl.c`
+只命中这条注释本身，无任何调用点。
+
+#### 定位
+include/nanosig/nanosig_hashtbl.h:22
 
 ---
 
