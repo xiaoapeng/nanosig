@@ -132,7 +132,7 @@ waitset 不包含任何事件源特定函数，也不与 wakeup 耦合。上层�
 tcp/udp socket 等原始 fd 也可直接构造 waitable 注册。
 
 句柄有效性用平台头提供的 `ns_waitable_handle_is_valid(h)` 判定：POSIX 为 `h >= 0`，
-Windows 为 `h != NULL`，RTOS 为 `h != NULL && h != (void *)~0`。
+Windows 为 `h != NULL && h != INVALID_HANDLE_VALUE`，RTOS 为 `h != NULL && h != (void *)~0`。
 
 timeout 语义：微秒输入，后端映射到平台原生等待能力。保证等待至少 `timeout_us`，
 实际可能略长。晚 fire 安全，向下取整导致忙等才是 bug。
@@ -153,7 +153,8 @@ macOS 后端：
 
 - mutex 使用 POSIX pthread_mutex。
 - 线程使用 pthread_create / pthread_join。
-- wakeup 使用 kqueue `EVFILT_USER`，通过 wakeup 自身的 kqueue fd 暴露为 waitable。
+- wakeup 使用 kqueue `EVFILT_USER`，只能通过 `ns_platform_wakeup_wait` 阻塞等待，
+  不暴露为 waitable（waitset 只接受普通 fd）。
 - 单调时间使用 `clock_gettime` 的 monotonic 时钟。
 - 内存分配集中在平台层封装。
 - waitset 使用 `kqueue` / `kevent`，普通 fd 通过 `EVFILT_READ` / `EVFILT_WRITE` 注册。
@@ -290,7 +291,8 @@ completion（Windows/Zephyr 用调用时快照，看不到后续注册）。wait
 waitset 等待（`ns_platform_waitset_wait`）：timeout 映射到平台原生等待能力；
 Linux 使用 `timerfd`，macOS 使用 `kevent` timeout，Windows 使用 WaitableTimer。
 completion 数组由调用方提供，`out_count` 返回实际触发数。Windows 后端单次 wait
-最多返回 1 个 completion（auto-reset event 语义）。
+可能返回**多个** completion：`WaitForMultipleObjects` 报告首个 signaled 句柄后，
+其余同时就绪的成员由零超时 `WaitForSingleObject` 扫描补齐。
 
 ## FreeRTOS 后端
 

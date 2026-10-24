@@ -919,6 +919,29 @@ static int test_pointer(void)
     return 0;
 }
 
+/* 宽度/精度的上限钳制：超大宽度与 INT_MIN 传参不得触发有符号溢出或十亿级填充 */
+static int test_width_overflow(void)
+{
+    char buf[64];
+    int n;
+
+    /* 字面宽度溢出：钳到 FORMAT_MAX_FIELD（1 << 20） */
+    n = ns_snprintf(buf, sizeof(buf), "%99999999999d", 1);
+    EXPECT_EQ(n, 1 << 20);
+    EXPECT_EQ((int)strlen(buf), (int)sizeof(buf) - 1);
+
+    /* `*` 宽度传 INT_MIN：取负是 UB，按上限处理且左对齐 */
+    n = ns_snprintf(buf, sizeof(buf), "%*d", INT_MIN, 1);
+    EXPECT_EQ(n, 1 << 20);
+
+    /* `*` 负精度：钳为 0（与既有行为一致），不参与上限 */
+    n = ns_snprintf(buf, sizeof(buf), "%.*d", INT_MIN, 1);
+    EXPECT_EQ(n, 1);
+    EXPECT_EQ(strcmp(buf, "1"), 0);
+
+    return 0;
+}
+
 static int test_array_q(void)
 {
     static const unsigned int arr_u32[4] = { 0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF11u };
@@ -1062,6 +1085,7 @@ int main(void)
     if(test_integer_edges() != 0) return 1;
     if(test_pointer() != 0) return 1;
     if(test_array_q() != 0) return 1;
+    if(test_width_overflow() != 0) return 1;
     if(test_unknown_conversion() != 0) return 1;
     if(test_float_l_qualifier() != 0) return 1;
     if(test_snprintf_double_finish() != 0) return 1;

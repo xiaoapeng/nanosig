@@ -33,11 +33,7 @@ entries:
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-021"
     locations:
-      - "platform/README.md:93"
-      - "platform/README.md:102"
-      - "docs/agents/platform/AGENTS.md:67"
-      - "docs/agents/platform/AGENTS.md:69"
-      - "docs/ARCHITECTURE.md:271"
+      - "platform/README.md:156"
   - id: "PORT-022"
     module: "platform-ports"
     status: "closed-fixed"
@@ -192,8 +188,8 @@ entries:
     section: "open"
     location: "docs/review/platform-ports-code-review.md#PORT-029"
     locations:
-      - "platform/README.md:72"
-      - "platform/README.md:225"
+      - "platform/README.md:135"
+      - "platform/README.md:294"
       - "platform/windows/nanosig_platform_port.h:44"
       - "platform/windows/port.c:443"
   - id: "PLATFORM-001"
@@ -430,7 +426,18 @@ entries:
 （跨模块问题按规范写全局文档）。
 
 #### 作者建议
-（待作者补充）
+修订后重新核对，本条实际只剩 **1 处** 仍然过期；其余 3 处在写条目之后已被修复，或原本就判断有误：
+
+- platform/README.md:156（原 :93）：macOS wakeup "暴露为 waitable" —— **仍过期，本次已改**；
+- platform/README.md:102 的 `CreateThread`：已随 GLOBAL-006 同批改为 `_beginthreadex`；
+- docs/agents/platform/AGENTS.md:67：现写作 `_beginthreadex`（not `CreateThread`），已修；
+- docs/agents/platform/AGENTS.md:69 的 `k_malloc`/`k_free`：**当时即误报**——platform/zephyr/port.c:128
+  至今仍是 `k_malloc`，文档与代码一致，不存在 `k_aligned_alloc`；
+- docs/ARCHITECTURE.md:271：已随 GLOBAL-006 改为 `_beginthreadex`。
+
+#### 影响面
+纯文档，无代码调用者。受影响的是照 README 编写 macOS wakeup 等待代码的读者
+（会去找一个不存在的 waitable 转换）。
 
 #### 可重现的失败场景
 照 README 在 macOS 上调用 wakeup 侧转换宏（`NS_WAITABLE_GET`）→ 编译错误，
@@ -438,11 +445,7 @@ entries:
 与实际 `_beginthreadex` 行为不符。
 
 #### 定位
-platform/README.md:93
-platform/README.md:102
-docs/agents/platform/AGENTS.md:67
-docs/agents/platform/AGENTS.md:69
-docs/ARCHITECTURE.md:271
+platform/README.md:156
 
 ---
 
@@ -714,7 +717,12 @@ include/nanosig/nanosig_broker.h:55
   成员由零超时等待扫描捕获"，并删除"auto-reset event 语义 ⇒ 最多 1 个"的推论。
 
 #### 作者建议
-（待作者补充）
+采纳，两处均已按实现改写：句柄谓词改为 `h != NULL && h != INVALID_HANDLE_VALUE`；
+Windows completion 说明改为"可返回多个（WFMO 报告首个 + 零超时扫描其余）"。
+
+#### 影响面
+纯文档，无代码调用者。受影响的是按 README 规划 Windows waitset 行为的调用方
+（句柄有效性判断、completions 数组容量规划）。
 
 #### 可重现的失败场景
 - 照 README:72 的"Windows 只需判 NULL"口径编写调用方，把 `ns_waitable_init` 产出的
@@ -724,8 +732,8 @@ include/nanosig/nanosig_broker.h:55
   handle 同时 signaled 时一次拿到 2 个 completion，数组规划（如 `count <= 1`）失效。
 
 #### 定位
-platform/README.md:72
-platform/README.md:225
+platform/README.md:135
+platform/README.md:294
 platform/windows/nanosig_platform_port.h:44
 platform/windows/port.c:443
 

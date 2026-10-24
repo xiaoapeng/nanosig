@@ -91,8 +91,8 @@ entries:
     section: "open"
     location: "docs/review/formatio-code-review.md#FORMATIO-027"
     locations:
-      - "src/ns_formatio.c:286-292"
-      - "src/ns_formatio.c:969-976"
+      - "src/ns_formatio.c:297-307"
+      - "src/ns_formatio.c:971-989"
   - id: "FORMATIO-028"
     module: "formatio"
     status: "closed-fixed"
@@ -384,7 +384,21 @@ if (field_width < 0) {
 
 #### 作者建议
 
-（待作者补充）
+采纳"钳制"方案，并同时消掉填充循环的无界迭代（只消 UB 会把 UB 换成 12 亿次循环）：
+
+- 新增 `FORMAT_MAX_FIELD (1 << 20)`，`skip_atoi` 每步累加后立即钳到上限，`int` 累加因此永不溢出；
+- `*` 宽度：`INT_MIN` 按上限处理，其余负数取负后统一钳到上限；
+- `*` 精度：负值仍钳为 0，超过上限钳到上限；
+- `ns_formatio.h` 的差异列表补上该上限。
+
+新增用例 `test_width_overflow`：`%99999999999d` 返回 `1<<20`、`%*d` 传 `INT_MIN` 返回
+`1<<20`、`%.*d` 传 `INT_MIN` 输出 `"1"`。修复前第一条返回 1215752191（已实测）。
+
+#### 影响面
+`skip_atoi` 调用点：src/ns_formatio.c:969（字面宽度）、:981（字面精度）；`*` 分支在
+:973（宽度）、:987（精度）。对外经 `ns_printf` / `ns_snprintf` / `ns_vprintf` 全族生效，
+格式串由调用方传入时可被外部输入控制。`ns_sprintf`（无界流）修复前会按 12 亿级宽度越界写，
+修复后最多写 1 MiB。
 
 #### 可重现的失败场景
 
@@ -399,8 +413,8 @@ ns_snprintf(buf, sizeof(buf), "%*d", INT_MIN, 1);
 ```
 
 #### 定位
-src/ns_formatio.c:286-292
-src/ns_formatio.c:969-976
+src/ns_formatio.c:297-307
+src/ns_formatio.c:971-989
 
 ---
 
