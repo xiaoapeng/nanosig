@@ -11,6 +11,8 @@
 #include <string.h>
 
 #if defined(__linux__)
+#include <pthread.h>
+#include <time.h>
 #include <unistd.h>  /* close()：构造已关闭 eventfd 的 drain 用例 */
 #endif
 
@@ -1077,6 +1079,62 @@ static int test_waitset_destroy_then_ops(void)
 }
 
 #ifdef __linux__
+static void *test_delayed_signal_thread(void *arg)
+{
+    ns_platform_waitable_t *w = (ns_platform_waitable_t *)arg;
+    struct timespec ts;
+
+    ts.tv_sec = 0;
+    ts.tv_nsec = 600000000L;
+    (void)nanosleep(&ts, NULL);
+    test_signal_raw_waitable(*w);
+    return NULL;
+}
+
+/** 有限超时内被 fd 唤醒提前返回后必须 disarm timerfd：
+ *  否则遗留的内核定时器会在下一次**无限**等待期间自己 fire，凭空多出一次
+ *  out_count == 0 的提前返回。 */
+static int test_waitset_timeout_early_return_disarms(void)
+{
+    ns_platform_waitset_t ws;
+    ns_platform_waitable_t w;
+    ns_platform_waitset_completion_t cc[4];
+    ns_platform_time_us_t t0, t1;
+    pthread_t tid;
+    size_t cnt = 0u;
+    uint64_t drained = 0u;
+
+    EXPECT_OK(ns_platform_waitset_init(&ws) == NS_OK);
+    w = test_create_raw_waitable();
+    EXPECT_OK(ns_platform_waitset_add(&ws, &w) == NS_OK);
+
+    /* 200ms 定时器 + 已就绪 fd → 立刻返回 fd 的 completion，定时器还没到期 */
+    test_signal_raw_waitable(w);
+    EXPECT_OK(ns_platform_waitset_wait(&ws, 200000u, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(cnt == 1u);
+
+    /* drain 掉 fd，然后做无限等待，另一线程 600ms 后才 signal。
+       残留定时器会在 ~200ms 时 fire 并让本轮空返回（cnt == 0），
+       正常实现必须一直等到 fd 就绪。 */
+    EXPECT_OK(read(w.primitive, &drained, sizeof(drained)) > 0);
+    EXPECT_OK(pthread_create(&tid, NULL, test_delayed_signal_thread, &w) == 0);
+
+    cnt = 99u;
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t0) == NS_OK);
+    EXPECT_OK(ns_platform_waitset_wait(&ws, NS_PLATFORM_WAIT_INFINITE_US, cc, 4, &cnt) == NS_OK);
+    EXPECT_OK(ns_platform_clock_monotonic_us(&t1) == NS_OK);
+    EXPECT_OK(pthread_join(tid, NULL) == 0);
+
+    EXPECT_OK(cnt == 1u);
+    EXPECT_OK((t1 - t0) >= 550000u);
+
+    EXPECT_OK(ns_platform_waitset_remove(&ws, &w) == NS_OK);
+    test_destroy_raw_waitable(w);
+    EXPECT_OK(ns_platform_waitset_deinit(&ws) == NS_OK);
+
+    return 0;
+}
+
 /** edge_triggered：signal → wait → 再 wait 不触发（ET，需要新边沿） → signal → wait 触发 */
 static int test_waitset_edge_triggered(void)
 {
@@ -1193,6 +1251,7 @@ int main(void)
     if(test_waitset_lifecycle_readd() != 0){ fprintf(stderr, "test_waitset_lifecycle_readd failed\n"); return 1; }
     if(test_waitset_destroy_then_ops() != 0){ fprintf(stderr, "test_waitset_destroy_then_ops failed\n"); return 1; }
 #ifdef __linux__
+    if(test_waitset_timeout_early_return_disarms() != 0){ fprintf(stderr, "test_waitset_timeout_early_return_disarms failed\n"); return 1; }
     if(test_waitset_edge_triggered() != 0){ fprintf(stderr, "test_waitset_edge_triggered failed\n"); return 1; }
     if(test_waitset_level_triggered() != 0){ fprintf(stderr, "test_waitset_level_triggered failed\n"); return 1; }
 #endif

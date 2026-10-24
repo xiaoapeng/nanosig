@@ -358,6 +358,17 @@ entries:
     locations:
       - "src/ns_broker.c:551"
       - "platform/README.md:67"
+  - id: "PORT-034"
+    module: "platform-ports"
+    status: "open"
+    severity: "medium"
+    type: "bug"
+    section: "open"
+    location: "docs/review/platform-ports-code-review.md#PORT-034"
+    locations:
+      - "platform/linux/port.c:598"
+      - "platform/linux/port.c:630"
+      - "test/unit/test_platform_backend.c:1097"
 ---
 
 # Platform Ports 代码审查报告
@@ -752,6 +763,66 @@ platform/README.md:135
 platform/README.md:294
 platform/windows/nanosig_platform_port.h:44
 platform/windows/port.c:443
+
+<a id="PORT-034"></a>
+### PORT-034: Linux waitset 提前返回后未解散 timerfd，残留定时器在后续无限等待中造成虚假唤醒
+
+- **状态**: 打开
+- **严重度**: 🟡 中（前提：连续两次 wait，第一次带超时且被 fd 提前唤醒，第二次为无限等待；仅 Linux 后端；修复前由新增用例实测复现）
+- **类型**: bug
+
+#### 问题描述
+Linux 后端的微秒超时用常驻 epoll 的 timerfd 实现：每次 wait 前 `timerfd_settime` 上弦，
+然后以 `epoll_wait(..., -1)` 无限等。当某个 fd 在定时器到期前就绪（或 EINTR）而提前返回时，
+内核里的倒计时**仍在继续**，却没有任何路径去解散它。
+
+下一次调用若是无限等待，代码不会再上弦，也不会撤掉上一个，于是旧定时器到点自己 fire，
+`epoll_wait` 返回一个只含 timerfd sentinel 的结果：`out_count == 0`，函数返回 `NS_OK`。
+调用方看到"等待成功但没有任何事件"，且远早于预期，broker 白跑一轮再回去等。
+
+旧代码只在 `timer_armed == 0` 分支里 drain timerfd，armed 时直接 `continue`，因此复现路径一直存在。
+本条与 PORT-019（同一次 `epoll_wait` 内排在后面的就绪事件被丢弃）不是同一问题：
+PORT-019 是**同批丢失**，本条是**跨调用残留**。
+
+#### review 建议
+`epoll_wait` 一返回（无论正常、EINTR 还是出错）就在 `timer_armed` 为真时立即解散定时器：
+
+```c
+struct itimerspec off = {0};          /* it_value 全 0 = 撤弦，同时清空过期计数 */
+if(timerfd_settime(waitset->timer_fd, 0, &off, NULL) < 0){
+    /* 撤不掉就兜底读走计数，避免电平触发的 timerfd 持续就绪变成热自旋 */
+    do { rd = read(waitset->timer_fd, &dummy, sizeof(dummy)); } while(rd < 0 && errno == EINTR);
+}
+```
+
+用 `settime` 而非 `read`，是因为它同时清空"已到期计数"，正常路径不需要额外 read。
+同时删除 sentinel 分支里 `if(timer_armed) continue;` 的特判与残留 drain 分支。
+
+#### 作者建议
+采纳，按上述实现：撤弦放在 `epoll_wait` 返回后、处理事件前，覆盖全部返回路径；
+`settime` 失败时兜底 `read` 并打日志。新增
+`test_waitset_timeout_early_return_disarms`（200ms 定时器被 fd 提前唤醒 → 无限等待必须睡满
+600ms），修复前该用例 `cnt == 0`、耗时约 200ms，必然失败。
+
+#### 影响面
+`ns_platform_waitset_wait` 的唯一实现点（platform/linux/port.c）。
+上层调用者：src/ns_broker.c 的 broker 等待循环，以及直接调用 `ns_platform_waitset_wait` 的用户代码。
+仅 Linux 受影响：macOS 用 `kevent` 的 `timespec` 参数、Windows 用 `WaitableTimer` 句柄，
+都不存在跨调用的残留定时器。
+
+#### 可重现的失败场景
+1. signal 一个 eventfd，以 200ms 超时等待 → fd 已就绪，立即返回（定时器尚未到期）；
+2. 把 eventfd 读空，发起 `NS_PLATFORM_WAIT_INFINITE_US` 等待，另一线程 600ms 后才 signal；
+3. 修复前：约 200ms 时残留定时器 fire，本轮返回 `out_count == 0`，用例的 `cnt == 1` 与
+   耗时 ≥ 550ms 两条断言同时失败；
+4. 修复后：必须等到 fd 就绪，`cnt == 1`、耗时约 600ms。
+
+#### 定位
+
+platform/linux/port.c:598
+platform/linux/port.c:630
+test/unit/test_platform_backend.c:1097
+---
 
 ## 现在关闭的问题
 

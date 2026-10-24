@@ -542,7 +542,10 @@ int ns_platform_waitset_remove(
  * @brief 等待事件（微秒精度）。
  *
  * timeout 使用预创建的 timerfd 实现微秒精度。timerfd 永久加入 epoll，
- * 每次 wait 前 arm（timerfd_settime 会重置过期计数器），不需要 disarm 或 read。
+ * 每次 wait 前 arm；epoll_wait 返回后立即 disarm——若在定时器到期前就因某个 fd
+ * 就绪（或 EINTR）返回而不解散，遗留的内核定时器会在后续无限的 wait 期间自己
+ * fire，凭空产生一次 out_count == 0 的虚假唤醒。it_value 全 0 的 settime 同时
+ * 清空过期计数器，因此正常路径不需要 read。
  *
  * epoll_data.ptr 指向 caller 的 ns_platform_waitable_t，wait 时直接解引用，
  * 不需要额外存储。
@@ -593,6 +596,28 @@ int ns_platform_waitset_wait(
             ? (int)NS_WAITSET_MAX_ENTRIES : (int)max_completions;
 
         nfds = epoll_wait(waitset->epoll_fd, events, max_events, timeout_ms);
+
+        /* epoll_wait 已返回（含 EINTR / 出错），立即解散定时器：否则提前返回时
+           遗留的内核定时器会在后续无限等待期间 fire，产生一次 0 耗时虚假唤醒。
+           it_value 全 0 同时清空过期计数器，正常路径无需 read。 */
+        if(timer_armed){
+            struct itimerspec off;
+            off.it_interval.tv_sec = 0;
+            off.it_interval.tv_nsec = 0;
+            off.it_value.tv_sec = 0;
+            off.it_value.tv_nsec = 0;
+            if(timerfd_settime(waitset->timer_fd, 0, &off, NULL) < 0){
+                /* 解散失败时 ticks 可能仍非零，电平触发的 timerfd 会持续就绪；
+                   兜底读走计数，避免后续等待变成热自旋。 */
+                uint64_t dummy;
+                ssize_t rd;
+                ns_merrln(PLATFORM, "timerfd_settime disarm failed: %s", strerror(errno));
+                do{
+                    rd = read(waitset->timer_fd, &dummy, sizeof(dummy));
+                }while((rd < 0) && (errno == EINTR));
+            }
+        }
+
         if(nfds < 0){
             if(errno == EINTR) return NS_OK;
             ns_merrln(PLATFORM, "epoll_wait failed: %s", strerror(errno));
@@ -602,20 +627,10 @@ int ns_platform_waitset_wait(
         for(i = 0; i < nfds && (size_t)*out_count < max_completions; i++){
             ns_platform_waitable_t *wp = (ns_platform_waitable_t *)events[i].data.ptr;
 
-            /* timerfd sentinel → 不报告 completion */
-            if(wp == NS_WAITSET_TIMER_SENTINEL){
-                /* 有限超时到期。不能就此返回：同一次 epoll_wait 里排在后面的 fd
-                   也已就绪，边沿触发的边沿已被本次调用消费，丢弃即永久丢失。
-                   继续循环，末尾统一返回 NS_OK。 */
-                if(timer_armed) continue;
-                /* 非 armed 路径（INFINITE/0）：残余 readiness，drain timerfd */
-                {
-                    uint64_t dummy;
-                    ssize_t rd = read(waitset->timer_fd, &dummy, sizeof(dummy));
-                    (void)rd;
-                }
-                continue;
-            }
+            /* timerfd sentinel → 不报告 completion。不能就此返回：同一次 epoll_wait
+               里排在后面的 fd 也已就绪，边沿触发的边沿已被本次调用消费，丢弃即
+               永久丢失。继续循环，末尾统一返回 NS_OK。 */
+            if(wp == NS_WAITSET_TIMER_SENTINEL) continue;
 
             completions[*out_count].waitable = wp;
             completions[*out_count].triggered_events = ns_waitset_from_epoll_events(events[i].events);
