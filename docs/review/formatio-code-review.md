@@ -85,10 +85,11 @@ entries:
     location: "docs/review/formatio-code-review.md#FORMATIO-026"
   - id: "FORMATIO-027"
     module: "formatio"
-    status: "open"
+    status: "closed-fixed"
     severity: "medium"
     type: "bug"
-    section: "open"
+    section: "closed"
+    closed_date: "2026-10-24"
     location: "docs/review/formatio-code-review.md#FORMATIO-027"
     locations:
       - "src/ns_formatio.c:297-307"
@@ -257,6 +258,8 @@ entries:
 - **FORMATIO-024（2026-10-24）**: %q/%Q 的 valid_len 改为按实际输出字符累加，precision < item_size 时 padding 不再反向膨胀；同步修正 %.3q/%.1q 黄金值 — commit `f2f64b2`
 
 - **FORMATIO-030（2026-10-24）**: %q/%Q 精度改为元素个数：array_len = precision，删除 ?? 半截元素分支；ns_formatio.h 文档化元素宽度映射；test_array_q 按元素语义重写 — commit `65eab91`
+
+- **FORMATIO-027（2026-10-24）**: skip_atoi 每步钳制到 FORMAT_MAX_FIELD(1<<20)，* 宽度 INT_MIN 按上限处理、负精度仍钳 0；新增 test_width_overflow — commit `43fe3ec`
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
@@ -333,92 +336,6 @@ src/ns_formatio.c:646-657
 src/ns_formatio.c:705-711
 
 ---
-
-<a id="FORMATIO-027"></a>
-### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
-
-- **状态**: 打开
-- **严重度**: 🟡 中
-- **类型**: bug
-
-#### 问题描述
-
-两处宽度解析缺少边界保护，均已用 UBSAN 复现：
-
-1. `skip_atoi`（src/ns_formatio.c:286-292）逐位累加进 `int i`，无溢出检查：
-
-```c
-while (isdigit((int)(**s)))
-    i = i * 10 + (*((*s)++) - '0');   /* :290 */
-```
-
-`ns_snprintf(buf, 64, "%99999999999d", 1)` 触发
-`runtime error: signed integer overflow: 999999999 * 10 cannot be represented in type 'int'`，
-得到的 `field_width` 是 1215752191，随后 `vprintf_number` 的填充循环按该宽度迭代
-（有界流只是被逐字节截断并返回 12 亿级的 n；若走 `ns_sprintf`/`ns_vsprintf` 的无界流
-（end == NULL），会向调用方缓冲区写入 10 亿级字节 → 越界写）。
-
-2. `*` 宽度取负（src/ns_formatio.c:969-976）：
-
-```c
-field_width = va_arg(args, int);
-if (field_width < 0) {
-    field_width = -field_width;    /* :973 INT_MIN 取负 UB */
-```
-
-`ns_snprintf(buf, 64, "%*d", INT_MIN, 1)` 触发
-`runtime error: negation of -2147483648 cannot be represented in type 'int'`。
-
-两者都在"格式串来自外部输入"时可达（`ns_printf(fmt)` / `ns_stream_printf(stream, fmt)`
-的 fmt 完全可由调用方传入）。ns_formatio.h:67-81 未对宽度上限做任何文档化约束。
-
-#### review 建议
-
-- `skip_atoi` 改为在 `i > (INT_MAX - d) / 10` 时停止累加（或饱和到 INT_MAX），
-  并在 `streamout_vprintf` 中对最终 `field_width` / `precision` 做上限钳制
-  （例如拒绝 > 1<<20 的宽度并转为忽略该字段，或直接返回 0）；
-- `*` 宽度取负改为安全写法：`field_width = -(unsigned)field_width` 后钳制，
-  或先判断 `field_width == INT_MIN` 时按 0 处理；
-- 若选择"不限制宽度"，则必须在公共头文档化"宽度由调用方格式串保证合理"这一前提
-  （但即便如此，`%99999999999d` 的 UB 本身仍应消除）。
-
-#### 作者建议
-
-采纳"钳制"方案，并同时消掉填充循环的无界迭代（只消 UB 会把 UB 换成 12 亿次循环）：
-
-- 新增 `FORMAT_MAX_FIELD (1 << 20)`，`skip_atoi` 每步累加后立即钳到上限，`int` 累加因此永不溢出；
-- `*` 宽度：`INT_MIN` 按上限处理，其余负数取负后统一钳到上限；
-- `*` 精度：负值仍钳为 0，超过上限钳到上限；
-- `ns_formatio.h` 的差异列表补上该上限。
-
-新增用例 `test_width_overflow`：`%99999999999d` 返回 `1<<20`、`%*d` 传 `INT_MIN` 返回
-`1<<20`、`%.*d` 传 `INT_MIN` 输出 `"1"`。修复前第一条返回 1215752191（已实测）。
-
-#### 影响面
-`skip_atoi` 调用点：src/ns_formatio.c:969（字面宽度）、:981（字面精度）；`*` 分支在
-:973（宽度）、:987（精度）。对外经 `ns_printf` / `ns_snprintf` / `ns_vprintf` 全族生效，
-格式串由调用方传入时可被外部输入控制。`ns_sprintf`（无界流）修复前会按 12 亿级宽度越界写，
-修复后最多写 1 MiB。
-
-#### 可重现的失败场景
-
-```c
-char buf[64];
-ns_snprintf(buf, sizeof(buf), "%99999999999d", 1);
-/* UBSAN: src/ns_formatio.c:290:15 signed integer overflow: 999999999 * 10 ... */
-/* 实际 n=1215752191（64 字节缓冲），填充循环迭代 10 亿次 */
-
-ns_snprintf(buf, sizeof(buf), "%*d", INT_MIN, 1);
-/* UBSAN: src/ns_formatio.c:973:31 negation of -2147483648 cannot be represented in type 'int' */
-```
-
-#### 定位
-src/ns_formatio.c:297-307
-src/ns_formatio.c:971-989
-
----
-
-<a id="FORMATIO-028"></a>
 
 ## 现在关闭的问题
 
@@ -1144,6 +1061,96 @@ ns_snprintf(buf, n, "%.4q", a);
 #### 定位
 
 src/ns_formatio.c:773
+
+---
+
+<a id="FORMATIO-027"></a>
+### FORMATIO-027: 格式串宽度解析存在有符号溢出 / 取负 UB
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中
+- **类型**: bug
+- **关闭原因**: 修复 commit 43fe3ec
+- **关闭日期**: 2026-10-24
+
+#### 问题描述
+
+两处宽度解析缺少边界保护，均已用 UBSAN 复现：
+
+1. `skip_atoi`（src/ns_formatio.c:286-292）逐位累加进 `int i`，无溢出检查：
+
+```c
+while (isdigit((int)(**s)))
+    i = i * 10 + (*((*s)++) - '0');   /* :290 */
+```
+
+`ns_snprintf(buf, 64, "%99999999999d", 1)` 触发
+`runtime error: signed integer overflow: 999999999 * 10 cannot be represented in type 'int'`，
+得到的 `field_width` 是 1215752191，随后 `vprintf_number` 的填充循环按该宽度迭代
+（有界流只是被逐字节截断并返回 12 亿级的 n；若走 `ns_sprintf`/`ns_vsprintf` 的无界流
+（end == NULL），会向调用方缓冲区写入 10 亿级字节 → 越界写）。
+
+2. `*` 宽度取负（src/ns_formatio.c:969-976）：
+
+```c
+field_width = va_arg(args, int);
+if (field_width < 0) {
+    field_width = -field_width;    /* :973 INT_MIN 取负 UB */
+```
+
+`ns_snprintf(buf, 64, "%*d", INT_MIN, 1)` 触发
+`runtime error: negation of -2147483648 cannot be represented in type 'int'`。
+
+两者都在"格式串来自外部输入"时可达（`ns_printf(fmt)` / `ns_stream_printf(stream, fmt)`
+的 fmt 完全可由调用方传入）。ns_formatio.h:67-81 未对宽度上限做任何文档化约束。
+
+#### review 建议
+
+- `skip_atoi` 改为在 `i > (INT_MAX - d) / 10` 时停止累加（或饱和到 INT_MAX），
+  并在 `streamout_vprintf` 中对最终 `field_width` / `precision` 做上限钳制
+  （例如拒绝 > 1<<20 的宽度并转为忽略该字段，或直接返回 0）；
+- `*` 宽度取负改为安全写法：`field_width = -(unsigned)field_width` 后钳制，
+  或先判断 `field_width == INT_MIN` 时按 0 处理；
+- 若选择"不限制宽度"，则必须在公共头文档化"宽度由调用方格式串保证合理"这一前提
+  （但即便如此，`%99999999999d` 的 UB 本身仍应消除）。
+
+#### 作者建议
+
+采纳"钳制"方案，并同时消掉填充循环的无界迭代（只消 UB 会把 UB 换成 12 亿次循环）：
+
+- 新增 `FORMAT_MAX_FIELD (1 << 20)`，`skip_atoi` 每步累加后立即钳到上限，`int` 累加因此永不溢出；
+- `*` 宽度：`INT_MIN` 按上限处理，其余负数取负后统一钳到上限；
+- `*` 精度：负值仍钳为 0，超过上限钳到上限；
+- `ns_formatio.h` 的差异列表补上该上限。
+
+新增用例 `test_width_overflow`：`%99999999999d` 返回 `1<<20`、`%*d` 传 `INT_MIN` 返回
+`1<<20`、`%.*d` 传 `INT_MIN` 输出 `"1"`。修复前第一条返回 1215752191（已实测）。
+
+#### 影响面
+`skip_atoi` 调用点：src/ns_formatio.c:969（字面宽度）、:981（字面精度）；`*` 分支在
+:973（宽度）、:987（精度）。对外经 `ns_printf` / `ns_snprintf` / `ns_vprintf` 全族生效，
+格式串由调用方传入时可被外部输入控制。`ns_sprintf`（无界流）修复前会按 12 亿级宽度越界写，
+修复后最多写 1 MiB。
+
+#### 可重现的失败场景
+
+```c
+char buf[64];
+ns_snprintf(buf, sizeof(buf), "%99999999999d", 1);
+/* UBSAN: src/ns_formatio.c:290:15 signed integer overflow: 999999999 * 10 ... */
+/* 实际 n=1215752191（64 字节缓冲），填充循环迭代 10 亿次 */
+
+ns_snprintf(buf, sizeof(buf), "%*d", INT_MIN, 1);
+/* UBSAN: src/ns_formatio.c:973:31 negation of -2147483648 cannot be represented in type 'int' */
+```
+
+#### 定位
+src/ns_formatio.c:297-307
+src/ns_formatio.c:971-989
+
+---
+
+<a id="FORMATIO-028"></a>
 
 ---
 
