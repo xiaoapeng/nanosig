@@ -177,7 +177,7 @@ emit, and dynamic init public macros are lowercase and use the `ns_signal_*` pre
 (`ns_signal_emit`, `ns_signal_connect_typed`,
 `ns_signal_connect_typed_to`, `ns_signal_init`). Public macros that declare,
 compute type/payload metadata, or only perform type checks are uppercase
-(`NS_SIGNAL_DECLARE`, `NS_DEFINE_SLOT`,
+(`NS_SIGNAL_DECLARE`, `NS_SLOT_FN_TYPEDEF`,
 `NS_SIGNAL_PAYLOAD_SIZE`, `NS_SIGNAL_PAYLOAD_PTR_SIZE`, `NS_SLOT_TYPECHECK`,
 `NS_NO_PAYLOAD`, `NS_LOOP_CONFIG_DEFAULT`), and constants remain uppercase
 (`NS_OK`, `NS_TIMER_ATTR_REPEAT`, `NS_TIMER_ATTR_RELOAD_FROM_NOW`). No-payload signals use the public marker type

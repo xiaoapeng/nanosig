@@ -214,7 +214,7 @@ For explicit cross-thread or binding-layer use, call the `_to` variants or the
 low-level `ns_signal_connect(..., target_loop, ...)`.
 
 Macros that declare symbols, compute payload metadata, or perform type-only
-checks stay uppercase, such as `NS_SIGNAL_DECLARE`, `NS_DEFINE_SLOT`,
+checks stay uppercase, such as `NS_SIGNAL_DECLARE`, `NS_SLOT_FN_TYPEDEF`,
 `NS_SIGNAL_PAYLOAD_SIZE`, `NS_SIGNAL_PAYLOAD_PTR_SIZE`, `NS_SLOT_TYPECHECK`,
 and `NS_LOOP_CONFIG_DEFAULT`.
 Operational function-wrapper macros stay lowercase; `ns_signal_init(signal,

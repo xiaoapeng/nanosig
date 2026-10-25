@@ -9,8 +9,8 @@ typedef struct matrix_owner {
     ns_signal_t no_payload_signal;
 } matrix_owner_t;
 
-NS_DEFINE_SLOT(matrix_payload_slot_fn, matrix_payload_t);
-NS_DEFINE_SLOT(matrix_no_payload_slot_fn, ns_no_payload_t);
+NS_SLOT_FN_TYPEDEF(matrix_payload_slot_fn, matrix_payload_t);
+NS_SLOT_FN_TYPEDEF(matrix_no_payload_slot_fn, ns_no_payload_t);
 
 ns_signal_t matrix_payload_signal;
 ns_signal_t matrix_no_payload_signal;
