@@ -1,9 +1,8 @@
 # nanosig API Review Demos
 
-These files are API usage demos. They are still compiled through the root
-`api-compile-checks` target instead of being linked as runnable demos, so
-they can keep the public call shape stable while broker/demo runtime work is
-still pending.
+These files are API usage demos. Each one is built as a runnable executable
+(`nanosig_demo_*`) and registered in ctest with its own timeout, so they cover
+both the public call shape and the runtime behavior end to end.
 
 - `demo_same_thread.c`
 - `demo_cross_thread.c`
