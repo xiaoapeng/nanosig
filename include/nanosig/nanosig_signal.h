@@ -204,13 +204,16 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
     extern ns_signal_t name
 
 /**
- * @brief 声明一个带 payload 类型的 slot 函数指针类型。
+ * @brief 定义一个带 payload 类型的 slot 函数指针类型。
+ *
+ * 只是类型定义，不产生 slot 对象；slot 本身就是回调函数。
+ * 需要把回调存进函数指针表时用它，并把 payload 类型烘焙进签名。
  *
  * @param name 要生成的函数指针类型名。
  * @param payload_type slot 接收的 payload 类型；无 payload signal 使用
  *        `ns_no_payload_t`。
  */
-#define NS_DEFINE_SLOT(name, payload_type) \
+#define NS_SLOT_FN_TYPEDEF(name, payload_type) \
     typedef void (*name)(void *user_data, const payload_type *payload)
 
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
