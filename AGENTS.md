@@ -181,3 +181,5 @@ cmake --build <build-dir> --target sanitize-all
    - 定位和 Review 各一行，无反引号
 
 6. **默认走特性分支 + PR，合并用 rebase**：改动默认提交到特性分支并开 PR；`.github/workflows/ci.yml` 的 9 个必需检查（linux asan/ubsan/release、macos asan/ubsan/release、windows、freertos ubuntu+macos）以及手动触发的 nightly（`gh workflow run nightly.yml --ref <branch>`）全部通过后再合并，**不要直接 push 到 `master`**。合并统一使用 **Rebase and merge**（`gh pr merge --rebase`，不用 squash / merge commit），保持 `master` 线性历史、无 merge 节点；合并后删除特性分支。push 到 `master` 虽然也会触发 `ci.yml`，但那是事后兜底而非门禁，不作为交付路径。
+
+7. **开 PR 与合并前必须经作者确认**：`gh pr create` **之前**，必须先向作者报告「打算改哪些文件、验证结果、PR 标题与要点」，得到**明确授权**后才可创建；`gh pr merge` 同样需要作者的明确授权。作者未表态或只是讨论方案时，**不得**擅自开 PR，更不得擅自合并。一次授权只覆盖一个 PR；作者说"以后不用问了"才可豁免。
