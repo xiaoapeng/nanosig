@@ -3,12 +3,15 @@
 `platform/` 是 nanosig v1 的唯一 OS 耦合点。核心实现只能通过 `nanosig/nanosig_port.h`
 使用平台能力，不能在 `src/` 或公开头文件中直接包含 OS 头文件或写平台分支。
 
-五后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
+六后端：Linux（epoll + pthread）、macOS（kqueue + pthread）、
 Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象独立
-二值信号量）、Zephyr（k_poll + k_poll_signal + 每对象独立 k_sem）。桌面三平台
+二值信号量）、Zephyr（k_poll + k_poll_signal + 每对象独立 k_sem）、
+裸机 Baremetal（仅有 `init` / `shutdown` / 单调时钟 3 个平台符号 + 一个静态 loop，
+只支持 signal/slot 与 timer）。桌面三平台
 后端必须同步推进，不允许一个 OS 领先另一个完整阶段。FreeRTOS 与 Zephyr 后端
 面向 RTOS 目标，与桌面后端不是 lockstep 关系（见下面“FreeRTOS 后端”和
-“Zephyr 后端”节）。
+“Zephyr 后端”节）。裸机后端是**能力子集后端**，支持面比任何其他后端都窄，
+既不在桌面 lockstep 内也不在 RTOS 全能力集内（见下面“裸机后端（能力子集后端）”节）。
 
 ## loop-only 原语
 
@@ -47,6 +50,7 @@ POSIX 取整到页粒度 4096，FreeRTOS 取整到 `StackType_t` 整数倍）。
 | Windows | OS 默认（`_beginthreadex(..., 0u, ...)`） | 直接作为 `_beginthreadex` 第 2 参 | **nanosig 策略值 16 KB**（见下） |
 | FreeRTOS | **2 KB（2048 字节）** | 字节 → words，**向上取整** | **nanosig 策略值 1024 字节**（不沿用 `configMINIMAL_STACK_SIZE`，见下） |
 | Zephyr | **2048 字节** | `k_thread_stack_alloc` | **nanosig 策略值 512 B**（见下） |
+| 裸机 Baremetal | 不适用（**无线程**） | 不接受非 0 请求：`ns_loop_create()` 对 `stack_size != 0` 返回 `NS_E_INVAL` | 不适用（无 `ns_platform_thread_*` 符号） |
 
 **Windows 下限是 nanosig 策略值，不是 Win32 平台保证**：`_beginthreadex` / `CreateThread`
 没有公开的最小栈大小契约，且 Win32 线程栈默认**不带 guard page** —— 栈过小不会立刻
@@ -67,6 +71,10 @@ POSIX 取整到页粒度 4096，FreeRTOS 取整到 `StackType_t` 整数倍）。
 例（64 位 harness，`StackType_t` = 8 字节）：floor = 1024 B → 128 words，
 最小可接受请求 = 1017 B；1016 B 被拒、1017 B 被接受。
 
+**裸机后端根本没有线程**：`ns_platform_thread_*` 全部不产生符号，`stack_size` 只有
+`0` 一个合法取值。给 `ns_loop_config_t` 传非 0 的 `stack_size` 会得到 `NS_E_INVAL`
+（不静默忽略公开字段），见“裸机后端（能力子集后端）”节。
+
 ### broker 线程的栈
 
 broker 线程（驱动 timer manager、派发 watcher 事件）的栈大小由**编译期**常量
@@ -79,6 +87,8 @@ FreeRTOS / Zephyr 为各后端默认的 2 KB）。该常量由构建系统注入
 - Zephyr 构建：应用 `prj.conf` 的 `CONFIG_NANOSIG_BROKER_STACK_SIZE`。
 
 注入缺失即**编译失败**（`src/ns_broker.c` 的 `#error`），不会静默回落到平台默认。
+裸机后端**没有 broker 线程**：`src/ns_broker.c` 不编入裸机构建，`NANOSIG_BROKER_STACK_SIZE`
+在该分支也不注入（否则会直接命中上述 `#error`）。
 
 > **broker 线程会执行用户回调**：`watcher->handler` 直接在 broker 线程上调用
 > （`src/ns_broker.c`）。调小 broker 栈前必须确认用户 handler 的最深调用不会溢栈。
@@ -222,6 +232,16 @@ FreeRTOS 后端：
   FreeRTOS 后端特有，其它后端 remove 不消费成员数据（见上节契约）。
 - `waitset_deinit` 仍要求在无注册项时调用（有注册项返回 `NS_E_EXISTS`）。
 
+裸机后端：
+
+- 只有 3 个 `ns_platform_*` 符号：`init`、`shutdown`、`clock_monotonic_us`；上面各后端
+  用到的能力（mutex / 线程 / wakeup / 内存分配 / waitset / event）在裸机上**一个符号都
+  没有**，引用即链接期失败。
+- 单调时间直接转调应用注入的 `ns_baremetal_set_now_us()` 回调：不换算 tick、不做回绕扩展。
+- 没有 loop 线程也没有 wakeup：loop 是单个静态实例，由应用主循环里的 `ns_loop_poll()`
+  驱动派发，可睡眠时长由 `ns_loop_next_timeout()` 给出。
+- 详见“裸机后端（能力子集后端）”节。
+
 ## 生命周期和所有权
 
 平台对象都是**调用方拥有存储**的透明别名类型（见“平台类型注入”节）。`init` 在调用方
@@ -245,9 +265,9 @@ FreeRTOS 后端：
 
 ## 平台类型注入
 
-平台类型（`ns_waitable_handle_t` + wakeup / mutex / thread / waitset）定义在五个
-**构建内头** `platform/{linux,macos,windows,freertos,zephyr}/nanosig_platform_port.h`
-中，每个头只描述一个后端，且**五个头同名**。构建系统把当前平台的目录加入 include
+平台类型（`ns_waitable_handle_t` + wakeup / mutex / thread / waitset）定义在六个
+**构建内头** `platform/{linux,macos,windows,freertos,zephyr,baremetal}/nanosig_platform_port.h`
+中，每个头只描述一个后端，且**六个头同名**。构建系统把当前平台的目录加入 include
 路径，`nanosig_port.h` 按固定名 `#include <nanosig_platform_port.h>`，**自身不含任何
 平台判定宏**：
 
@@ -262,6 +282,12 @@ FreeRTOS 后端：
 
 因此平台头可以传递平台 SDK 头（`pthread.h` / `windows.h` / `FreeRTOS.h` /
 `zephyr/kernel.h`）：消费者与库必须看到**同一份**类型定义。
+
+裸机后端是唯一不传递任何 SDK 头的后端：它给的是**哑完整类型**——`ns_platform_mutex_t` /
+`ns_platform_wakeup_t` / `ns_platform_waitset_t` 都是 `uint8_t`，`ns_platform_thread_t` 是
+只含一个 `uint8_t` 成员的 struct。它们**只为**满足 `nanosig_port.h` 的函数声明而存在，
+裸机下对应的成员与调用点都不参与编译，不会出现任何运行期对象。`ns_platform_event_t`
+由 `nanosig_port.h` 自己定义，后端头**不得**重复定义（否则是 `typedef redefinition`）。
 
 ### 别名带来的取舍
 
@@ -392,6 +418,130 @@ CI 的 `zephyr` job 钉版 Zephyr 3.7 LTS，用宿主工具链构建，不下载
 RTOS ISR 安全是后续课题；v1 Zephyr 后端不承诺 ISR 上下文调用（不提供
 `*_from_isr`）。
 
+## 裸机后端（能力子集后端）
+
+裸机后端是第六个后端，面向**没有 OS、没有 RTOS** 的裸机 MCU：不使用堆、不创建线程、
+不依赖中断上下文、不引入任何 OS 头文件。它是唯一的**能力子集后端**：只支持
+**signal/slot 与 timer**，watcher、broker、waitset、event、thread 在裸机上**不存在**。
+选择方式是顶层 `NANOSIG_PLATFORM=baremetal`，平台类型来自构建内头
+`platform/baremetal/nanosig_platform_port.h`。
+
+裸机判定宏只有 `NANOSIG_BAREMETAL` 一个，且只在上述平台头里定义（`include/nanosig/`
+中它仅作为 `nanosig_signal.h` 的成员声明守卫出现，见 `docs/ARCHITECTURE.md` §1）。
+
+### 平台表面：恰好 3 个符号
+
+| 符号 | 裸机实现 |
+|------|---------|
+| `ns_platform_init` | 应用已注入时钟钩子返回 `NS_OK`，否则返回 `NS_E_INVAL` |
+| `ns_platform_shutdown` | 直接返回 `NS_OK` |
+| `ns_platform_clock_monotonic_us` | 转调应用注入的钩子；出参为 `NULL` 返回 `NS_E_INVAL` |
+
+其余平台原语——`alloc` / `free`、`mutex_*`、`wakeup_*`、`event_*`、`waitset_*`、
+`thread_*`——**一个符号都不定义**。这是有意的取舍：**能力缺失不得伪装**。引用它们的
+程序在**链接期**失败，而不是拿到 `NS_OK` 的空实现或返回 `NS_E_UNSUPPORTED` 的桩。
+与之配套，五个死成员（`ns_signal_t.mutex`、`ns_loop_t.wakeup`、`ns_loop_t.async_thread`、
+`ns_timer_mgr.mutex`、`ns_dbg_mutex`）及其全部调用点在 `NANOSIG_BAREMETAL` 下不参与
+编译，因此裸机下既没有虚构对象，也没有虚构动词。
+
+平台类型是**哑完整类型**（见“平台类型注入”节）：`ns_platform_mutex_t` /
+`ns_platform_wakeup_t` / `ns_platform_waitset_t` 都是 `uint8_t`，`ns_platform_thread_t`
+是只含一个 `uint8_t` 成员的 struct。它们只为满足 `nanosig_port.h` 的函数声明而存在。
+`ns_platform_event_t` 由 `nanosig_port.h` 自己定义，裸机后端头**不得**重复定义。
+
+### 时钟契约
+
+应用必须在 `ns_init()` **之前**调用：
+
+```c
+void ns_baremetal_set_now_us(uint64_t (*fn)(void));
+```
+
+回调要求：返回**微秒**、**单调不减**、**永不回绕**的 64 位值。库内**不做 tick 换算，
+也不做回绕扩展**（这点与 FreeRTOS 后端的回绕累加逻辑相反）——回绕责任完全在应用侧。
+未注入钩子时 `ns_init()` 返回 `NS_E_INVAL`。
+
+### 单静态 loop 与驱动接口
+
+裸机内建**一个** loop 的静态存储，没有第二份：
+
+- 第一次 `ns_loop_create()` 返回该内建实例且**不分配内存**；第二次返回 `NS_E_EXISTS`。
+- `queue_byte_capacity` 大于编译期 `NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES`（默认 1024，
+  须为 2 的幂且 ≥ `3*sizeof(size_t)`）返回 `NS_E_INVAL`：裸机上队列容量上限由编译期
+  常量决定，不能按实例调整。
+- 非 0 的 `stack_size` 返回 `NS_E_INVAL`（裸机没有线程可给栈）。
+- `ns_loop_start` / `ns_loop_stop` / `ns_loop_run` / `ns_loop_quit` 在裸机上**没有符号**；
+  loop 由应用主循环驱动。
+- `ns_loop_destroy` 与 host 同语义：返回 `NS_OK`，丢弃 ring 中未派发的记录（不引入
+  额外错误码）。
+
+裸机专属驱动接口在**构建内头** `platform/baremetal/nanosig_baremetal_api.h`（不进
+`include/nanosig/`）：
+
+| 接口 | 语义 |
+|------|------|
+| `int ns_loop_poll(ns_loop_t *loop, uint32_t max_wait_us)` | 做**一轮**派发：先把到期 timer 的 emit 入队（`fire_expired`），再 drain ring 并调用 slot，重复到有界轮次。**从不睡眠**，`max_wait_us` 只是建议上界。`loop` 为 `NULL` 或尚未 create 返回 `NS_E_INVAL`，库未初始化返回 `NS_E_SHUTDOWN`，否则传播 timer 到期路径的首个错误 |
+| `int ns_loop_next_timeout(ns_loop_t *loop, ns_platform_time_us_t *out_us)` | 告诉调用方最多可以睡多久；没有 armed timer 时写入 `NS_PLATFORM_WAIT_INFINITE_US` |
+
+典型主循环：
+
+```c
+for(;;){
+    ns_platform_time_us_t sleep_us = 0;
+
+    (void)ns_loop_poll(loop, 0u);                        /* 派发一轮，不睡眠 */
+
+    if(ns_loop_next_timeout(loop, &sleep_us) == NS_OK){
+        platform_sleep_us(sleep_us);                     /* 你的 WFI / 低功耗等待 */
+    }
+}
+```
+
+**异步派发语义不变**：`ns_signal_emit()` 仍然只把调用入队，回调只在随后的
+`ns_loop_poll()` 里执行。轮次顺序（先 fire、再 dispatch）是硬要求——`fire_expired` 是
+通过内嵌 signal 的 emit 入队的，回调只能在下一次 dispatch 里跑。轮次上限
+`NANOSIG_BAREMETAL_POLL_MAX_ROUNDS`（默认 4）耗尽时若仍有到期项，`ns_loop_poll` 静默
+返回 `NS_OK`：轮次是**上界**而不是收敛保证。
+
+### 生命周期与不可用 API
+
+- `ns_init()` 创建 0 个线程、分配 0 字节；`ns_shutdown()` 之后可以再次 `ns_init()`。
+- `ns_watcher_*` / `ns_broker_*` 在裸机构建中**没有符号**，引用即链接失败。
+- `ns_hashtbl` 不编入裸机构建（`src/ds/ns_hashtbl.c` 不在源列表里）。
+- `NANOSIG_BROKER_STACK_SIZE` 在裸机分支不注入（`src/ns_broker.c` 不编入）。
+
+### 格式化与调试的坑
+
+`ns_formatio` 的溢出分支在裸机上**返回 0**（裸机没有分配器可调）。后果是：超出 16 位
+数字/位宽的数值字段**什么都不打印**，而格式串的其余部分照常输出，返回计数偏短。
+触发条件：
+
+- `%b` ≥ 2^16；
+- `%o` ≥ 16 位数字；
+- `%llu` ≥ 10^16。
+
+例：`ns_printf("a=%llu;b", ULLONG_MAX)` 输出 `a=;b`（不报错，也不是数字被截断）。
+注意**不能**改成“截断输出”来兜底：格式化栈快路径 `FORMAT_STACK_CACHE_SIZE` 只有 16
+字节，写超过该宽度的整数会写穿栈缓冲区。
+
+调试默认全开（`NS_DBG_DEBUG` 等级，且前缀带单调时间戳），裸机上通常要往下调：
+
+- `-DNS_CONFIG_DEFAULT_DEBUG_LEVEL=...` 改编译期默认等级；
+- `-DNS_CONFIG_DEBUG_FLAGS=NS_DBG_FLAGS_DEBUG_TAG` 去掉单调时间戳前缀。
+
+### 能力边界：只在 host 上验证
+
+裸机后端的验证**只在开发主机上**完成：`test/baremetal/` 是一个可在主机运行的
+harness，用**假时钟**（注入的 `ns_baremetal_set_now_us` 递增计数器）推进时间，
+临界区为空，通过 `ctest -R nanosig_test_baremetal` 执行；未支持能力的负向用例以
+**期望链接失败**的形式注册。
+
+**没有任何真实交叉工具链参与验证**——这是已知边界，不是遗漏。目标工具链相关项
+（`find_package(Threads)`、`NS_MPSC_CACHELINE_ALIGNED` 的平台条件、`<stdatomic.h>`
+缺 `__STDC_NO_ATOMICS__` 时的回退等）都没有被验证；真实 MCU 上的 tick 精度、栈深度、
+链接脚本、低功耗与中断行为归硬件冒烟。ISR 上下文 emit（`*_from_isr`）是显式 deferred
+项：裸机后端不提供，也不承诺 ISR 安全。
+
 ## 新增后端清单
 
 新增一个平台后端时，需要：
@@ -399,14 +549,43 @@ RTOS ISR 安全是后续课题；v1 Zephyr 后端不承诺 ISR 上下文调用�
 1. **平台类型头**：在 `platform/<platform>/` 下创建 `nanosig_platform_port.h`，提供
    `ns_waitable_handle_t`、`ns_waitable_handle_is_valid`、`ns_platform_{wakeup,mutex,thread,waitset}_t`
    与 `NS_PLATFORM_ABI_PROBE`（见“平台类型注入”节）。
-2. **实现文件**：在 `platform/<platform>/` 下创建 `port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。
+2. **实现文件**：在 `platform/<platform>/` 下创建 `port.c`，实现 `nanosig/nanosig_port.h` 中所有 `extern` 函数（`ns_platform_*`）。**能力受限后端例外**见下面“能力子集后端的替代规则”：只实现其能力子集需要的 `ns_platform_*`，其余**不产生符号**（不得写返回 `NS_OK` 的空实现，也不得写返回 `NS_E_UNSUPPORTED` 的桩）。
 3. **CMake 注册**：在顶层 `CMakeLists.txt` 的 `NANOSIG_PLATFORM_DIR` / `NANOSIG_PLATFORM_SOURCES` 条件块中增加分支。使用自带构建系统的 RTOS（如 Zephyr）改为提供 `zephyr/module.yml` + `zephyr/CMakeLists.txt` 作为 module 入口，顶层只给出引导式错误。
 4. **编译检查**：`cmake --build` 零警告通过。
-5. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。
+5. **平台契约测试**：`ctest -R nanosig_test_platform_backend` 全通过（lifecycle / add-remove / wait timeout / wait signal / multi waitable）。**能力受限后端例外**：改用可在开发主机运行的 harness 注册独立 ctest 目标并通过，并对未提供的能力补“期望链接失败”的负向用例（见下面“能力子集后端的替代规则”）。
 6. **完整构建 + 测试**：`cmake --build <preset> --target api-compile-checks` + `ctest <preset>` 全通过。
 7. **bench 基线**（可选）：跑 1 轮 bench 归档到 `bench/results/`。
+
+### 能力子集后端的替代规则
+
+第 2 项与第 5 项的字面要求（实现**全部** `extern` 平台函数、通过
+`nanosig_test_platform_backend`）以“后端提供完整平台能力”为前提。当一个后端按设计只
+支持一个**能力子集**时（当前唯一实例是裸机后端，只有 signal/slot + timer），允许且
+仅允许以下替代：
+
+- **第 2 项** → “只实现该子集需要的 `ns_platform_*` 符号，其余不定义”。这是更严而不
+  是更松：既要用 `nm` 证明定义出来的符号集合**恰好等于**声明集合，又要用链接失败证明
+  被排除的能力确实不可引用。
+- **第 5 项** → “用可在开发主机运行的 harness + 独立 ctest 目标替代
+  `nanosig_test_platform_backend`”，因为该测试集测的是 waitset / 多 waitable 语义，
+  能力子集后端根本没有这些对象。
+- **第 1 / 3 / 4 / 6 / 7 项不变**；分叉判定宏只能在该后端的平台头定义，`src/` 与
+  `include/nanosig/` 中不得出现 OS 身份宏或第二套裸机宏。
+
+清单仍是 7 项。裸机后端的逐项落点（这张表本身也是“7 项 ↔ 验收判据”的对照物）：
+
+| 清单项 | 裸机后端的落地方式 | 对应验收 |
+|---|---|---|
+| 1 平台类型头 | `platform/baremetal/nanosig_platform_port.h`：`ns_waitable_handle_t` + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE` + 4 个哑类型，并定义唯一判定宏 `NANOSIG_BAREMETAL`；不定义 `ns_platform_event_t` | AC11、AC2 |
+| 2 实现文件（替代） | `port.c` 只定义 `init` / `shutdown` / `clock_monotonic_us` 三个 `ns_platform_*` 符号（另有一个 ABI 探针对象）；其余六组原语（alloc/free、mutex、wakeup、event、waitset、thread）不产生符号 | AC2、AC3 |
+| 3 CMake 注册 | 顶层 `CMakeLists.txt` 的 sources 链与 dir 链都加 `baremetal` 分支；源列表剔除 `src/ns_broker.c` 与 `src/ds/ns_hashtbl.c`；不注入 `NANOSIG_BROKER_STACK_SIZE`；新增 `NANOSIG_BAREMETAL_*` cache 变量 | AC1 |
+| 4 编译检查 | `cmake --build` 零警告；裸机 preset 额外带 `-Werror`，并注册带 `platform/baremetal` include 路径的 `-fsyntax-only` 平台契约检查 | AC1 |
+| 5 平台契约测试（替代） | host harness（假时钟、空临界区）+ `ctest -R nanosig_test_baremetal`；未支持能力以期望链接失败覆盖 | AC12、AC13 |
+| 6 完整构建 + 测试 | 裸机 preset 全量 build + 该 ctest 目标；`baremetal-debug-asan` / `-ubsan` 下重跑无报告 | AC13 |
+| 7 bench 基线（可选） | 不提供：时间源由应用注入，宿主微基准不代表 MCU 上 signal/timer 的成本 | 不适用（可选项） |
 
 新增后端**不允许**：
 - 在 `src/` 或 `include/nanosig/` 中新增 OS 分支。
 - 修改 `nanosig/nanosig_port.h` 的接口签名（只能新增扩展点）。
 - 修改其他后端的实现文件。
+- 能力子集后端用空实现或 `NS_E_UNSUPPORTED` 桩“补齐”缺失能力（缺失必须表现为链接失败）。

@@ -18,7 +18,9 @@
 #include <nanosig/ns_debug.h>
 
 typedef struct ns_timer_mgr {
+#ifndef NANOSIG_BAREMETAL
     ns_platform_mutex_t mutex;
+#endif
     ns_rbtree_t tree;
     ns_platform_time_us_t now;
     ns_timer_notify_fn notify;
@@ -69,20 +71,32 @@ static int ns_timer_runtime_ready(void)
 
 static int ns_timer_mgr_lock(void)
 {
-    int rc;
-
     if(!g_timer_mgr.initialized) return NS_E_SHUTDOWN;
-    rc = ns_platform_mutex_lock(&g_timer_mgr.mutex);
-    if(rc != NS_OK) ns_merrln(TIMER, "mutex_lock failed: %d", rc);
-    return rc;
+#ifdef NANOSIG_BAREMETAL
+    /* 单执行上下文：临界区在构造上无对象。 */
+    return NS_OK;
+#else
+    {
+        int rc = ns_platform_mutex_lock(&g_timer_mgr.mutex);
+
+        if(rc != NS_OK) ns_merrln(TIMER, "mutex_lock failed: %d", rc);
+        return rc;
+    }
+#endif
 }
 
 static int ns_timer_mgr_unlock(void)
 {
-    int rc = ns_platform_mutex_unlock(&g_timer_mgr.mutex);
+#ifdef NANOSIG_BAREMETAL
+    return NS_OK;
+#else
+    {
+        int rc = ns_platform_mutex_unlock(&g_timer_mgr.mutex);
 
-    if(rc != NS_OK) ns_merrln(TIMER, "mutex_unlock failed: %d", rc);
-    return rc;
+        if(rc != NS_OK) ns_merrln(TIMER, "mutex_unlock failed: %d", rc);
+        return rc;
+    }
+#endif
 }
 
 static int ns_timer_mgr_refresh_now(void)
@@ -177,8 +191,6 @@ static int ns_timer_cancel_locked(ns_timer_t *timer, int *out_should_notify)
  */
 int ns_timer_mgr_global_init(ns_timer_notify_fn notify, void *ctx)
 {
-    int rc;
-
     if(g_timer_mgr.initialized) return NS_E_EXISTS;
 
     g_timer_mgr.now = 0u;
@@ -186,15 +198,25 @@ int ns_timer_mgr_global_init(ns_timer_notify_fn notify, void *ctx)
     g_timer_mgr.notify_ctx = ctx;
     ns_rbtree_root_init((&g_timer_mgr.tree), ns_timer_cmp);
 
-    rc = ns_platform_mutex_init(&g_timer_mgr.mutex, "nanosig-timer-mgr");
-    if(rc != NS_OK){
-        g_timer_mgr.notify = NULL;
-        g_timer_mgr.notify_ctx = NULL;
-        return rc;
-    }
-
+#ifdef NANOSIG_BAREMETAL
+    /* 裸机没有 mutex 可初始化；initialized 仍必须置 1 —— 所有 timer API 的
+       入口守卫（ns_timer_mgr_lock）都读它。 */
     g_timer_mgr.initialized = 1;
     return NS_OK;
+#else
+    {
+        int rc = ns_platform_mutex_init(&g_timer_mgr.mutex, "nanosig-timer-mgr");
+
+        if(rc != NS_OK){
+            g_timer_mgr.notify = NULL;
+            g_timer_mgr.notify_ctx = NULL;
+            return rc;
+        }
+
+        g_timer_mgr.initialized = 1;
+        return NS_OK;
+    }
+#endif
 }
 
 void ns_timer_mgr_global_shutdown(void)
@@ -208,6 +230,13 @@ void ns_timer_mgr_global_shutdown(void)
     g_timer_mgr.initialized = 0;
 
     /* ② 等待正在执行锁内操作者完成，然后清空树 */
+#ifdef NANOSIG_BAREMETAL
+    /* 无锁，但清树循环必须照旧执行：否则所有 timer 节点仍被标记为 running，
+       后续 ns_timer_start 会永久返回 NS_E_EXISTS。 */
+    while((node = ns_rbtree_first(&g_timer_mgr.tree)) != NULL){
+        ns_rbtree_del(node, &g_timer_mgr.tree);
+    }
+#else
     if(ns_platform_mutex_lock(&g_timer_mgr.mutex) == NS_OK){
         while((node = ns_rbtree_first(&g_timer_mgr.tree)) != NULL){
             ns_rbtree_del(node, &g_timer_mgr.tree);
@@ -217,6 +246,7 @@ void ns_timer_mgr_global_shutdown(void)
 
     /* ③ 安全销毁 mutex — 所有潜在调用者已被 initialized==0 阻断 */
     (void)ns_platform_mutex_deinit(&g_timer_mgr.mutex);
+#endif
     g_timer_mgr.now = 0u;
     g_timer_mgr.notify = NULL;
     g_timer_mgr.notify_ctx = NULL;

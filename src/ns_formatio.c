@@ -558,8 +558,15 @@ static int vprintf_float_decimalism_or_normalized(struct ns_stream_base *stream,
         ? need_buf_min_size : exponent_valid_len;
 
     if (need_buf_min_size > FORMAT_STACK_CACHE_SIZE) {
+#ifdef NANOSIG_BAREMETAL
+        /* 裸机后端不提供分配器：超长浮点格式化直接放弃输出。
+           不做"截断到栈缓冲"——写循环用的是未钳制的长度，
+           那样会写出 16 字节栈数组之外。 */
+        return 0;
+#else
         number_buf = (char *)ns_platform_alloc((size_t)need_buf_min_size);
         if (number_buf == NULL) return 0;
+#endif
     }
 
     if (flags & FORMAT_FLOAT_E) {
@@ -648,8 +655,10 @@ static int vprintf_float_decimalism_or_normalized(struct ns_stream_base *stream,
         for (int i = 0; i < space_or_zero_pad_len; i++, n++)
             streamout_in_byte(stream, ' ');
     }
+#ifndef NANOSIG_BAREMETAL
     if (number_buf != _number_buf)
         ns_platform_free(number_buf);
+#endif
 
     return n;
 }
@@ -868,8 +877,14 @@ static inline int vprintf_number(struct ns_stream_base *stream,
     bit_count = num_bit_count(num, (int)base);
 
     if (bit_count > FORMAT_STACK_CACHE_SIZE) {
+#ifdef NANOSIG_BAREMETAL
+        /* 裸机后端不提供分配器：超长整数格式化直接放弃输出。
+           位数 >16 的常见触发：%b 的 32 位寄存器转储、%llu ≥ 1e16。 */
+        return 0;
+#else
         number_buf = (char *)ns_platform_alloc((size_t)bit_count);
         if (number_buf == NULL) return 0;
+#endif
     }
     for (int i = (int)(bit_count - 1); i >= 0; i--)
         number_buf[i] = digits[num_rsh(&num, (int)base)];
@@ -930,8 +945,10 @@ static inline int vprintf_number(struct ns_stream_base *stream,
         for (int i = 0; i < spacepad_count; i++, n++)
             streamout_in_byte(stream, ' ');
     }
+#ifndef NANOSIG_BAREMETAL
     if (number_buf != _number_buf)
         ns_platform_free(number_buf);
+#endif
     return n;
 }
 

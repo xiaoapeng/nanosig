@@ -21,7 +21,8 @@ nanosig 是一个 C11 线程安全 signal/slot 库，面向 Linux、macOS 和 Wi
 │  rbtree / MPSC record ring               │
 ├──────────────────────────────────────────┤
 │  平台层  /  platform/                    │
-│  port.h 抽象 + linux/macos/windows 后端  │
+│  port.h 抽象 + linux/macos/windows /     │
+│  freertos/zephyr/baremetal 后端          │
 └──────────────────────────────────────────┘
 ```
 
@@ -32,6 +33,13 @@ nanosig 是一个 C11 线程安全 signal/slot 库，面向 Linux、macOS 和 Wi
 - `src/` 和 `include/nanosig/` 不得包含 OS 头文件或写 `#ifdef _WIN32` 分支。
 - 所有 OS 耦合集中在 `nanosig/nanosig_port.h` 的声明和 `platform/*/port.c` 的实现。
 - 运行时通过 `ns_platform_*` 接口使用 OS 能力，不直接依赖 pthread / Win32 API。
+- **唯一被批准的例外**：`NANOSIG_BAREMETAL`（由 `platform/baremetal/nanosig_platform_port.h`
+  定义）允许出现在 `include/nanosig/` 中，但**仅**作为 `nanosig_signal.h` 的**成员声明
+  守卫**——用来把 `ns_signal_t.mutex` 从裸机构建中移除。`include/nanosig/` 中不得出现
+  任何其他裸机判定宏，也不得靠该宏改变任何函数签名或公开语义。
+- `src/` 与 `include/nanosig/` 中**任何位置**都不得引入 OS 身份宏（`_WIN32` /
+  `__linux__` / `__APPLE__` / `FreeRTOS` / `Zephyr`）：后端差异只能来自 include 路径选中的
+  平台头，外加上述唯一一个能力子集宏。
 
 ---
 
@@ -42,7 +50,7 @@ nanosig 是一个 C11 线程安全 signal/slot 库，面向 Linux、macOS 和 Wi
 每个 event loop 独立拥有：
 
 - 一个 MPSC record ring（用于接收跨线程 emit）
-- 一个平台 wakeup（用于线程间通知）
+- 一个平台 wakeup（用于线程间通知；裸机构建中该成员不存在）
 - 一个 `quit_requested` 原子标志
 
 `ns_loop_run(loop)` 在主循环中：
@@ -63,6 +71,15 @@ nanosig 是一个 C11 线程安全 signal/slot 库，面向 Linux、macOS 和 Wi
     │  └─ loop ────→│
     └───────────────┘
 ```
+
+**裸机构建（`NANOSIG_BAREMETAL`）的例外**：loop 是**单个静态单例**——第一次
+`ns_loop_create()` 返回库内建的静态实例（不分配内存），第二次返回 `NS_E_EXISTS`；
+`wakeup` 与 `async_thread` 两个成员在该构建中**不存在**，`ns_loop_run` / `ns_loop_start` /
+`ns_loop_stop` / `ns_loop_quit` 也不产生符号。派发权交给应用主循环里的
+`ns_loop_poll(loop, max_wait_us)`：单次调用先把到期 timer 的 emit 入队，再 drain MPSC
+ring 并调用 slot（有界轮次、**从不睡眠**）；`ns_loop_next_timeout()` 只回答“最多可以睡
+多久”。语义上仍是异步派发——`ns_signal_emit()` 只入队，回调只在随后的 `ns_loop_poll()`
+里执行，与其他后端一致。详见 `platform/README.md` 的“裸机后端（能力子集后端）”节。
 
 ### 2.2 `ns_signal_t` — signal 对象
 

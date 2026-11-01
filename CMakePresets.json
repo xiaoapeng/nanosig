@@ -246,6 +246,69 @@
         "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "ON"
       }
+    },
+    {
+      "name": "baremetal-debug",
+      "displayName": "Baremetal backend (Debug, host harness)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-baremetal-debug",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "baremetal",
+        "NANOSIG_BUILD_DEMOS": "OFF",
+        "NANOSIG_BUILD_BENCH": "OFF",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF"
+      }
+    },
+    {
+      "name": "baremetal-debug-asan",
+      "displayName": "Baremetal backend (Debug ASAN, host harness)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-baremetal-debug-asan",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "baremetal",
+        "NANOSIG_BUILD_DEMOS": "OFF",
+        "NANOSIG_BUILD_BENCH": "OFF",
+        "NANOSIG_ENABLE_ASAN": "ON",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF"
+      }
+    },
+    {
+      "name": "baremetal-debug-ubsan",
+      "displayName": "Baremetal backend (Debug UBSAN, host harness)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-baremetal-debug-ubsan",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "baremetal",
+        "NANOSIG_BUILD_DEMOS": "OFF",
+        "NANOSIG_BUILD_BENCH": "OFF",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -261,7 +324,10 @@
     { "name": "windows-release", "configurePreset": "windows-release" },
     { "name": "freertos-release", "configurePreset": "freertos-release" },
     { "name": "freertos-debug-asan", "configurePreset": "freertos-debug-asan" },
-    { "name": "freertos-debug-ubsan", "configurePreset": "freertos-debug-ubsan" }
+    { "name": "freertos-debug-ubsan", "configurePreset": "freertos-debug-ubsan" },
+    { "name": "baremetal-debug", "configurePreset": "baremetal-debug" },
+    { "name": "baremetal-debug-asan", "configurePreset": "baremetal-debug-asan" },
+    { "name": "baremetal-debug-ubsan", "configurePreset": "baremetal-debug-ubsan" }
   ],
   "testPresets": [
     {
@@ -327,6 +393,21 @@
     {
       "name": "freertos-debug-ubsan",
       "configurePreset": "freertos-debug-ubsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "baremetal-debug",
+      "configurePreset": "baremetal-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "baremetal-debug-asan",
+      "configurePreset": "baremetal-debug-asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "baremetal-debug-ubsan",
+      "configurePreset": "baremetal-debug-ubsan",
       "output": { "outputOnFailure": true }
     }
   ]

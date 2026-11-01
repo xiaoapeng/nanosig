@@ -41,9 +41,13 @@ typedef struct ns_signal {
     const char *debug_name;
     /** slot 连接链表头，调用方不得直接修改。 */
     ns_list_node_t slot_list;
-    /** slot_list 保护锁，按值内嵌；由 `ns_signal_init_raw` 初始化。 */
+#ifndef NANOSIG_BAREMETAL
+    /** slot_list 保护锁，按值内嵌；由 `ns_signal_init_raw` 初始化。
+     *  裸机后端为单执行上下文，临界区在构造上无对象，本成员不参与编译。 */
     ns_platform_mutex_t mutex;
-    /** `mutex` 是否已初始化（0 = 未初始化/已释放）。 */
+#endif
+    /** `mutex` 是否已初始化（0 = 未初始化/已释放）。
+     *  裸机后端保留同一语义（初始化后恒为 1），作为"对象已初始化"的判定依据。 */
     int mutex_initialized;
 } ns_signal_t;
 
