@@ -1,6 +1,6 @@
 # nanosig
 
-C11 的 signal/slot 库，跑在 Linux / macOS / Windows / FreeRTOS / Zephyr 上。
+C11 的 signal/slot 库，跑在 Linux / macOS / Windows / FreeRTOS / Zephyr 上，也能在没有任何 OS 的裸机 MCU 上跑（只支持 signal/slot 与 timer）。
 
 signal 是「发生了某事」的通知，slot 是收到通知后执行的回调。
 
@@ -13,9 +13,9 @@ signal 是「发生了某事」的通知，slot 是收到通知后执行的回�
 
 ## 接入前要满足的三件事
 
-1. **两个头文件路径**：`include/` 和 `platform/<你的平台>/`。五个后端各有一份同名 `nanosig_platform_port.h`，靠 include 路径选中——选错会在编译期直接报错，不会悄悄用错平台。另外，`include/nanosig/nanosig_version.h.in` 要生成成 `nanosig_version.h`：把里面的 `@PROJECT_VERSION_*@` 换成 `0` / `1` / `0`，版本串换成 `"0.1.0"`。
-2. **编译这些文件**：`src/nanosig.c`、`src/ns_timer.c`、`src/ns_broker.c`、`src/ns_formatio.c`、`src/ns_debug.c`、`src/ds/ns_hashtbl.c`、`src/ds/ns_mpsc_record_ring.c`、`src/ds/ns_rbtree.c`、`src/ds/ns_ringbuf.c`，加 `platform/<你的平台>/port.c`。
-3. **平台前提**：C11 编译器；Linux / macOS 另需 pthread；Windows 无外部依赖；FreeRTOS 需要 queue set（`configUSE_QUEUE_SETS=1`）；Zephyr 需要 `CONFIG_POLL=y`。
+1. **两个头文件路径**：`include/` 和 `platform/<你的平台>/`。六个后端各有一份同名 `nanosig_platform_port.h`，靠 include 路径选中——选错会在编译期直接报错，不会悄悄用错平台。另外，`include/nanosig/nanosig_version.h.in` 要生成成 `nanosig_version.h`：把里面的 `@PROJECT_VERSION_*@` 换成 `0` / `1` / `0`，版本串换成 `"0.1.0"`。
+2. **编译这些文件**：`src/nanosig.c`、`src/ns_timer.c`、`src/ns_broker.c`、`src/ns_formatio.c`、`src/ns_debug.c`、`src/ds/ns_hashtbl.c`、`src/ds/ns_mpsc_record_ring.c`、`src/ds/ns_rbtree.c`、`src/ds/ns_ringbuf.c`，加 `platform/<你的平台>/port.c`（裸机没有 broker，`src/ns_broker.c` 与 `src/ds/ns_hashtbl.c` 不编入）。
+3. **平台前提**：C11 编译器；Linux / macOS 另需 pthread；Windows 无外部依赖；FreeRTOS 需要 queue set（`configUSE_QUEUE_SETS=1`）；Zephyr 需要 `CONFIG_POLL=y`；裸机需要你自己提供一个**微秒、单调不减、永不回绕的 64 位时钟函数**，并在 `ns_init()` 之前用 `ns_baremetal_set_now_us()` 装进去。
 
 程序入口固定一对：`ns_init()` 一次，`ns_shutdown()` 最后调一次。
 
@@ -341,24 +341,26 @@ out_signal:  (void)ns_signal_deinit(&ctx->rx_ready);
 
 ## 各后端支持一览
 
-| | Linux | macOS | Windows | FreeRTOS | Zephyr |
-|---|---|---|---|---|---|
-| 等待句柄 | `int`（fd） | `int`（fd） | `HANDLE` | `void *`（queue-set 对象） | `void *`（`k_poll_signal *`） |
-| wakeup | eventfd | kqueue fd | Event HANDLE | 二值信号量 `SemaphoreHandle_t` | `struct k_sem`（上限 1） |
-| mutex | `pthread_mutex_t` | `pthread_mutex_t` | `SRWLOCK` | 互斥信号量 `SemaphoreHandle_t` | `struct k_mutex` |
-| 线程 | `pthread_t` | `pthread_t` | 线程 HANDLE | `TaskHandle_t` + join 信号量 | port 分配的不透明对象 |
-| waitset 底层 | epoll | kqueue | WaitForMultipleObjects | queue set | `k_poll` |
-| event 原语 | eventfd | pipe（读写两个 fd） | Event HANDLE | 二值信号量 | `k_poll_signal` |
-| 支持的事件位 | IN / OUT / ERR | IN / OUT / ERR | 仅 IN | 仅 IN | 仅 IN |
-| 单次等待上报上限 | 64 | 64 | 63（预留 1 个内部 timer） | 32（Σ成员+max ≤ CAP，可配） | 32（可配） |
-| 等待精度 | 微秒（timerfd） | 微秒（kevent） | 毫秒 | 系统 tick | 系统 tick |
-| 电平 / 边沿 | 两种都支持 | 两种都支持 | 忽略 edge 参数 | 忽略 | 忽略（`k_poll_signal` 电平保持到 reset） |
+| | Linux | macOS | Windows | FreeRTOS | Zephyr | 裸机 baremetal |
+|---|---|---|---|---|---|---|
+| signal / timer | ✅ | ✅ | ✅ | ✅ | ✅ | ✅（本后端唯一支持的两个子系统） |
+| 等待句柄 | `int`（fd） | `int`（fd） | `HANDLE` | `void *`（queue-set 对象） | `void *`（`k_poll_signal *`） | ❌ 无 watcher / waitset |
+| wakeup | eventfd | kqueue fd | Event HANDLE | 二值信号量 `SemaphoreHandle_t` | `struct k_sem`（上限 1） | ❌ 无符号（无 loop 线程） |
+| mutex | `pthread_mutex_t` | `pthread_mutex_t` | `SRWLOCK` | 互斥信号量 `SemaphoreHandle_t` | `struct k_mutex` | ❌ 无符号（单执行上下文） |
+| 线程 | `pthread_t` | `pthread_t` | 线程 HANDLE | `TaskHandle_t` + join 信号量 | port 分配的不透明对象 | ❌ 无符号（由你的 main 循环驱动） |
+| waitset 底层 | epoll | kqueue | WaitForMultipleObjects | queue set | `k_poll` | ❌ 无 |
+| event 原语 | eventfd | pipe（读写两个 fd） | Event HANDLE | 二值信号量 | `k_poll_signal` | ❌ 无 |
+| 支持的事件位 | IN / OUT / ERR | IN / OUT / ERR | 仅 IN | 仅 IN | 仅 IN | ❌ 不适用 |
+| 单次等待上报上限 | 64 | 64 | 63（预留 1 个内部 timer） | 32（Σ成员+max ≤ CAP，可配） | 32（可配） | — 无等待 API |
+| 等待精度 | 微秒（timerfd） | 微秒（kevent） | 毫秒 | 系统 tick | 系统 tick | — 由你的时钟钩子决定 |
+| 电平 / 边沿 | 两种都支持 | 两种都支持 | 忽略 edge 参数 | 忽略 | 忽略（`k_poll_signal` 电平保持到 reset） | — 不适用 |
 
 已知取舍：
 
 - 对端正常关闭只置 IN、不置 ERR，别用 ERR 判断连接断开。
 - FreeRTOS 加入 queue set 前，成员必须为空；`waitset_remove` 会排空数据队列，未读消息会丢。
 - Zephyr 只认 `k_poll_signal`，不支持 `k_sem` / FIFO / pipe / socket。
+- 裸机后端只做 signal/slot + timer：上表所有平台原语（等待句柄 / wakeup / mutex / 线程 / waitset / event）在裸机构建中**都没有符号**，引用即链接失败；loop 是单个静态实例，由你的 main 循环调 `ns_loop_poll()` 驱动，时间由你注入的微秒单调时钟提供（详见 `platform/README.md` 的“裸机后端（能力子集后端）”节）。
 
 ## 释放顺序与错误速查
 

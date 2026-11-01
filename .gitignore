@@ -15,6 +15,7 @@ Testing/
 build-coverage/
 build-freertos/
 build-tsan/
+build-baremetal*/
 *.c.gcov
 *.h.gcov
 

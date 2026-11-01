@@ -37,8 +37,8 @@ option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 # zephyr  : Zephyr k_poll 后端。**不通过顶层 CMake 构建**：Zephyr 有自己的
 #           构建系统，本后端经仓库根目录的 zephyr/module.yml 作为 Zephyr module
 #           编入（见 zephyr/CMakeLists.txt）。顶层给出 zephyr 时只打印引导信息。
-set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host, freertos, or zephyr (zephyr builds via Zephyr module)")
-set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host freertos zephyr)
+set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host, baremetal, freertos, or zephyr (zephyr builds via Zephyr module)")
+set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host baremetal freertos zephyr)
 
 set(NANOSIG_FREERTOS_INCLUDE_DIRS "" CACHE STRING
     "FreeRTOS SDK include dirs (required when NANOSIG_PLATFORM=freertos)")
@@ -48,6 +48,14 @@ set(NANOSIG_FREERTOS_WAITSET_CAP "32" CACHE STRING
     "FreeRTOS queue-set token capacity (Sigma member capacity + max member capacity)")
 set(NANOSIG_FREERTOS_TASK_PRIORITY "1" CACHE STRING
     "FreeRTOS platform task priority")
+
+# 裸机后端可配置常量；仅 NANOSIG_PLATFORM=baremetal 时编入。
+# 裸机内建一个静态 loop，ring 存储是编译期固定大小的静态数组，故容量不可按
+# loop 定制：更小的请求按本值分配，更大的请求使 ns_loop_create 返回 NS_E_INVAL。
+set(NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES "1024" CACHE STRING
+    "Baremetal static loop MPSC ring capacity in bytes (power of two, >= 3*sizeof(size_t))")
+set(NANOSIG_BAREMETAL_POLL_MAX_ROUNDS "4" CACHE STRING
+    "Baremetal ns_loop_poll() maximum dispatch rounds per call")
 
 # broker（timer）线程的栈大小，单位字节。0 = 使用平台默认栈大小。
 # 编译期锁死：库内只有这一个对外可配的栈旋钮，注入缺失即编译失败
@@ -78,6 +86,15 @@ if(NANOSIG_PLATFORM STREQUAL "freertos")
     set(NANOSIG_PLATFORM_SOURCES
         platform/freertos/port.c
     )
+elseif(NANOSIG_PLATFORM STREQUAL "baremetal")
+    # 裸机后端是**能力子集后端**：只提供 init/shutdown/clock_monotonic_us
+    # 三个 ns_platform_* 符号；其余平台原语有意不定义（引用即链接期失败）。
+    # broker 与 hashtbl 不编入：前者依赖线程/waitset，后者在 signal+timer
+    # 路径上没有任何调用者。
+    set(NANOSIG_PLATFORM_SOURCES
+        platform/baremetal/port.c
+    )
+    set(NANOSIG_BAREMETAL 1)
 elseif(NANOSIG_PLATFORM STREQUAL "host")
     if(WIN32)
         set(NANOSIG_PLATFORM_SOURCES
@@ -108,7 +125,7 @@ elseif(NANOSIG_PLATFORM STREQUAL "zephyr")
         "顶层构建请使用 -DNANOSIG_PLATFORM=host（默认）。")
 else()
     message(FATAL_ERROR
-        "NANOSIG_PLATFORM must be 'host', 'freertos', or 'zephyr' "
+        "NANOSIG_PLATFORM must be 'host', 'baremetal', 'freertos', or 'zephyr' "
         "(got '${NANOSIG_PLATFORM}')")
 endif()
 
@@ -119,6 +136,8 @@ endif()
 # 库与消费者共用同一份类型定义。
 if(NANOSIG_PLATFORM STREQUAL "freertos")
     set(NANOSIG_PLATFORM_DIR platform/freertos)
+elseif(NANOSIG_PLATFORM STREQUAL "baremetal")
+    set(NANOSIG_PLATFORM_DIR platform/baremetal)
 elseif(WIN32)
     set(NANOSIG_PLATFORM_DIR platform/windows)
 elseif(APPLE)
@@ -127,9 +146,22 @@ else()
     set(NANOSIG_PLATFORM_DIR platform/linux)
 endif()
 
+# 裸机后端不编入 broker（依赖 thread/waitset）与 hashtbl（signal+timer 路径上
+# 没有任何调用者）。源列表是显式列表而非 glob，故此处逐项裁掉。
+if(NANOSIG_PLATFORM STREQUAL "baremetal")
+    set(NANOSIG_BROKER_SOURCES "")
+    set(NANOSIG_DS_SOURCES
+        src/ds/ns_mpsc_record_ring.c
+        src/ds/ns_rbtree.c
+        src/ds/ns_ringbuf.c
+    )
+else()
+    set(NANOSIG_BROKER_SOURCES src/ns_broker.c)
+endif()
+
 add_library(nanosig STATIC
     src/nanosig.c
-    src/ns_broker.c
+    ${NANOSIG_BROKER_SOURCES}
     src/ns_timer.c
     src/ns_formatio.c
     src/ns_debug.c
@@ -169,9 +201,20 @@ target_include_directories(nanosig PUBLIC
 
 # broker（timer）线程的栈大小：库内部旋钮，PRIVATE 注入（不外泄给消费者，
 # 也不占用公共 API 面）。PRIVATE 而非 PUBLIC，因为唯一使用者是 src/ns_broker.c。
-target_compile_definitions(nanosig PRIVATE
-    NANOSIG_BROKER_STACK_SIZE=${NANOSIG_BROKER_STACK_SIZE}
-)
+# 裸机后端不编入 ns_broker.c，故也省略该注入（否则其 #error 守卫会误报）。
+if(NOT NANOSIG_PLATFORM STREQUAL "baremetal")
+    target_compile_definitions(nanosig PRIVATE
+        NANOSIG_BROKER_STACK_SIZE=${NANOSIG_BROKER_STACK_SIZE}
+    )
+endif()
+
+if(NANOSIG_PLATFORM STREQUAL "baremetal")
+    # PUBLIC: 测试 harness 需要能读到同一份容量/轮数配置值。
+    target_compile_definitions(nanosig PUBLIC
+        NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES=${NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES}
+        NANOSIG_BAREMETAL_POLL_MAX_ROUNDS=${NANOSIG_BAREMETAL_POLL_MAX_ROUNDS}
+    )
+endif()
 
 if(NANOSIG_PLATFORM STREQUAL "freertos")
     # PUBLIC: 后端常量让契约测试能断言同一份配置值（容量与优先级）。
@@ -316,6 +359,29 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "freertos" AND NANOSIG_BUIL
     set_tests_properties(nanosig_test_freertos_broker PROPERTIES TIMEOUT 60)
 endif()
 
+if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "baremetal")
+    # 裸机契约测试：假时钟驱动，覆盖 AC4–AC9 与 AC15。
+    nanosig_add_unit_test(nanosig_test_baremetal test/baremetal/main.c)
+
+    # 负向门：watcher/broker API 在裸机后端**必须**链接不过。
+    # 放在配置期做，避免把一个注定失败的目标挂到默认构建里。
+    try_compile(NANOSIG_BAREMETAL_NEGLINK_OK
+        ${CMAKE_CURRENT_BINARY_DIR}/neg_link
+        SOURCES ${PROJECT_SOURCE_DIR}/test/baremetal/no_watcher.c
+        LINK_LIBRARIES nanosig
+        CMAKE_FLAGS
+            "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/include;${PROJECT_SOURCE_DIR}/include/nanosig;${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR};${PROJECT_BINARY_DIR}/include"
+        OUTPUT_VARIABLE NANOSIG_BAREMETAL_NEGLINK_OUT
+    )
+    if(NANOSIG_BAREMETAL_NEGLINK_OK)
+        message(FATAL_ERROR
+            "baremetal backend must NOT link ns_watcher_init: watcher/broker "
+            "APIs are out of scope and their symbols must be absent.\n"
+            "${NANOSIG_BAREMETAL_NEGLINK_OUT}")
+    endif()
+    message(STATUS "baremetal: ns_watcher_init correctly absent (link-time gate ok)")
+endif()
+
 if(NANOSIG_BUILD_DEMOS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_unit_test(nanosig_demo_same_thread demos/demo_same_thread.c)
     nanosig_add_unit_test(nanosig_demo_cross_thread demos/demo_cross_thread.c)
@@ -388,6 +454,40 @@ if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "freertos")
     add_custom_target(api-compile-checks
         DEPENDS
             nanosig_api_check_platform_contract
+    )
+endif()
+
+if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "baremetal")
+    # 裸机是能力子集后端：broker/watcher 不在范围内，故不注册 broker 契约检查
+    # （注册它等于宣称该能力存在）。其余公共头契约检查照做——它们验证的正是
+    # 「哑类型 + 成员条件编译」这套形态在 C 与 C++ TU 下都自洽。
+    nanosig_add_api_compile_check(nanosig_api_check_macro_matrix
+        test/unit/test_macro_expansion.c
+    )
+
+    nanosig_add_api_compile_check(nanosig_api_check_platform_contract
+        test/unit/test_platform_contract_compile.c
+    )
+
+    nanosig_add_api_compile_check(nanosig_api_check_data_structures
+        test/unit/test_data_structures_contract_compile.c
+    )
+
+    nanosig_add_api_compile_check(nanosig_api_check_types
+        test/unit/test_types_contract_compile.c
+    )
+
+    nanosig_add_cpp_compat_check(nanosig_api_check_cpp_compat
+        test/unit/test_cpp_compat_compile.cpp
+    )
+
+    add_custom_target(api-compile-checks
+        DEPENDS
+            nanosig_api_check_macro_matrix
+            nanosig_api_check_platform_contract
+            nanosig_api_check_data_structures
+            nanosig_api_check_types
+            nanosig_api_check_cpp_compat
     )
 endif()
 

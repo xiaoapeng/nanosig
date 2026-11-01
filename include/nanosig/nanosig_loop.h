@@ -43,7 +43,13 @@ typedef struct ns_loop_config {
      * 单条 emit 的有效载荷上限 = `queue_byte_capacity / 2` 扣除记录头与
      * `sizeof(ns_slot_call_t)` 后的余量；超出该上限的 emit 恒返回
      * `NS_E_INVAL`（非 `NS_E_QUEUE_FULL`，重试无效）。默认 1024 字节下
-     * payload 实际上限约为 480 字节。 */
+     * payload 实际上限约为 480 字节。
+     *
+     * @note **裸机后端下不是自由参数**：该后端内建一个静态
+     *       loop，ring 存储是编译期固定大小的静态数组，容量恒为
+     *       `NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES`（默认 1024）。本字段值大于该常量时
+     *       `ns_loop_create()` 返回 `NS_E_INVAL`；不大于时照常创建，但实际容量仍是
+     *       该常量，`ns_loop_t` 内记录的 config 也会被改写成实际值。 */
     ns_capacity_t queue_byte_capacity;
     /** 预留标志位，当前必须为 0。 */
     uint32_t flags;
@@ -51,7 +57,10 @@ typedef struct ns_loop_config {
     const char *debug_name;
     /** 后台线程（`ns_loop_start` 创建）的栈大小，单位**字节**。0 = 使用后端默认栈大小。
      *  实际分配的栈永远不小于请求值。超出后端可接受区间时 `ns_loop_create` 返回
-     *  `NS_E_INVAL`。注意：signal 的 slot 回调在该线程上执行，栈须能容纳回调深度。 */
+     *  `NS_E_INVAL`。注意：signal 的 slot 回调在该线程上执行，栈须能容纳回调深度。
+     *
+     * @note **裸机后端没有线程**：本字段必须为 0，非零时 `ns_loop_create()` 返回
+     *       `NS_E_INVAL`（显式拒绝，不静默忽略）。 */
     size_t stack_size;
 } ns_loop_config_t;
 
@@ -111,6 +120,10 @@ extern int ns_loop_destroy(ns_loop_t *loop);
  *
  * 本函数持续等待并分发队列中的 slot 调用，直到收到 `ns_loop_quit()` 请求。
  * 同一个 loop 不允许被两个线程同时 run（返回 `NS_E_EXISTS`）。
+ *
+ * @note **裸机后端不提供本函数**：没有 loop 线程可运行。裸机请在应用主循环里调用
+ *       后端头 `nanosig_baremetal_api.h` 中的 `ns_loop_poll()`。该构建下引用本符号
+ *       会在链接期失败。
  * 已通过 `ns_loop_start()` 启动后台线程的 loop 不可再调 `ns_loop_run()`，
  * 会返回 `NS_E_BUSY`。
  *
@@ -124,6 +137,9 @@ extern int ns_loop_run(ns_loop_t *loop);
  *
  * 可由拥有该 loop 的线程调用，也可由跨线程控制路径调用。退出请求会唤醒
  * 正在等待的 loop。
+ *
+ * @note **裸机后端不提供本函数**：没有 loop 线程可退出，也没有 wakeup 原语。
+ *       裸机的"退出"就是停止调用 `ns_loop_poll()`。
  *
  * @note 本函数可与 `ns_loop_run()` / `ns_loop_start()` 并发调用，但**不得与
  *       `ns_loop_destroy()` 并发**——销毁前须确保没有其他线程正在执行本函数
@@ -140,6 +156,8 @@ extern int ns_loop_quit(ns_loop_t *loop);
  * 创建一个新的平台线程，在新线程中调用 `ns_loop_run()`。调用方可通过
  * `ns_loop_stop()` 终止循环并等待线程退出。
  *
+ * @note **裸机后端不提供本函数**（无线程能力），`config.stack_size` 在裸机下必须为 0。
+ *
  * 同一 loop 不可重复调用 `ns_loop_start()`（返回 `NS_E_BUSY`）。
  * 已 start 的 loop 不可再调 `ns_loop_run()`（返回 `NS_E_BUSY`）。
  *
@@ -153,6 +171,8 @@ extern int ns_loop_start(ns_loop_t *loop);
  *
  * 内部调用 `ns_loop_quit()` 请求退出，然后 join 后台线程。join 完成后
  * 释放线程句柄，loop 状态恢复为可再次 `start`。
+ *
+ * @note **裸机后端不提供本函数**（无后台线程可 join）。
  *
  * @pre 本函数必须与 `ns_loop_start()` 串行化调用，不得并发。二次 stop
  *      返回 `NS_E_INVAL`。

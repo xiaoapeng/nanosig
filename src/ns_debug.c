@@ -23,11 +23,17 @@ static int dbg_level = NS_DBG_DEBUG;
 static int dbg_level = NS_CONFIG_DEFAULT_DEBUG_LEVEL;
 #endif
 
+#ifndef NANOSIG_BAREMETAL
 static ns_platform_mutex_t ns_dbg_mutex;
 static int ns_dbg_mutex_ready = 0;
+#endif
 
 int ns_debug_init(void)
 {
+#ifdef NANOSIG_BAREMETAL
+    /* 裸机单执行上下文，无锁可建。 */
+    return NS_OK;
+#else
     int rc;
 
     if (ns_dbg_mutex_ready) return NS_E_EXISTS;
@@ -35,14 +41,17 @@ int ns_debug_init(void)
     rc = ns_platform_mutex_init(&ns_dbg_mutex, "nanosig-debug");
     if (rc == NS_OK) ns_dbg_mutex_ready = 1;
     return rc;
+#endif
 }
 
 void ns_debug_shutdown(void)
 {
+#ifndef NANOSIG_BAREMETAL
     if (ns_dbg_mutex_ready) {
         (void)ns_platform_mutex_deinit(&ns_dbg_mutex);
         ns_dbg_mutex_ready = 0;
     }
+#endif
 }
 
 static const char *ns_dbg_level_str[] = {
@@ -95,13 +104,17 @@ int ns_dbg_raw(int level,
 
     if (level > dbg_level)
         return 0;
+#ifndef NANOSIG_BAREMETAL
     if (ns_dbg_mutex_ready)
         (void)ns_platform_mutex_lock(&ns_dbg_mutex);
+#endif
     va_start(args, fmt);
     n = ns_dbg_vprintf(level, flags, fmt, args);
     va_end(args);
+#ifndef NANOSIG_BAREMETAL
     if (ns_dbg_mutex_ready)
         (void)ns_platform_mutex_unlock(&ns_dbg_mutex);
+#endif
     return n;
 }
 
@@ -112,11 +125,15 @@ int ns_vdbg_raw(int level,
 
     if (level > dbg_level)
         return 0;
+#ifndef NANOSIG_BAREMETAL
     if (ns_dbg_mutex_ready)
         (void)ns_platform_mutex_lock(&ns_dbg_mutex);
+#endif
     n = ns_dbg_vprintf(level, flags, fmt, args);
+#ifndef NANOSIG_BAREMETAL
     if (ns_dbg_mutex_ready)
         (void)ns_platform_mutex_unlock(&ns_dbg_mutex);
+#endif
     return n;
 }
 
