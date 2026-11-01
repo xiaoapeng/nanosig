@@ -11,6 +11,16 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 
 设计原则：push / PR 必须快，只跑快速 + stress 套件；耗时的长稳定性用例和 TSAN 放到夜间，避免拖慢日常反馈。
 
+### 编译警告即错误
+
+所有平台默认开启 `-Werror`（MSVC 为 `/WX`），由 `cmake/CompileWarnings.cmake` 中的
+`NANOSIG_WERROR` 选项控制，默认 `ON`；Zephyr 侧通过
+`test/zephyr/prj.conf` 的 `CONFIG_COMPILER_WARNINGS_AS_ERRORS=y` 对齐。
+
+- 新增警告会直接让对应平台的 CI job 失败，**修代码，不要关开关**。
+- 本地临时绕过：`cmake --preset <preset> -DNANOSIG_WERROR=OFF`（仅限本机调试，不得进提交）。
+- 编译器升级（如 CI 的 gcc 13 → 14）可能引入全新警告，届时要跟一次修复。
+
 ## 快速 CI（`ci.yml`）
 
 五个并行 job：

@@ -101,6 +101,9 @@ cmake --build <build-dir> --target sanitize-all
 
 依赖：C11 编译器 + pthreads（Linux/macOS）；Windows 无外部依赖。
 
+所有平台默认 **`-Werror`**（警告即错误，MSVC 为 `/WX`），由 `cmake/CompileWarnings.cmake`
+的 `NANOSIG_WERROR` 控制（默认 `ON`）。本地临时绕过用 `-DNANOSIG_WERROR=OFF`，不要提交该改动。
+
 ## 项目核心结构（详细）
 
 - `include/nanosig/` — 公共 API 头文件（用户可见）
