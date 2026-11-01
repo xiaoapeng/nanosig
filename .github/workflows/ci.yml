@@ -143,3 +143,35 @@ jobs:
         run: cmake --build --preset freertos-debug-ubsan
       - name: Test (UBSAN)
         run: ctest --preset freertos-debug-ubsan -LE nightly
+
+  baremetal:
+    # 能力子集后端（只有 init/shutdown/clock_monotonic_us 三个功能符号，
+    # 其余原语不产生符号、引用即链接期失败）。无外部 SDK，host 工具链直接编
+    # platform/baremetal/port.c。三个预置串行跑而不拆 matrix：避免把必需
+    # 检查从 10 项撑到 13 项，而这三次 configure 本就共享同一份 checkout。
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset baremetal-debug
+      - name: Build
+        run: cmake --build --preset baremetal-debug
+      - name: Test
+        run: ctest --preset baremetal-debug -LE nightly
+      - name: Configure (ASAN)
+        run: cmake --preset baremetal-debug-asan
+      - name: Build (ASAN)
+        run: cmake --build --preset baremetal-debug-asan
+      - name: Test (ASAN)
+        run: ctest --preset baremetal-debug-asan -LE nightly
+      - name: Audits (ASAN)
+        run: cmake --build --preset baremetal-debug-asan --target sanitize-all
+      - name: Configure (UBSAN)
+        run: cmake --preset baremetal-debug-ubsan
+      - name: Build (UBSAN)
+        run: cmake --build --preset baremetal-debug-ubsan
+      - name: Test (UBSAN)
+        run: ctest --preset baremetal-debug-ubsan -LE nightly
+      - name: Audits (UBSAN)
+        run: cmake --build --preset baremetal-debug-ubsan --target sanitize-all

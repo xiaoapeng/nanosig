@@ -159,7 +159,10 @@ else()
     set(NANOSIG_BROKER_SOURCES src/ns_broker.c)
 endif()
 
-add_library(nanosig STATIC
+# 库源列表单独成变量：负向链接门需要把同一批源直接编进 try_compile，
+# 而不是 -lnanosig（configure 期归档尚不存在，链接一定报 "library not found"，
+# 那样的门永远"通过"却什么都没验证）。
+set(NANOSIG_LIB_SOURCES
     src/nanosig.c
     ${NANOSIG_BROKER_SOURCES}
     src/ns_timer.c
@@ -168,6 +171,8 @@ add_library(nanosig STATIC
     ${NANOSIG_PLATFORM_SOURCES}
     ${NANOSIG_DS_SOURCES}
 )
+
+add_library(nanosig STATIC ${NANOSIG_LIB_SOURCES})
 add_library(nanosig::nanosig ALIAS nanosig)
 
 # Deterministic float formatting: the %e extreme-value path derives its digits
@@ -365,10 +370,13 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "baremetal")
 
     # 负向门：watcher/broker API 在裸机后端**必须**链接不过。
     # 放在配置期做，避免把一个注定失败的目标挂到默认构建里。
+    # 把库源与负向用例一起编：configure 期还没有 libnanosig.a，
+    # 用 LINK_LIBRARIES 会退化成 "library not found"，门就成了永真摆设。
+    set(NANOSIG_NEGLINK_SOURCES ${NANOSIG_LIB_SOURCES})
+    list(TRANSFORM NANOSIG_NEGLINK_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
     try_compile(NANOSIG_BAREMETAL_NEGLINK_OK
         ${CMAKE_CURRENT_BINARY_DIR}/neg_link
-        SOURCES ${PROJECT_SOURCE_DIR}/test/baremetal/no_watcher.c
-        LINK_LIBRARIES nanosig
+        SOURCES ${NANOSIG_NEGLINK_SOURCES} ${PROJECT_SOURCE_DIR}/test/baremetal/no_watcher.c
         CMAKE_FLAGS
             "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/include;${PROJECT_SOURCE_DIR}/include/nanosig;${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR};${PROJECT_BINARY_DIR}/include"
         OUTPUT_VARIABLE NANOSIG_BAREMETAL_NEGLINK_OUT
@@ -377,6 +385,19 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "baremetal")
         message(FATAL_ERROR
             "baremetal backend must NOT link ns_watcher_init: watcher/broker "
             "APIs are out of scope and their symbols must be absent.\n"
+            "${NANOSIG_BAREMETAL_NEGLINK_OUT}")
+    endif()
+    # 反向断言：try_compile 失败也可能只是"根本没编译到链接阶段"（include 路径错、
+    # 语法错等），那样这道门什么都没验证却照样打印通过。要求输出里确实出现
+    # 未定义符号的诊断，否则视为门本身失效。
+    if(NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "ns_watcher_init"
+       AND NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "undefined reference"
+       AND NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "Undefined symbols")
+        message(FATAL_ERROR
+            "baremetal negative-link gate did not reach the linker: the try_compile "
+            "output contains no unresolved-symbol diagnostic, so 'link failure' was "
+            "caused by something else (bad include path, syntax error, ...) and the "
+            "gate verified nothing.\n"
             "${NANOSIG_BAREMETAL_NEGLINK_OUT}")
     endif()
     message(STATUS "baremetal: ns_watcher_init correctly absent (link-time gate ok)")

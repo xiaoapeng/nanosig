@@ -23,7 +23,7 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 
 ## 快速 CI（`ci.yml`）
 
-五个并行 job：
+六个并行 job：
 
 ### `linux`
 
@@ -53,13 +53,21 @@ nanosig 的持续集成分为两条流水线：快速 CI（`ci.yml`，push / PR 
 - TSAN 不覆盖：freertos harness 在 `NANOSIG_ENABLE_TSAN=ON` 下 POSIX port 挂死（无输出），故不提供 `freertos-debug-tsan` 预置；线程竞态检查由 `linux-debug-tsan` 夜间流水线承担。
 - macOS 会在 `cmake/FreeRTOSPosix.cmake` 中应用带保护的 pthread 栈补丁；Linux 使用未改动的上游 POSIX port。
 
+### `baremetal`
+
+- runner：`ubuntu-latest`（`timeout-minutes: 10`）。后端是**能力子集**：只提供 `init` / `shutdown` / `clock_monotonic_us` 三个 `ns_platform_*` 功能符号，其余原语不产生符号、引用即链接期失败。
+- 预置：`baremetal-debug`、`baremetal-debug-asan`、`baremetal-debug-ubsan`，**同一个 job 内串行**跑（不拆 matrix：三次 configure 共享 checkout，拆开只会把必需检查从 10 项撑到 13 项）。
+- 无外部 SDK：host 工具链直接编 `platform/baremetal/port.c`，ASAN/UBSAN 两套额外跑 `sanitize-all` 审计。
+- 不跑 `nightly` 标签用例（该后端没有此类用例，`-LE nightly` 仅为与其他 job 一致）。
+- 负向链接门在 **configure 期**执行：把库源与 `test/baremetal/no_watcher.c` 一起编进 `try_compile`，要求链接**失败**且输出里确实出现 `ns_watcher_init` 的未定义符号；若失败原因与符号无关（include 路径错等），也会 `FATAL_ERROR`。
+
 ### `zephyr`
 
 - runner：`ubuntu-latest`（`timeout-minutes: 30`）。Zephyr `native_sim` 是宿主架构 POSIX 板，仅在 Linux 上运行。
 - 钉版：Zephyr 3.7 LTS（tag `v3.7.0`），`west init` 后 `west update --narrow -o=--depth=1`。`native_sim` 使用宿主工具链，**不下载 Zephyr SDK**。
 - 仓库经 `EXTRA_ZEPHYR_MODULES` 作为额外 module 注入（`zephyr/module.yml`）。
 - 步骤：安装 `ninja-build` / `device-tree-compiler` / `west` / Zephyr Python requirements → `west build -b native_sim/native/64 -d build-nanosig test/zephyr` → 运行 `build-nanosig/zephyr/zephyr.exe`（ztest）。
-- 该 job 为 PR 阻塞必需检查；分支保护由 9 项更新为 **10 项**必需检查。
+- 该 job 为 PR 阻塞必需检查；分支保护由 9 项更新为 **10 项**必需检查（新增裸机 job 后为 **11 项**）。
 - 不承诺：真实 tick 精度、栈溢出停机、SMP 竞态、非 signal 类 `k_poll` 对象。
 - 可选：nightly Zephyr 运行**非规格要求**。
 
@@ -104,6 +112,10 @@ cmake --build --preset <preset>
 ctest --preset <preset> -LE nightly
 cmake --build --preset <preset> --target sanitize-all
 
+# 裸机后端（能力子集；三套预置 + 契约测试）
+cmake --preset baremetal-debug && cmake --build --preset baremetal-debug \
+  && ctest --preset baremetal-debug -LE nightly
+
 # 完整路径（与 nightly.yml 一致，需 Linux + clang/gcc）
 cmake --preset linux-debug-tsan
 cmake --build --preset linux-debug-tsan
@@ -114,7 +126,7 @@ gh workflow run nightly.yml --ref <branch>
 gh run watch
 ```
 
-预置列表（`CMakePresets.json`）：`linux-release`、`linux-debug-asan`、`linux-debug-tsan`、`linux-debug-ubsan`、`linux-coverage`、`macos-release`、`macos-debug-asan`、`macos-debug-ubsan`、`windows-release`、`windows-debug-asan`、`freertos-release`、`freertos-debug-asan`、`freertos-debug-ubsan`。
+预置列表（`CMakePresets.json`）：`linux-release`、`linux-debug-asan`、`linux-debug-tsan`、`linux-debug-ubsan`、`linux-coverage`、`macos-release`、`macos-debug-asan`、`macos-debug-ubsan`、`windows-release`、`windows-debug-asan`、`freertos-release`、`freertos-debug-asan`、`freertos-debug-ubsan`、`baremetal-debug`、`baremetal-debug-asan`、`baremetal-debug-ubsan`。
 
 ## 已知限制
 

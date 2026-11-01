@@ -134,12 +134,14 @@ typedef struct ns_baremetal_thread_stub {
 /**
  * @brief 跨 TU 平台错配的链接期探针。
  *
- * 符号定义在 `platform/baremetal/port.c`。命名刻意**不**带 `ns_platform_` 前缀，
- * 以便「裸机归档恰好定义三个 `ns_platform_*` 符号」这一断言保持精确。
+ * 符号定义在 `platform/baremetal/port.c`，命名与其余后端一致
+ * （`ns_platform_abi_host` / `_freertos` / `_zephyr` / `_baremetal`）。
+ * 它是 `const int`，落只读/小数据段（ELF 为 R、Mach-O 为 S），因此不参与
+ * 「裸机归档恰好定义三个 `ns_platform_*` 功能符号」的 `nm -g --defined-only` + `T` 段断言。
  */
-extern const int ns_nanosig_abi_baremetal;
+extern const int ns_platform_abi_baremetal;
 
-#define NS_PLATFORM_ABI_PROBE ns_nanosig_abi_baremetal
+#define NS_PLATFORM_ABI_PROBE ns_platform_abi_baremetal
 
 /* ================================================================== */
 /*  时钟注入                                                            */

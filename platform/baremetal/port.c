@@ -32,7 +32,10 @@ void ns_baremetal_set_now_us(ns_baremetal_now_us_fn fn)
 /*  ABI 探针                                                            */
 /* ------------------------------------------------------------------ */
 
-const int ns_nanosig_abi_baremetal = 0;
+/* 裸机后端 ABI 探针符号。与其余四个后端统一为 ns_platform_abi_<backend>
+   命名（host / freertos / zephyr / baremetal）。它是 const int，落只读/小数据段
+   （ELF 为 R、Mach-O 为 S），不计入「恰好三个 ns_platform_* 功能符号」的 nm T 段断言。 */
+const int ns_platform_abi_baremetal = 0;
 
 /* ------------------------------------------------------------------ */
 /*  生命周期                                                            */
