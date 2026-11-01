@@ -13,6 +13,8 @@ This directory holds the public design documentation for the PD closeout and imp
 | `specs/需求访谈.md` | 中文需求访谈收口文档，记录目标、约束、验收标准和最终修订。 |
 | `plans/子计划-信号槽定时器代理测试方案.md` | 共识评审后的信号槽/Timer/Broker 全量测试实施计划。 |
 | `specs/深度访谈-信号槽定时器代理测试规格.md` | 深度访谈输出的信号槽/Timer/Broker 测试规格文档。 |
+| `plans/子计划-裸机后端接入.md` | 裸机（no-OS）后端实施计划：能力子集、静态 loop 单例、AC1–AC15 验收判据。 |
+| `specs/深度访谈-裸机后端接入规格.md` | 裸机后端的深度访谈规格（目标、约束、验收标准的定义来源）。 |
 | `API_DESIGN.md` | Public API draft, usage examples, lifecycle rules, and PD review notes. |
 | `DATA_STRUCTURES.md` | Public opaque type list and internal structure design draft for later phases. |
 | `EVENTHUB_OS_STYLE.md` | Recorded eventhub_os code/comment style and nanosig adaptation rules. |

@@ -572,12 +572,15 @@ harness，用**假时钟**（注入的 `ns_baremetal_set_now_us` 递增计数器
 - **第 1 / 3 / 4 / 6 / 7 项不变**；分叉判定宏只能在该后端的平台头定义，`src/` 与
   `include/nanosig/` 中不得出现 OS 身份宏或第二套裸机宏。
 
-清单仍是 7 项。裸机后端的逐项落点（这张表本身也是“7 项 ↔ 验收判据”的对照物）：
+清单仍是 7 项。裸机后端的逐项落点见下表（这张表本身也是“7 项 ↔ 验收判据”的对照物）。
+AC1–AC15 的完整定义保存在 docs/specs/深度访谈-裸机后端接入规格.md 与
+docs/plans/子计划-裸机后端接入.md，本表只引用编号。
+
 
 | 清单项 | 裸机后端的落地方式 | 对应验收 |
 |---|---|---|
 | 1 平台类型头 | `platform/baremetal/nanosig_platform_port.h`：`ns_waitable_handle_t` + `ns_waitable_handle_is_valid` + `NS_PLATFORM_ABI_PROBE` + 4 个哑类型，并定义唯一判定宏 `NANOSIG_BAREMETAL`；不定义 `ns_platform_event_t` | AC11、AC2 |
-| 2 实现文件（替代） | `port.c` 只定义 `init` / `shutdown` / `clock_monotonic_us` 三个 `ns_platform_*` 符号（另有一个 ABI 探针对象）；其余六组原语（alloc/free、mutex、wakeup、event、waitset、thread）不产生符号 | AC2、AC3 |
+| 2 实现文件（替代） | `port.c` 只定义 `init` / `shutdown` / `clock_monotonic_us` 三个 `ns_platform_*` 功能符号，外加与其余后端同名的 `ns_platform_abi_baremetal` 探针（`const int`，落 R 段，不计入功能符号断言）；其余六组原语（alloc/free、mutex、wakeup、event、waitset、thread）不产生符号 | AC2、AC3 |
 | 3 CMake 注册 | 顶层 `CMakeLists.txt` 的 sources 链与 dir 链都加 `baremetal` 分支；源列表剔除 `src/ns_broker.c` 与 `src/ds/ns_hashtbl.c`；不注入 `NANOSIG_BROKER_STACK_SIZE`；新增 `NANOSIG_BAREMETAL_*` cache 变量 | AC1 |
 | 4 编译检查 | `cmake --build` 零警告；裸机 preset 额外带 `-Werror`，并注册带 `platform/baremetal` include 路径的 `-fsyntax-only` 平台契约检查 | AC1 |
 | 5 平台契约测试（替代） | host harness（假时钟、空临界区）+ `ctest -R nanosig_test_baremetal`；未支持能力以期望链接失败覆盖 | AC12、AC13 |
