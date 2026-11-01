@@ -910,8 +910,6 @@ static int test_waitset_events_zero(void)
 {
     ns_platform_waitset_t ws;
     ns_platform_waitable_t w;
-    ns_platform_waitset_completion_t cc[4];
-    size_t cnt = 0u;
     int rc;
 
     EXPECT_OK(ns_platform_waitset_init(&ws) == NS_OK);
@@ -923,6 +921,8 @@ static int test_waitset_events_zero(void)
     if(rc != NS_E_INVAL) return 1;
     if(w.registered_waitset != NULL) return 1;
 #else
+    ns_platform_waitset_completion_t cc[4];
+    size_t cnt = 0u;
     EXPECT_OK(rc == NS_OK);
 
     test_signal_raw_waitable(w);

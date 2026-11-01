@@ -284,6 +284,8 @@ typedef struct pipe_handler_ctx {
     size_t bytes_read;
 } pipe_handler_ctx_t;
 
+/* 使用它的用例在 Windows 上整体跳过；不加守卫会被 -Werror 判为未使用。 */
+#if !defined(_WIN32)
 static pipe_handler_ctx_t *g_pipe_ctx;
 
 static void pipe_handler(ns_watcher_t *w, uint32_t triggered_events)
@@ -305,6 +307,7 @@ static void pipe_handler(ns_watcher_t *w, uint32_t triggered_events)
 #endif
     ns_atomic_store_explicit(&g_pipe_ctx->handler_called, 1, ns_memory_order_release);
 }
+#endif /* !_WIN32 */
 
 static int test_handler_pipe_level_triggered(void)
 {

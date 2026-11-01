@@ -206,6 +206,9 @@ static int test_watcher_event_out_err(void)
 /*  with triggered_events containing EVENT_OUT.                        */
 /* ------------------------------------------------------------------ */
 
+/* 下面这组只在 posix 分支的用例里用到；Windows 上对应用例整体 return 0，
+   不随 -Werror 留下未使用的静态函数。 */
+#if !defined(_WIN32)
 static atomic_int g_out_event_handler_called;
 static atomic_uint g_out_event_triggered;
 
@@ -215,6 +218,7 @@ static void handler_out_event(ns_watcher_t *w, uint32_t triggered_events)
     ns_atomic_store_explicit(&g_out_event_triggered, triggered_events, ns_memory_order_release);
     ns_atomic_store_explicit(&g_out_event_handler_called, 1, ns_memory_order_release);
 }
+#endif /* !_WIN32 */
 
 static int test_watcher_out_event_delivery(void)
 {

@@ -458,7 +458,9 @@ int ns_platform_waitset_wait(
 
     if(result == WAIT_TIMEOUT) return NS_OK;
 
-    if(result >= WAIT_OBJECT_0 && result < WAIT_OBJECT_0 + handle_count){
+    /* WAIT_OBJECT_0 为 0，DWORD 的 `result >= WAIT_OBJECT_0` 恒真（-Wtype-limits），
+       只保留上界判断。超时已在上面单独处理，失败码均大于 WAIT_OBJECT_0 + count。 */
+    if(result < WAIT_OBJECT_0 + handle_count){
         i = result - WAIT_OBJECT_0;
 
         /* timer fired → timeout，不报告 completion */
