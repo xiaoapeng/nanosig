@@ -947,7 +947,11 @@ static int test_array_q(void)
     static const unsigned int arr_u32[4] = { 0x11223344u, 0x55667788u, 0x99AABBCCu, 0xDDEEFF11u };
     static const unsigned short arr_u16[4] = { 0x0102u, 0x0304u, 0x0506u, 0x0708u };
     static const unsigned char arr_u8[4] = { 0x01u, 0x02u, 0x03u, 0x04u };
-    static const unsigned long arr_ul[2] = { 0x0102030405060708ul, 0x1112131415161718ul };
+    /* 显式窄化：LLP64（Windows）上 unsigned long 只有 4 字节，不做强转会触发
+       -Woverflow；测试按 sizeof(unsigned long) 分支断言，宽窄两种平台都有覆盖。 */
+    static const unsigned long arr_ul[2] = {
+        (unsigned long)0x0102030405060708ull, (unsigned long)0x1112131415161718ull
+    };
     static const unsigned long long arr_ull[2] = {
         0x0102030405060708ull, 0x1112131415161718ull
     };

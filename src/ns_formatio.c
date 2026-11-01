@@ -703,14 +703,26 @@ static inline int vprintf_float_f_or_g(struct ns_stream_base *stream, double num
         field_width, precision, flags, 0);
 }
 
+static inline int vprintf_float_is_nan(double num)
+{
+    return num != num;
+}
+
+/* math.h 的 isinf/isnan 在 MinGW-w64 上展开为 fpclassify，会对 double 实参做
+   float 转换而触发 -Wfloat-conversion；这里用纯比较实现，跨编译器一致。 */
+static inline int vprintf_float_is_inf(double num)
+{
+    return (num > DBL_MAX) || (num < -DBL_MAX);
+}
+
 static int vprintf_float(struct ns_stream_base *stream, double num,
     int field_width, int precision, unsigned int flags)
 {
     int n = 0;
 
-    if (isinf(num) || isnan(num)) {
+    if (vprintf_float_is_inf(num) || vprintf_float_is_nan(num)) {
         char *out_str = NULL;
-        if (isinf(num)) {
+        if (vprintf_float_is_inf(num)) {
             if (num < 0) {
                 out_str = flags & FORMAT_LARGE ? "-INF" : "-inf";
             } else {
@@ -722,7 +734,7 @@ static int vprintf_float(struct ns_stream_base *stream, double num,
                     out_str = flags & FORMAT_LARGE ? "INF" : "inf";
                 }
             }
-        } else if (isnan(num)) {
+        } else if (vprintf_float_is_nan(num)) {
             out_str = flags & FORMAT_LARGE ? "NAN" : "nan";
         }
         n += vprintf_string(stream, out_str, field_width, -1, flags);
