@@ -188,6 +188,17 @@ entries:
       - "src/nanosig.c:464"
       - "src/nanosig.c:343"
       - "src/nanosig.c:346"
+  - id: "CORE-021"
+    module: "nanosig-core"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/nanosig-core-code-review.md#CORE-021"
+    locations:
+      - "include/nanosig/nanosig_signal.h:230"
+      - "include/nanosig/nanosig_types.h:73"
+      - "include/nanosig/nanosig_signal.h:198"
 ---
 
 # Nanosig Core 代码审查报告
@@ -206,6 +217,45 @@ entries:
 - **CORE-019（2026-10-24）**: 新增 test/unit/test_cpp_compat_runtime.cpp（带 main 的运行时测试，逐字段断言 C++ 分支默认值并验证默认配置能被 ns_loop_create 接受）；api-checks 的 C++ 检查加 -Werror=missing-field-initializers 抓漏写字段；删除原先永不执行的 std::abort() 死代码 — commit `59577e7`
 
 ## 现在打开的问题
+
+<a id="CORE-021"></a>
+### CORE-021: slot 签名检查手写公共断言宏已有的机制
+
+- **状态**: 打开
+- **严重度**: 🟢 较低（前提：按当前仓库实现与公开契约静态走查；仅维护性重复，未发现由重复本身导致的功能故障）
+- **首次发现日期**: 2026-11-06
+- **类型**: cleanup
+
+#### 问题描述
+
+NS_SLOT_TYPECHECK 手写负数组长度编译期断言，重复 nanosig_types.h 的 NS_STATIC_ASSERT_EXPR。相邻 payload 对齐检查已经复用公共断言。
+
+#### review 建议
+
+保留当前 C11 条件编译、_Generic 签名条件和 fallback，仅用 NS_STATIC_ASSERT_EXPR 包住条件。不替换为 ns_same_type，以免改变编译器覆盖范围。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+对比 NS_SLOT_TYPECHECK 与 NS_STATIC_ASSERT_EXPR 的展开，两者都使用 ((void)sizeof(char[条件 ? 1 : -1]))。错误签名当前仍会被拒绝，本项只收口重复机制。
+
+#### 影响面
+
+直接上层为 ns_signal_connect_typed，影响所有 typed connect 的编译检查。test/unit/test_macro_expansion.c:56 和 :146 有合法函数/指针及非法签名编译路径；本轮未运行。下级仅公共断言宏，无运行时调用。
+
+#### 文档仲裁与历史去重
+
+已核对 core 当前/历史；CORE-015 是 payload 对齐契约，与本项签名断言复用不同。公共工具宏优先复用规则明确支持本建议。
+
+#### 定位
+include/nanosig/nanosig_signal.h:230
+include/nanosig/nanosig_types.h:73
+include/nanosig/nanosig_signal.h:198
+
+---
 
 ## 现在关闭的问题
 

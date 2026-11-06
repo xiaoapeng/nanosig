@@ -251,6 +251,38 @@ static int test_vdbg_raw_via_helper(void)
     return 0;
 }
 
+static int test_debug_entry_equivalence(void)
+{
+    static const char expected[] = "[ ERR] entry 42 works\n";
+    int raw_count;
+    int va_count;
+
+    EXPECT_OK(ns_init() == NS_OK);
+    ns_dbg_set_level(NS_DBG_DEBUG);
+
+    output_reset();
+    raw_count = ns_dbg_raw(NS_DBG_ERR, NS_DBG_FLAGS_DEBUG_TAG,
+        "entry %d %s\n", 42, "works");
+    EXPECT_EQ(raw_count, (int)(sizeof(expected) - 1u));
+    EXPECT_OK(strcmp(g_output, expected) == 0);
+
+    output_reset();
+    va_count = ns_vdbg_printf("entry %d %s\n", 42, "works");
+    EXPECT_EQ(va_count, raw_count);
+    EXPECT_OK(strcmp(g_output, expected) == 0);
+
+    ns_dbg_set_level(NS_DBG_SUPPRESS);
+    output_reset();
+    EXPECT_EQ(ns_dbg_raw(NS_DBG_ERR, NS_DBG_FLAGS_DEBUG_TAG,
+        "entry %d %s\n", 42, "works"), 0);
+    EXPECT_EQ(ns_vdbg_printf("entry %d %s\n", 42, "works"), 0);
+    EXPECT_EQ(g_output_len, 0u);
+
+    ns_dbg_set_level(NS_DBG_DEBUG);
+    EXPECT_OK(ns_shutdown() == NS_OK);
+    return 0;
+}
+
 /* ================================================================== */
 /*  Tests — Return value                                                */
 /* ================================================================== */
@@ -759,6 +791,7 @@ int main(void)
 
     /* ===== ns_vdbg_raw ===== */
     if(test_vdbg_raw_via_helper() != 0) return 1;
+    if(test_debug_entry_equivalence() != 0) return 1;
 
     /* ===== Return value ===== */
     if(test_dbg_raw_return_value() != 0) return 1;
