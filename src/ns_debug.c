@@ -99,22 +99,12 @@ static int ns_dbg_vprintf(int level,
 int ns_dbg_raw(int level,
     unsigned int flags, const char *fmt, ...)
 {
-    int n = 0;
+    int n;
     va_list args;
 
-    if (level > dbg_level)
-        return 0;
-#ifndef NANOSIG_BAREMETAL
-    if (ns_dbg_mutex_ready)
-        (void)ns_platform_mutex_lock(&ns_dbg_mutex);
-#endif
     va_start(args, fmt);
-    n = ns_dbg_vprintf(level, flags, fmt, args);
+    n = ns_vdbg_raw(level, flags, fmt, args);
     va_end(args);
-#ifndef NANOSIG_BAREMETAL
-    if (ns_dbg_mutex_ready)
-        (void)ns_platform_mutex_unlock(&ns_dbg_mutex);
-#endif
     return n;
 }
 

@@ -86,6 +86,18 @@ entries:
       - "src/ns_timer.c:323"
       - "src/ns_timer.c:337"
       - "src/ns_timer.c:357"
+  - id: "TIMER-022"
+    module: "timer"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/timer-code-review.md#TIMER-022"
+    locations:
+      - "src/ns_timer.c:141"
+      - "src/ns_timer.c:440"
+      - "src/ns_timer.c:444"
+      - "include/nanosig/nanosig_timer.h:117"
 ---
 
 # Timer 代码审查报告
@@ -130,6 +142,46 @@ entries:
 - **TIMER-021（2026-11-06）**: init 和 start/restart 共用校验拒绝零值及大于 INT64_MAX 的间隔；补充公共范围约定和边界回归测试。 — commit `fix/timer-021-interval-bound`
 
 ## 现在打开的问题
+
+<a id="TIMER-022"></a>
+### TIMER-022: restart 重复已有 start_locked 的重新装载逻辑
+
+- **状态**: 打开
+- **严重度**: 🟢 较低（前提：按当前仓库实现与公开契约静态走查；仅维护性重复，未发现由重复本身导致的功能故障）
+- **首次发现日期**: 2026-11-06
+- **类型**: cleanup
+
+#### 问题描述
+
+restart 移除旧节点后，又手写一次读时钟、计算截止时间、插入树和判断最早节点。ns_timer_start_locked 已封装这一流程，可直接复用。
+
+#### review 建议
+
+保留 restart 的入口校验、加锁和旧节点删除，将后续 refresh/add/became_first 块替换为 ns_timer_start_locked(timer, &became_first)。保留原来的解锁和 notify 条件；不要调用公开 ns_timer_start，以免重复加锁。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+分别对未启动 timer 和已启动 timer 调用 restart。后一种状态先由 ns_rbtree_del 重置节点，随后两种状态都满足 start_locked 的未运行前提；当前重复执行同一装载流程。无功能故障主张。
+
+#### 影响面
+
+公开 ns_timer_restart 及调用者；ns_timer_start 继续使用现有 helper。下级 clock、rbtree_add 及 notify 不变。test/unit/test_timer.c:85、:327、:389、:479 覆盖启动/重启/最早节点行为；本轮未运行。
+
+#### 文档仲裁与历史去重
+
+TIMER-019 拒绝的是返回值未检查的错误诊断；本项不改变返回值处理或 fire_expired 的独立批量语义。TIMER-006 的先删除再读时钟失败后停止约定也保持不变。
+
+#### 定位
+src/ns_timer.c:141
+src/ns_timer.c:440
+src/ns_timer.c:444
+include/nanosig/nanosig_timer.h:117
+
+---
 
 ## 现在关闭的问题
 

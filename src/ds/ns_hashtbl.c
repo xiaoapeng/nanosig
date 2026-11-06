@@ -161,17 +161,11 @@ struct ns_hashtbl_node *ns_hashtbl_node_new_refresh(
     struct ns_hashtbl_node *node;
 
     (void)hashtbl;
-    node = (struct ns_hashtbl_node *)ns_platform_alloc(
-        sizeof(struct ns_hashtbl_node) +
-        ns_align_up(key_len, NS_HASHTBL_KV_ALIGN) +
-        ns_align_up(value_len, NS_HASHTBL_KV_ALIGN));
+    node = ns_hashtbl_node_new(key_len, value_len);
     if(node == NULL)
         return NULL;
     memcpy(node->kv, key, key_len);
-    node->value_len = value_len;
-    node->key_len = key_len;
     node->hash_val = ns_hash_val(key, key_len);
-    ns_list_init(&node->node);
     return node;
 }
 
@@ -187,17 +181,11 @@ struct ns_hashtbl_node *ns_hashtbl_node_new_with_string_refresh(
     hash_val = ns_hash_str_val(key, &key_len);
 
     (void)hashtbl;
-    node = (struct ns_hashtbl_node *)ns_platform_alloc(
-        sizeof(struct ns_hashtbl_node) +
-        ns_align_up(key_len, NS_HASHTBL_KV_ALIGN) +
-        ns_align_up(value_len, NS_HASHTBL_KV_ALIGN));
+    node = ns_hashtbl_node_new(key_len, value_len);
     if(node == NULL)
         return NULL;
     memcpy(node->kv, key, key_len);
-    node->value_len = value_len;
-    node->key_len = key_len;
     node->hash_val = hash_val;
-    ns_list_init(&node->node);
     return node;
 }
 
@@ -210,22 +198,15 @@ struct ns_hashtbl_node *ns_hashtbl_node_renew(
     (void)hashtbl;
     if(old_node->value_len == value_len)
         return old_node;
-    node = (struct ns_hashtbl_node *)ns_platform_alloc(
-        sizeof(struct ns_hashtbl_node) +
-        ns_align_up(old_node->key_len, NS_HASHTBL_KV_ALIGN) +
-        ns_align_up(value_len, NS_HASHTBL_KV_ALIGN));
+    node = ns_hashtbl_node_new(old_node->key_len, value_len);
     if(node == NULL)
         return NULL;
-    node->value_len = value_len;
-    node->key_len = old_node->key_len;
     node->hash_val = old_node->hash_val;
     memcpy(node->kv, old_node->kv, old_node->key_len);
     /* 检查旧节点是否挂在哈希表上 */
     if(!ns_list_empty(&old_node->node)){
         ns_list_push_front(&old_node->node, &node->node);
         ns_list_remove(&old_node->node);
-    }else{
-        ns_list_init(&node->node);
     }
     ns_platform_free(old_node);
     return node;

@@ -102,6 +102,26 @@ entries:
       - "src/ds/ns_mpsc_record_ring.c:414"
       - "src/ds/ns_mpsc_record_ring.c:421"
       - "src/ds/ns_mpsc_record_ring.c:458"
+  - id: "GLOBAL-012"
+    module: "global-review"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/global-review.md#GLOBAL-012"
+    locations:
+      - "cmake/scripts/audit_runner.sh:46"
+      - "cmake/SanitizeAll.cmake:21"
+  - id: "GLOBAL-013"
+    module: "global-review"
+    status: "open"
+    severity: "low"
+    type: "cleanup"
+    section: "open"
+    location: "docs/review/global-review.md#GLOBAL-013"
+    locations:
+      - "cmake/CompileWarnings.cmake:3"
+      - "cmake/CompileWarnings.cmake:30"
 ---
 
 # 全局视角 Review（跨模块问题）
@@ -202,6 +222,85 @@ entries:
 - **GLOBAL-011（2026-11-06）**: 纠正 MPSC 预留位置、payload 提交及槽位回收的同步说明。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
 
 ## 现在打开的问题
+
+<a id="GLOBAL-012"></a>
+### GLOBAL-012: 审计脚本手列 API 检查目标，未复用 CMake 聚合目标
+
+- **状态**: 打开
+- **严重度**: 🟢 较低（前提：按当前仓库实现与公开契约静态走查；仅维护性重复，未发现由重复本身导致的功能故障）
+- **首次发现日期**: 2026-11-06
+- **类型**: cleanup
+
+#### 问题描述
+
+audit_runner 再维护一份 API target 列表，并解析 Makefile/build.ninja 决定执行哪些检查。顶层已有按平台配置的 api-compile-checks 目标，脚本重复了构建系统负责的目标选择。
+
+#### review 建议
+
+保留 NANOSIG_BUILD_API_CHECKS=OFF 的跳过分支；启用时直接执行 cmake --build 指定目录 --target api-compile-checks。删除手写列表、生成文件 grep 与目标拼接，不新增探测层。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+新增一个 API 检查并加入顶层 api-compile-checks 后，脚本仍只遍历固定六项，不自动包含新增检查。此处按重复配置的 cleanup 记录，未运行各生成器复现，不声称当前全部检查均遗漏。
+
+#### 影响面
+
+cmake/SanitizeAll.cmake:21 通过自定义目标调用 audit_runner，影响启用 sanitizer 的审计。CMakeLists 为 host、FreeRTOS、裸机分别定义聚合目标，NANOSIG_BUILD_API_CHECKS=OFF 时继续跳过。未改测试/demos 源码，也未执行 sanitizer。
+
+#### 文档仲裁与历史去重
+
+已核对 global 当前与归档，没有同根记录。本项涉及顶层构建定义与审计入口的重复配置，归全局文档。
+
+#### 定位
+cmake/scripts/audit_runner.sh:46
+CMakeLists.txt:456
+CMakeLists.txt:477
+CMakeLists.txt:507
+cmake/SanitizeAll.cmake:21
+
+<a id="GLOBAL-013"></a>
+### GLOBAL-013: 未使用的 interface warning 函数重复整套警告配置
+
+- **状态**: 打开
+- **严重度**: 🟢 较低（前提：按当前仓库实现与公开契约静态走查；仅维护性重复，未发现由重复本身导致的功能故障）
+- **首次发现日期**: 2026-11-06
+- **类型**: cleanup
+
+#### 问题描述
+
+nanosig_apply_interface_warnings 无仓库调用者，却复制 private 版本的全部编译器分支和警告选项。维护警告策略时因此多保留了一份未被构建路径使用的实现。
+
+#### review 建议
+
+删除未使用的 nanosig_apply_interface_warnings，保留实际使用的 private 版本。无需为没有调用者的能力新增 scope 参数或公共转发层。
+
+#### 作者建议
+
+（待作者补充）
+
+#### 可重现的失败场景
+
+搜索整个仓库构建代码，interface helper 只出现定义；对比两个函数，除了 INTERFACE/PRIVATE 可见性，警告选项和条件分支相同。无功能失败主张。
+
+#### 影响面
+
+无调用者（内部构建函数）。现有 library/test target 使用 private helper；不改变它们的编译选项。未运行配置或构建。若外部项目直接 include 此内部 cmake 文件并调用未文档化函数，删除会影响该用法。
+
+#### 文档仲裁与历史去重
+
+已核对 global 当前/历史及 cmake 指引，未找到保留该无调用者函数的合同。本项是构建公共配置清理，不涉及源码 API。
+
+#### 定位
+cmake/CompileWarnings.cmake:3
+cmake/CompileWarnings.cmake:30
+
+---
+
+---
 
 ## 现在关闭的问题
 

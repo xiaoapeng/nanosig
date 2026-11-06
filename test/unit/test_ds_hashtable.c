@@ -655,6 +655,41 @@ static int test_node_key_refresh_renew(void)
     return 0;
 }
 
+/* 脱链节点重建后仍可插入，非对齐长度的键和值保持各自存储边界。 */
+static int test_node_renew_detached(void)
+{
+    ns_hashtbl_t tbl;
+    struct ns_hashtbl_node *node, *renewed, *out = NULL;
+    const unsigned char key[] = { 1u, 0u, 2u };
+    int rc = 1;
+
+    tbl = ns_hashtbl_create(NS_HASHTBL_DEFAULT_LOADFACTOR);
+    if(tbl == NULL) return 1;
+    node = ns_hashtbl_node_new_refresh(tbl, key, sizeof(key), 1);
+    if(node == NULL) goto out_table;
+    *(unsigned char *)ns_hashtbl_node_value(node) = 42u;
+    if(ns_hashtbl_node_renew(tbl, node, 1) != node) goto out_node;
+    if(*(unsigned char *)ns_hashtbl_node_value(node) != 42u) goto out_node;
+
+    renewed = ns_hashtbl_node_renew(tbl, node, 9);
+    if(renewed == NULL) goto out_node;
+    node = renewed;
+    if(ns_hashtbl_node_is_insert(node)) goto out_node;
+    if(ns_hashtbl_node_key_len(node) != sizeof(key)) goto out_node;
+    if(ns_hashtbl_node_value_len(node) != 9) goto out_node;
+    if(memcmp(ns_hashtbl_node_const_key(node), key, sizeof(key)) != 0) goto out_node;
+    memset(ns_hashtbl_node_value(node), 0xA5, 9);
+    if(ns_hashtbl_insert(tbl, node) != NS_OK) goto out_node;
+    if(ns_hashtbl_find(tbl, key, sizeof(key), &out) != NS_OK || out != node) goto out_node;
+    rc = 0;
+
+out_node:
+    ns_hashtbl_node_delete(tbl, node);
+out_table:
+    ns_hashtbl_destroy(tbl);
+    return rc;
+}
+
 /* 错误路径：同一节点二次 insert → NS_E_EXISTS；不同节点相同键允许共存 */
 /* key_refresh 的目标桶处于"待重建"状态（table[idx].next == NULL）时必须先 try_remake：
    否则 push_front 会沿 NULL 链接写内存 */
@@ -830,6 +865,7 @@ int main(void)
     if(test_for_each_with_string_safe() != 0) return 1;
     if(test_for_each_with_key_safe() != 0) return 1;
     if(test_node_key_refresh_renew() != 0) return 1;
+    if(test_node_renew_detached() != 0) return 1;
     if(test_node_key_refresh_need_remake_bucket() != 0) return 1;
     if(test_error_path_exists() != 0) return 1;
     if(test_find_with_string_null_out() != 0) return 1;

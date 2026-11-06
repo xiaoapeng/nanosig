@@ -179,6 +179,19 @@ entries:
     location: "docs/review/hashtable-code-review.md#HASHTABLE-005"
     locations:
       - "include/nanosig/nanosig_hashtbl.h:90"
+  - id: "HASHTBL-109"
+    module: "hashtable"
+    status: "closed-fixed"
+    severity: "low"
+    type: "cleanup"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/hashtable-code-review.md#HASHTBL-109"
+    locations:
+      - "src/ds/ns_hashtbl.c:140"
+      - "src/ds/ns_hashtbl.c:164"
+      - "src/ds/ns_hashtbl.c:184"
+      - "src/ds/ns_hashtbl.c:201"
 ---
 
 # Hashtable 代码审查报告
@@ -265,6 +278,8 @@ entries:
 - **HASHTBL-108（2026-10-24）**: resize 入口拒绝 mask >= 2^31-1，避免 new_mask+1 回绕后 34 GB 越界写；上限时 insert 返回 NS_E_NOMEM，并补 test_resize_upper_bound — commit `f2f64b2`
 
 - **HASHTBL-107（2026-10-24）**: 头文件 include 注释改为 strlen/memcmp — commit `f2f64b2`
+
+- **HASHTBL-109（2026-11-06）**: 三个节点工厂复用 ns_hashtbl_node_new；保留字符串单次扫描、同尺寸早退和 linked/detached renew 语义。新增 detached renew 回归在修改前后通过；临时 allocator stub 在修改前后通过 ASAN+UBSAN，覆盖分配失败旧节点保留、同尺寸零分配及释放计数。macOS release 53/53、ASAN/UBSAN 定向各2/2、两套 sanitize-all 通过。Clang 静态分析仅有修改前同样存在的 mask_tmp dead-store 告警。未运行 Linux/Windows。 — commit `refactor/ponytail-hashtable-debug（工作区，未提交）`
 
 
 ## 现在打开的问题
@@ -759,6 +774,49 @@ include/nanosig/nanosig_hashtbl.h:22
 #### 定位
 include/nanosig/nanosig_hashtbl.h:60
 include/nanosig/nanosig_hashtbl.h:62
+
+---
+
+<a id="HASHTBL-109"></a>
+### HASHTBL-109: 节点工厂重复现有 node_new 的分配和初始化
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：按当前仓库实现与公开契约静态走查；仅维护性重复，未发现由重复本身导致的功能故障）
+- **首次发现日期**: 2026-11-06
+- **类型**: cleanup
+- **关闭原因**: 修复 commit refactor/ponytail-hashtable-debug（工作区，未提交）
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+三个节点工厂重复维护分配尺寸、失败检查和 key_len/value_len 初始化。现有 ns_hashtbl_node_new 已提供相同的基础构造，修改节点布局时目前需要同步四份实现。
+
+#### review 建议
+
+new_refresh、new_with_string_refresh、renew 调用 ns_hashtbl_node_new。保留各自 key 拷贝与 hash 赋值；字符串版保留 ns_hash_str_val 的一次扫描。renew 保留同尺寸早退、分配失败不动旧节点及已链接节点替换，去掉重复的 detached 节点初始化。不新增 helper。
+
+#### 作者建议
+
+作者于 2026-11-06 同意先处理哈希表与日志两项。清理计划：先验证现有节点工厂、已链接/未链接 renew、分配失败回归；缺少覆盖时先补测试，再让三个工厂复用 ns_hashtbl_node_new。保留字符串单次扫描、分配失败旧节点不变、同尺寸早退和已链接节点替换。完成针对性与 sanitizer 验证；改动留工作区，不提交。
+
+#### 可重现的失败场景
+
+静态对比 node_new 与其后三个工厂：同一 sizeof + 两次 ns_align_up 的分配表达式重复四次。无运行时错误主张；复现的是同一布局规则的多处维护。
+
+#### 影响面
+
+三个公开工厂接口及其外部调用者。下级为 ns_platform_alloc、ns_list_init、hash 和 memcpy；现有 test/unit/test_ds_hashtable.c 的 test_node_factory 和 renew 用例覆盖这些路径，本轮未运行。
+
+#### 文档仲裁与历史去重
+
+已核对 hashtable 当前和归档记录；HASHTBL-104 是 key_refresh 的 remake 问题，与本项基础构造复用不同。未要求修改公开 API 或内存所有权。
+
+#### 定位
+
+src/ds/ns_hashtbl.c:140
+src/ds/ns_hashtbl.c:164
+src/ds/ns_hashtbl.c:184
+src/ds/ns_hashtbl.c:201
 
 ---
 
