@@ -210,6 +210,20 @@ entries:
     location: "docs/review/formatio-code-review.md#FORMATIO-030"
     locations:
       - "src/ns_formatio.c:773"
+  - id: "FORMATIO-031"
+    module: "formatio"
+    status: "closed-fixed"
+    severity: "low"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/formatio-code-review.md#FORMATIO-031"
+    locations:
+      - "src/ns_formatio.c:1011"
+      - "src/ns_formatio.c:983"
+      - "src/ns_formatio.c:915"
+      - "src/ns_formatio.c:600"
+      - "include/nanosig/ns_formatio.h:68"
 ---
 
 # Formatio 模块 Code Review
@@ -260,6 +274,8 @@ entries:
 - **FORMATIO-030（2026-10-24）**: %q/%Q 精度改为元素个数：array_len = precision，删除 ?? 半截元素分支；ns_formatio.h 文档化元素宽度映射；test_array_q 按元素语义重写 — commit `65eab91`
 
 - **FORMATIO-027（2026-10-24）**: skip_atoi 每步钳制到 FORMAT_MAX_FIELD(1<<20)，* 宽度 INT_MIN 按上限处理、负精度仍钳 0；新增 test_width_overflow — commit `43fe3ec`
+- **FORMATIO-031（2026-11-06）**: 左对齐优先于零填充，补固定宽度、负动态宽度及整数/浮点回归。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
+
 ## 现在打开的问题
 
 <a id="FORMATIO-012"></a>
@@ -301,6 +317,12 @@ if (abs_number < p10) { floored_exp10--; p10 /= 10; }
 因此 subnormal 的 `%g` 输出同样错误（5e-324 → `0.000000`）。DBL_MIN 及以上
 （1e-308、2.2250738585072014e-308）正常，问题边界是 `(|x| < DBL_MIN) && (|x| > 0)`。
 
+#### 2026-11-04 复核补记
+
+原条目保持打开；本轮复现的缺陷证据仅使用 %e/%E 的数值丢失：最小正 subnormal 的 %e 输出为 0.000000e-309，而 libc 为 4.940656e-324。
+公共 ns_formatio.h 明确 %g/%G 等价 %f，因此原文列出的 %g/%G 零输出属于受保护语义，从本轮 bug 证据中排除；上方原始描述为追溯保留。数值等价的非规范指数表示不单独新增问题。
+当前有效证据位置：src/ns_formatio.c:171、src/ns_formatio.c:683。作者建议保持空白，本轮未实施修复。
+
 #### review 建议
 
 在指数估计前显式处理 subnormal：
@@ -340,8 +362,6 @@ ns_snprintf(buf, sizeof(buf), "%e", 1e-320);   /* 实际 "0.000000e-309"（数�
 src/ns_formatio.c:171-190
 src/ns_formatio.c:646-657
 src/ns_formatio.c:705-711
-
----
 
 ## 现在关闭的问题
 
@@ -1157,6 +1177,52 @@ src/ns_formatio.c:971-989
 ---
 
 <a id="FORMATIO-028"></a>
+
+---
+
+<a id="FORMATIO-031"></a>
+### FORMATIO-031: 同时指定左对齐与零填充时左对齐失效
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：有效格式组合 %-010d 或带负动态宽度的零填充格式；macOS 实测，影响输出布局）
+- **首次发现日期**: 2026-11-04
+- **类型**: bug
+- **关闭原因**: 工作区修复（未提交；当前分支 fix/timer-021-interval-bound）：src/ns_formatio.c:1011 在 flags 与宽度解析后，有 LEFT 时清除 ZEROPAD；保留已文档化的其他格式语义。新增 10 个用例覆盖整数、定点/科学浮点、标志顺序和负动态宽度。旧实现回归失败（%-05d 输出 00042），修复后目标通过；ASAN、UBSAN 的 formatio/debug 各 2 项和 sanitize-all 通过。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+左对齐格式会输出前导零，而不是把空格补在右侧。解析器同时保留 LEFT/ZEROPAD；数值 formatter 继续先补零，因此左对齐没有生效。
+
+#### review 建议
+
+在 flags 和动态宽度解析结束后统一规范化：有 LEFT 就清除 ZEROPAD。覆盖整数及浮点共享入口。
+
+#### 作者建议
+
+作者于 2026-11-06 明确要求修复列表第 2 项：统一处理左对齐与零填充的优先级，有 LEFT 时清除 ZEROPAD，覆盖固定宽度和负动态宽度的整数、浮点回归；改动留在工作区，不提交。
+
+#### 可重现的失败场景
+
+char buf[64]; ns_snprintf(buf,sizeof(buf),"%-010d",12); 实测为 "0000000012"，libc 为 "12        "。负动态宽度也会设置 LEFT，应纳入同一验收。
+
+#### 影响面
+
+streamout_vprintf 的所有 printf/snprintf/sprintf/stream 包装及 debug 输出；整数、浮点 formatter 共享该 flags 语义。现有格式化测试没有覆盖本 flags 组合的对齐断言。
+
+#### 文档仲裁与历史去重
+
+核对 ns_formatio.h 的 C99 简化说明及全部 formatio/history，未发现允许该偏差。FORMATIO-028 保护 %g、负精度、零值精度/前缀等其他差异，不涵盖 LEFT/ZEROPAD；纯 %e 尾数 10 的已接受表示另作观察，不新增问题。
+
+#### 定位
+
+src/ns_formatio.c:1011
+src/ns_formatio.c:983
+src/ns_formatio.c:915
+src/ns_formatio.c:600
+include/nanosig/ns_formatio.h:68
+
+---
 
 ---
 

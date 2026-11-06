@@ -1008,6 +1008,9 @@ static int streamout_vprintf(struct ns_stream_base *stream,
                 field_width = FORMAT_MAX_FIELD;
         }
 
+        if (flags & FORMAT_LEFT)
+            flags &= ~FORMAT_ZEROPAD;
+
         precision = -1;
         if (*fmt == '.') {
             ++fmt;

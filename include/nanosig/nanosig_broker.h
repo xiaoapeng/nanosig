@@ -119,6 +119,12 @@ extern int ns_watcher_deinit(ns_watcher_t *watcher);
  *
  * 必须在 `ns_init()` 之后、`ns_shutdown()` 之前调用。
  *
+ * @pre watcher 必须已初始化且尚未注册；成功 add 后，必须先成功 remove
+ *      才能再次 add。同一 watcher 的调用方须自行协调，避免重复注册。
+ * @warning 本函数不幂等。违反上述前提时，重复 add 虽返回 `NS_E_EXISTS`，
+ *          但会清空派发上下文，原 waitset 注册仍存在且不再投递 handler。
+ *          不保证重复 add 失败后原注册继续工作；恢复时须先 remove 再 add。
+ *
  * @note 本函数是同步会合语义：请求经内部 op 队列交给 broker 线程，执行完成后
  *       才返回。**没有等待上界**——等待时长取决于 broker 线程何时能处理，而
  *       broker 线程可能正阻塞在某个 handler 中。因此 handler 阻塞或平台等待

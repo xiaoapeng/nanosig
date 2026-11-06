@@ -179,6 +179,19 @@ entries:
     type: "unknown"
     section: "fixed-history"
     location: "docs/review/broker-code-review.md#BROKER-020"
+  - id: "BROKER-037"
+    module: "broker"
+    status: "closed-rejected"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/broker-code-review.md#BROKER-037"
+    locations:
+      - "src/ns_broker.c:280"
+      - "src/ns_broker.c:286"
+      - "src/ns_broker.c:346"
+      - "include/nanosig/nanosig_broker.h:122"
 ---
 
 # Event Broker 代码审查报告
@@ -299,10 +312,6 @@ entries:
 ---
 
 ## 现在打开的问题
-
-
----
-
 
 ## 现在关闭的问题
 
@@ -610,6 +619,57 @@ if(rc == NS_OK){
 
 #### 定位
 src/ns_broker.c:544-553
+
+<a id="BROKER-037"></a>
+### BROKER-037: 重复 add 返回错误后清空原有 watcher 的派发上下文
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟠 高（前提：已正常注册 watcher 再次 add，收到公开定义的 NS_E_EXISTS；macOS event/kqueue 实测）
+- **首次发现日期**: 2026-11-04
+- **类型**: bug
+- **关闭原因**: 作者仲裁／文档保护：2026-11-06 作者明确要求将本项设为文档保护。include/nanosig/nanosig_broker.h:122 已明确 watcher 必须尚未注册，成功 add 后须先成功 remove 才能再次 add；:124 说明重复 add 返回 NS_E_EXISTS 后不保证原注册继续投递。docs/BROKER_DESIGN.md:152 同步该合同，src/ns_broker.c:284 留有 shortcut 注释。保留实现逻辑和完整审查证据；关闭-已拒绝，永久保留，不归档。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+重复 add 会让已经工作的 watcher 永久停止投递事件。ns_broker_do_add 在平台返回重复注册错误后清空 user_data，但原 waitset 注册仍然存在；后续 dispatch 看到 NULL 便跳过 handler。持续就绪的事件源还可能造成空转。
+
+#### review 建议
+
+add 失败时保留原 user_data。或在确认各后端 add 不读取此字段后，仅在注册成功时赋值。补重复 add 失败后原注册仍可投递的回归验收。
+
+#### 作者建议
+
+2026-11-06 作者明确指示：“BROKER-037 设置为文档保护吧”。接受重复 add 的现有行为，不修改实现逻辑；公开契约明确已注册 watcher 不得重复 add，并说明违反前提会停止原注册的 handler 投递。按文档保护关闭-已拒绝。
+
+#### 可重现的失败场景
+
+ns_init → 创建平台 event → 用其 primitive 初始化 watcher → 第一次 ns_broker_add → signal 并等待 handler drain 后计数为 1 → 再次 ns_broker_add → signal。真实 macOS 后端结果：add1=0、before duplicate hits=1、add2=-6、after duplicate hits=1、dispatch_context_null=1；最后 remove=0。没有重复 init 或并发销毁。
+
+#### 影响面
+
+调用链：ns_broker_add → ns_broker_submit_op → ns_broker_drain_op_queue → ns_broker_do_add → ns_platform_waitset_add；后续 ns_broker_dispatch_pending_events 读取被清空的上下文。影响公开重复注册错误路径的全部用户。test_broker_lifecycle 只核对第二次 add 返回 NS_E_EXISTS，没有验证原注册继续投递。
+
+#### 文档仲裁与历史去重
+
+
+2026-11-04 初审结论（历史记录，已被 2026-11-06 作者仲裁覆盖）：
+
+include/nanosig/nanosig_broker.h:131 和 docs/BROKER_DESIGN.md:152 明确重复 add 返回 NS_E_EXISTS。BROKER-011 只保护重复 ns_watcher_init 的未定义行为，不能覆盖本项。全部 broker/history 去重无同根项，独立 architect 已复核该接口不变量并判 BLOCK。
+
+2026-11-06：按作者要求新增公开前提与现场 shortcut，现已形成文档保护。上面的初审 BLOCK 判断不再作为当前结论；以后不得在合同与触发条件未变化时重复提出本项。
+
+
+#### 定位
+
+src/ns_broker.c:280
+src/ns_broker.c:286
+src/ns_broker.c:346
+include/nanosig/nanosig_broker.h:122
+
+---
+
+---
 
 ---
 

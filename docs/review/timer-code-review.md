@@ -71,6 +71,21 @@ entries:
     section: "closed"
     closed_date: "2026-07-04"
     location: "docs/review/timer-code-review.md#TIMER-017"
+  - id: "TIMER-021"
+    module: "timer"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/timer-code-review.md#TIMER-021"
+    locations:
+      - "src/ns_timer.c:50"
+      - "src/ns_timer.c:131"
+      - "src/ns_timer.c:153"
+      - "src/ns_timer.c:323"
+      - "src/ns_timer.c:337"
+      - "src/ns_timer.c:357"
 ---
 
 # Timer 代码审查报告
@@ -112,8 +127,9 @@ entries:
 
 ---
 
-## 现在打开的问题
+- **TIMER-021（2026-11-06）**: init 和 start/restart 共用校验拒绝零值及大于 INT64_MAX 的间隔；补充公共范围约定和边界回归测试。 — commit `fix/timer-021-interval-bound`
 
+## 现在打开的问题
 
 ## 现在关闭的问题
 
@@ -194,3 +210,47 @@ entries:
 - **关闭原因**: 作者指出此设计考量不成立——notify 更新的是当前树的最左节点，
   因此即使有另一个线程插入更早到期的定时器，本次 notify 获取到的也是正确的最小值。
 - **关闭日期**: 2026-07-04
+
+<a id="TIMER-021"></a>
+### TIMER-021: interval 超出有符号差值半区间后被接受并立即到期
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中（前提：interval 至少为 2^63 微秒，实际时长极大；公共 uint64_t 参数未设此上界；固定正常时钟的裸机 harness 实测）
+- **首次发现日期**: 2026-11-04
+- **类型**: bug
+- **关闭原因**: 修复 commit fix/timer-021-interval-bound
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+超过差值算法有效范围的 interval 会立即到期；REPEAT timer 使 fire_expired 一直重插已到期节点，阻塞 timer 服务和裸机 poll。init/start/restart 只排除零值，而剩余时间把无符号差转为 int64_t，最高位为 1 的正常参数便被当作负数。
+
+#### review 建议
+
+公开并校验 0 < interval <= INT64_MAX。init 与 start/restart 的公共校验都覆盖该条件，避免公开 interval 字段修改绕过；保留既有补码差值算法。
+
+#### 作者建议
+
+作者于 2026-11-06 确认：限制 0 < interval_us <= INT64_MAX；在 init 及 start/restart 共用校验中拒绝越界值，保留现有差值算法，补充公共文档和边界回归测试。
+
+#### 可重现的失败场景
+
+固定 now=100；ns_timer_init(&timer,UINT64_C(0x8000000000000000),0) 和 ns_timer_start 都返回 0；next_timeout 返回 0，fire_expired 返回 0 后 timer 已被移除（next_timeout=-10）。属性改为 NS_TIMER_ATTR_REPEAT 时同样 init/start 成功，但 fire_expired 不返回；子进程实测在 2 秒超时后终止。时钟本身不在 UINT64_MAX 附近。
+
+#### 影响面
+
+ns_timer_remaining_us 被树比较器、next_timeout、fire_expired、重复装载使用；影响 timer init/start/restart、broker 定时器服务及裸机 poll/next_timeout。共享 start 校验必须覆盖公开 interval 的后续修改。现有 timer/裸机测试未覆盖 2^63 边界。
+
+#### 文档仲裁与历史去重
+
+TIMER-010 拒绝的是 unsigned 转 signed 的实现定义可移植性，理由为现代补码正确。本项在现代补码上确定复现，根因是接受超出算法半区间的参数，不要求推翻该历史决定。公共 timer 头没有 INT64_MAX 上界，亦无相同历史条目。
+
+#### 定位
+src/ns_timer.c:50
+src/ns_timer.c:131
+src/ns_timer.c:153
+src/ns_timer.c:323
+src/ns_timer.c:337
+src/ns_timer.c:357
+
+---

@@ -198,13 +198,20 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 
 | 步骤 | producer 侧 | memory order | consumer 侧 |
 |------|-------------|-------------|-------------|
-| 1 | 写 payload 到 ring slot | relaxed | — |
-| 2 | store `write_pos` | **release** | — |
-| 3 | signal wakeup | release | — |
-| 4 | — | — | **acquire** | wakeup wait 返回 |
-| 5 | — | — | **acquire** | load `write_pos` |
-| 6 | — | — | 读 payload | 可见（happens-before 链保证） |
-| 7 | — | — | store `read_pos` | **release** |
+| 1 | CAS `reserve_pos` 获取记录空间 | **acq_rel** | — |
+| 2 | 清零真实记录 `meta`，再 store `write_pos` | **release** → **release** | — |
+| 3 | 写 payload 到记录数据区 | 普通写入 | — |
+| 4 | store 有效记录 `meta`（valid=1） | **release** | — |
+| 5 | signal wakeup 通知接收者 | 平台唤醒契约 | wait 返回后可再次尝试派发 |
+| 6 | — | **acquire** | load `write_pos`，检查是否有待处理空间 |
+| 7 | — | **acquire** | load 队首 `meta`，确认 valid=1 |
+| 8 | — | 普通读取 | 读取 payload、调用 slot；由第 4/7 步同步保证可见性 |
+| 9 | — | relaxed → **release** | 清零 `meta`，再 store `read_pos` 归还空间 |
+
+`write_pos` 在 payload 复制前推进，表示已开放的预留进度，不是记录提交位置。
+即使观察到它前进，队首 meta 仍可能无效，此时 `try_acquire` 返回 `NS_E_EMPTY`。
+payload 的发布证明来自记录 meta 的 release/acquire；wakeup 用于通知，不能代替该检查。
+生产者 acquire-load `read_pos` 后才可复用已消费的空间。完整协议见 [MPSC 内存序](MPSC_MEMORY_ORDER.md)。
 
 ### quit → stop 同步
 
@@ -231,7 +238,7 @@ broker 与 loop **完全解耦**：broker 不直接操作 loop 的 wakeup 或 MP
 | `ns_watcher_init/deinit` | 需序列化 | 调用方保证 |
 | `ns_init/ns_shutdown` | 需序列化 | 调用方保证 |
 | DS 函数（list/rbtree/hashtable/ringbuf）| 单线程 | 外部同步 |
-| `ns_mpsc_record_ring_try_pushv` | MPM-safe | fetch_add relaxed（slot 分配） |
+| `ns_mpsc_record_ring_try_pushv` | MPM-safe | reserve_pos CAS（空间分配）+ meta release（记录提交） |
 | `ns_mpsc_record_ring_try_acquire` | 单线程 | 仅 consumer 调用 |
 
 > 注：`ns_signal_init_raw` 初始化完成后，connect / disconnect / emit 才可多线程并发。

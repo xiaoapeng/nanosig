@@ -21,3 +21,5 @@ build-baremetal*/
 
 # review_docs.py 的文件锁
 docs/review/.review.lock
+build-freertos-debug-asan/
+build-freertos-debug-ubsan/

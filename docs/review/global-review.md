@@ -63,6 +63,45 @@ entries:
       - "platform/README.md:34"
       - "platform/README.md:58"
       - "platform/README.md:67"
+  - id: "GLOBAL-009"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/global-review.md#GLOBAL-009"
+    locations:
+      - "platform/baremetal/nanosig_platform_port.h:157"
+      - "platform/baremetal/nanosig_platform_port.h:173"
+      - "test/baremetal/test_cpp_link.cpp:14"
+  - id: "GLOBAL-010"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/global-review.md#GLOBAL-010"
+    locations:
+      - "src/ns_broker.c:49"
+      - "platform/README.md:78"
+  - id: "GLOBAL-011"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "low"
+    type: "doc"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/global-review.md#GLOBAL-011"
+    locations:
+      - "docs/MPSC_MEMORY_ORDER.md:46"
+      - "docs/MPSC_MEMORY_ORDER.md:60"
+      - "docs/ARCHITECTURE.md:197"
+      - "src/ds/ns_mpsc_record_ring.c:156"
+      - "src/ds/ns_mpsc_record_ring.c:414"
+      - "src/ds/ns_mpsc_record_ring.c:421"
+      - "src/ds/ns_mpsc_record_ring.c:458"
 ---
 
 # 全局视角 Review（跨模块问题）
@@ -71,6 +110,46 @@ entries:
 **审查者**: claude-code-review
 
 ---
+
+**2026-11-04 全量审查记录**
+
+- 基线：eaab50eb36f2b38c58a771d256a16a4e9190a4df；开始时工作区干净。本次仅写 review 产物，业务实现与设计源文档保持原样。
+- 结论：**REQUEST CHANGES；Architectural Status：BLOCK**。当前确认 10 条打开问题（新增 9 条、既有 1 条复核），CRITICAL 0 / HIGH 4 / MEDIUM 3 / LOW 3。
+- 独立证据：review_runtime_ds（code-reviewer）通读 30 个源码/头文件，REQUEST CHANGES；review_platforms（code-reviewer）审查六后端及公共契约，共 18 个文件，REQUEST CHANGES；review_architecture_docs（architect）复核跨模块合同与文档，BLOCK；verify_freertos_contract（researcher）另以固定版本官方实现独立反证，confirmed。
+- 多角度交叉：Broker 重复 add 由代码复现与架构合同反查共同确认；MPSC 文档顺序由 runtime/architect 双方确认；FreeRTOS join 由平台 reviewer 与 researcher 双方确认。自定义 code-review quality gates 查询为空，无额外门禁。
+
+| 覆盖范围 | 实际审查口径 |
+|---|---|
+| src、include、platform 的实现/头文件/版本模板，共 44 份 | 两路 code-reviewer 分模块通读；包括六平台、core、timer、broker、全部数据结构、formatio/debug |
+| README、platform/README 与 docs，共 80 份基线文档 | 当前主体文档核读；历史 plan/spec/audit/review 按文件身份、批准决策、状态及相关条目核对，未声称所有历史文档逐行精读 |
+| 构建证据 | CMakeLists、Presets、CompileWarnings、zephyr 三文件、CI/nightly 正文；ApiCompileChecks 相关构造部分；其他构建脚本只作验证支撑 |
+| 排除项 | test/demos 不作为 review 对象，仅读取关联调用与覆盖证据并运行现有测试；tmp 参考代码和隐藏运行时缓存不审查 |
+
+| 验证 | 结果 |
+|---|---|
+| macOS Release 配置、构建、api-compile-checks | 通过；API 语法检查有一条既有 C++ unused-function 警告 |
+| Release CTest，排除 nightly/long-stability | 50/50 通过 |
+| MPSC 压测单独设置 NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20 | 1/1 通过，约 19.43 秒 |
+| baremetal-debug | 构建及 6/6 测试通过，包含不支持符号的负向链接门 |
+| 独立 ASAN Debug，未构建 demos | 45/45 通过，sanitize-all 四段审计通过 |
+| 独立 UBSAN Debug，未构建 demos | 45/45 通过，sanitize-all 四段审计通过 |
+| 定向复现 | Broker 注册失效、裸机重入/超大 timer、格式化错误、裸机 C++ 链接失败均实测；debug 并发等级 TSAN 明确报 data race，exit 134 |
+| 静态分析 | 9 个业务 C 文件及 macOS/baremetal/FreeRTOS port 分别检查；无新增路径错误，hashtable/rbtree 有 4 个未登记为缺陷的 dead-store 提示 |
+| FreeRTOS 16 位 tick join | 固定 V11.1.0 官方源码交叉证明；未硬件实测 |
+
+最初尝试同时启用 ASAN/UBSAN，被本项目配置审计拒绝；随后改为两个单检测器构建，以上通过结果均来自后者。Release 的 sanitize-all 仅说明未启用检测器，未当作 sanitizer 通过证据。
+
+**文档保护与架构观察**：保留单 broker 同步请求的无限等待合同、调用方生命周期职责、裸机能力子集、旧 proposal/audit 快照及全部已拒绝决定。纯指数尾数为 10 的等价表示不新增问题。既有格式化条目仅追加复核，排除公共合同允许的 %g/%G 行为。新增作者建议全部留空；本轮未实施修复。按 2026-10-05 截止日检查，无满 30 天且应归档的关闭条目。
+
+**验证边界**：Linux/Windows/Zephyr 未运行本机平台套件；未运行完整 nightly、长时稳定性或全套 TSAN。现有测试通过不消除定向复现发现的缺陷。审查不能保证不存在其他问题。
+
+**2026-11-06 合同保护复核补记**：CORE-020 保留复现，但依 review 规范的隐含前提分支，改为中优先级 doc，待作者明确 poll 非重入合同；撤回必须增加运行守卫的结论。BROKER-037 的重复 add 不属于重复 init 免责范围，维持原判断。当前 10 条打开问题的分布修订为 CRITICAL 0 / HIGH 3 / MEDIUM 4 / LOW 3；总体 REQUEST CHANGES 与架构 BLOCK 仍由 Broker 等已确认项支撑。上方 2026-11-04 记录作为当时审查快照保留。
+
+**2026-11-06 作者仲裁更新**：作者明确要求 BROKER-037 按文档保护处理；该条已关闭-已拒绝，公开头补齐禁止重复 add 的前提及误用后果，代码现场补 shortcut，运行逻辑未改。该问题不再作为打开缺陷或架构 BLOCK 的依据。综合架构状态调整为 WATCH（保留其他文档观察），总体仍为 REQUEST CHANGES：当前 9 条打开问题，CRITICAL 0 / HIGH 2 / MEDIUM 4 / LOW 3。此前审查和复核结论按日期保留，不覆盖作者仲裁。
+
+**2026-11-06 合同与修复收口**：作者确认 CORE-020 先按非重入调用合同保护；公开头已补 @pre，现场已补 shortcut，该条关闭-已拒绝并永久保留。FREERTOS-009 已在工作区修复（未提交），等待失败后继续重试，收到退出信号才清理资源；修复前回归失败、修复后 FreeRTOS Release / ASAN / UBSAN 各 3 项及 sanitizer 审计通过，裸机 6 项通过。当前 7 条打开问题，CRITICAL 0 / HIGH 1 / MEDIUM 3 / LOW 3；剩余高优先级为 FORMATIO-021，总体仍为 REQUEST CHANGES。此前快照与作者仲裁记录保留。
+
+**2026-11-06 四项修复完成**：按作者要求完成 FORMATIO-031、GLOBAL-009、GLOBAL-010、GLOBAL-011，均关闭-已修复，改动保留在工作区未提交。格式化与裸机 C++ 链接回归均取得修复前失败、修复后通过的证据；macOS Release 全量 53 项、裸机 7 项、ASAN/UBSAN 格式化与日志各 2 项、API 编译检查和两种 sanitize-all 审计通过。普通 MPSC 压测使用 20 秒配置；README 宏参数经手工语法编译验证，MPSC 文档经独立源码复核。当前剩余 2 条打开问题：FORMATIO-021（高）和 DEBUG-001（中）。历史快照、文档保护决定及其审计记录保留。
 
 ## 修复历史
 
@@ -117,6 +196,10 @@ entries:
 (无其它历史)
 
 ---
+
+- **GLOBAL-009（2026-11-06）**: 为裸机时钟 setter 补 C linkage，新增 C++ 消费者链接运行回归。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
+- **GLOBAL-010（2026-11-06）**: 补齐手工接入必须注入 broker 栈宏的说明与平台默认值链接。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
+- **GLOBAL-011（2026-11-06）**: 纠正 MPSC 预留位置、payload 提交及槽位回收的同步说明。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
 
 ## 现在打开的问题
 
@@ -296,6 +379,159 @@ include/nanosig/nanosig_loop.h:53
 platform/README.md:34
 platform/README.md:58
 platform/README.md:67
+
+---
+
+<a id="GLOBAL-009"></a>
+### GLOBAL-009: 裸机时钟注入函数缺少 C linkage，C++ 消费者链接失败
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中（前提：裸机库按 C11 编译、调用方按 C++11 编译；macOS arm64 Clang 链接实测）
+- **首次发现日期**: 2026-11-04
+- **类型**: bug
+- **关闭原因**: 工作区修复（未提交；当前分支 fix/timer-021-interval-bound）：platform/baremetal/nanosig_platform_port.h:157 仅为时钟 setter 声明增加 C++ extern C 守卫，保留 SDK include 边界。新增 C++ 消费者实际链接 C 库并校验两次注入时钟读值。旧头链接失败、修复后通过；裸机 7 项 CTest 和 API 编译检查通过。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+C++ 应用无法链接裸机初始化必需的 ns_baremetal_set_now_us。公共平台头在 extern C 之前包含裸机类型头，而该 setter 声明没有自己的 C linkage 守卫；C++ 调用方与 C 库对象生成不同符号。
+
+#### review 建议
+
+仅为 ns_baremetal_set_now_us 的声明补 C++ extern C 守卫，保持平台 SDK include 位于公共 extern C 外。补 C 库对象与 C++ 消费者的实际链接验收。
+
+#### 作者建议
+
+作者于 2026-11-06 明确要求修复列表第 4 项：为裸机时钟 setter 声明补 C linkage，保持平台 SDK include 边界不变，补 C 库与 C++ 消费者的实际链接回归；改动留在工作区，不提交。
+
+#### 可重现的失败场景
+
+创建 review.cpp：
+```cpp
+#include <nanosig_baremetal_api.h>
+static uint64_t now_us() { return 0; }
+int main() { ns_baremetal_set_now_us(now_us); return ns_platform_init(); }
+```
+执行：
+```sh
+cc -std=c11 -Iinclude -Iplatform/baremetal -c platform/baremetal/port.c -o /tmp/review-port.o
+c++ -std=c++11 -Iinclude -Iplatform/baremetal review.cpp /tmp/review-port.o -o /tmp/review-cpp
+```
+第二条命令 exit 1：Undefined symbols: ns_baremetal_set_now_us(unsigned long long (*)())；链接器同时提示找到 C 符号且声明可能缺 extern C。
+
+#### 影响面
+
+所有 C++ 裸机消费者；仓库内唯一调用是 test/baremetal/main.c 的 C 测试，无生产内部调用。声明由 nanosig_baremetal_api.h → nanosig_port.h → 裸机平台头引入，实现为 platform/baremetal/port.c 的 C 函数。现有语法检查没有调用 setter 后链接，因此未暴露问题。
+
+#### 文档仲裁与历史去重
+
+裸机子计划明确要求 C++ 兼容，未文档化仅支持 C。GLOBAL-007 保护的是 SDK include 不应包在 C linkage 内；本项只修函数声明，根因不同。已核对 global/history，无重复。
+
+#### 定位
+
+platform/baremetal/nanosig_platform_port.h:157
+platform/baremetal/nanosig_platform_port.h:173
+test/baremetal/test_cpp_link.cpp:14
+CMakeLists.txt:370
+
+
+---
+
+---
+
+<a id="GLOBAL-010"></a>
+### GLOBAL-010: README 手工接入步骤遗漏 broker 必需编译定义
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：非裸机、绕过 nanosig CMake target 手工集成；macOS Clang 语法检查实测）
+- **首次发现日期**: 2026-11-04
+- **类型**: doc
+- **关闭原因**: 工作区修复（未提交；当前分支 fix/timer-021-interval-bound）：README.md:19 补充 NANOSIG_BROKER_STACK_SIZE 必需定义、字节单位、0 默认值及平台栈文档链接，说明 CMake/Zephyr 自动注入和裸机例外。macOS Clang -std=c11 -Werror -fsyntax-only 实测：缺宏按预期失败，增加 -DNANOSIG_BROKER_STACK_SIZE=0 后通过；保留源码编译守卫。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+按照 README 列出的三项接入步骤手工编译 broker，会因缺少 NANOSIG_BROKER_STACK_SIZE 而失败。源码有意要求构建系统注入该宏；README 没有列出这个必要条件。
+
+#### review 建议
+
+在 README 接入步骤列出必需的 NANOSIG_BROKER_STACK_SIZE 编译定义，并链接 platform/README.md 的平台默认值、RTOS 栈大小说明。保留缺宏即编译失败的守卫。
+
+#### 作者建议
+
+作者于 2026-11-06 明确要求修复列表第 5 项：在 README 手工接入说明补 NANOSIG_BROKER_STACK_SIZE 必需定义及平台默认值链接，保留缺宏编译守卫；改动留在工作区，不提交。
+
+#### 可重现的失败场景
+
+已有生成版本头时执行：
+```sh
+clang -std=c11 -fsyntax-only -Iinclude -Ibuild/include -Iplatform/macos src/ns_broker.c
+```
+结果：src/ns_broker.c 的缺宏 #error 及未声明宏错误。相同命令增加 -DNANOSIG_BROKER_STACK_SIZE=0 后通过。
+
+#### 影响面
+
+所有手工编译且包含 broker 的消费者；当前 CMake target 和 Zephyr module 会注入该宏，裸机构建排除 broker，均不受此文档遗漏影响。下级证据为 CMakeLists.txt 的 target_compile_definitions 与 src/ns_broker.c 的编译守卫；API 编译检查不替代手工构建说明。
+
+#### 文档仲裁与历史去重
+
+线程栈规格明确要求缺定义即编译失败，源码守卫受保护。PORT-033 讨论已传入非零栈值的验证，GLOBAL-008 讨论栈范围说明，均不是接入步骤遗漏，未重复旧 finding。
+
+#### 定位
+
+README.md:19
+src/ns_broker.c:49
+CMakeLists.txt:210
+platform/README.md:78
+
+
+---
+
+---
+
+<a id="GLOBAL-011"></a>
+### GLOBAL-011: 当前 MPSC 同步文档误把预留位置发布当作 payload 提交
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：维护者依据当前内存序文档理解实现；源码走查确认，未发现对应运行时同步缺陷）
+- **首次发现日期**: 2026-11-04
+- **类型**: doc
+- **关闭原因**: 工作区修复（未提交；当前分支 fix/timer-021-interval-bound）：docs/MPSC_MEMORY_ORDER.md:46 和 docs/ARCHITECTURE.md:197 按当前实现明确先开放 write_pos、再复制 payload、最后 release-store 有效 meta；消费者 acquire-load 有效 meta 才读取 payload，槽位复用由 read_pos release/acquire 保证。同步修正 CAS 所有权与总结表，并区分生产者 meta 清零 release、消费者清零 relaxed。已由独立 agent 对照源码复核并修正其指出的内存序笔误；未修改 MPSC 运行逻辑，保留历史审计快照。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+文档给出了错误的 payload 可见性证明，维护者据此调整原子操作会误删真正的同步。MPSC_MEMORY_ORDER 写成先 memcpy 再 release-store write_pos，并称消费者 acquire write_pos 后即可看到 payload；ARCHITECTURE 的同步表也漏掉记录 meta。实际顺序是先 write_pos，再复制 payload，最后 release-store 有效 meta；消费者 acquire meta 且确认有效位后才能消费。
+
+#### review 建议
+
+仅修改两份当前说明：write_pos 表示预留进度；记录 meta 的 release/acquire 才完成 payload 提交与消费同步。保留当前实现和历史审计快照。
+
+#### 作者建议
+
+作者于 2026-11-06 明确要求修复列表第 6 项：按当前实现修正 MPSC_MEMORY_ORDER 与 ARCHITECTURE 的 write_pos / meta 同步说明，保留现有运行逻辑和历史审计快照；改动留在工作区，不提交。
+
+#### 可重现的失败场景
+
+对照生产者 src/ds/ns_mpsc_record_ring.c:413、416、419 与消费者 :455、469。令生产者完成 write_pos 发布后、memcpy 前有限暂停；消费者能看到 write_pos 前进，却因 meta 仍无效而返回 NS_E_EMPTY。因此 acquire write_pos 本身不能证明尚未复制的 payload 可见。
+
+#### 影响面
+
+直接影响 MPSC 维护者及 core emit/dispatch 的并发证明；源码消费者为 ns_mpsc_record_ring_try_acquire，其公开 copy-out 包装及 ns_loop_dispatch_pending 依赖该协议。现有压力测试验证实现行为，不能验证文档同步证明的措辞。
+
+#### 文档仲裁与历史去重
+
+MPSC-014 已修的是阶段一 CAS expected 值；本项是后续 payload 提交顺序，根因不同。MPSC-011 是旧固定槽文档替换，MPSC-012 保护生产者不能在 reserve/commit 中永久退出；这里使用有限暂停，不挑战该前提。docs/audit/memory_ordering_audit.md 按历史快照保留。架构与 runtime 两路均确认本项。
+
+#### 定位
+
+docs/MPSC_MEMORY_ORDER.md:46
+docs/MPSC_MEMORY_ORDER.md:60
+docs/ARCHITECTURE.md:197
+src/ds/ns_mpsc_record_ring.c:156
+src/ds/ns_mpsc_record_ring.c:414
+src/ds/ns_mpsc_record_ring.c:421
+src/ds/ns_mpsc_record_ring.c:458
 
 ---
 

@@ -154,6 +154,10 @@ extern const int ns_platform_abi_baremetal;
  */
 typedef uint64_t (*ns_baremetal_now_us_fn)(void);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief 注册单调时钟回调。
  *
@@ -167,5 +171,9 @@ typedef uint64_t (*ns_baremetal_now_us_fn)(void);
  * @param fn 时钟回调；`NULL` 表示注销。
  */
 void ns_baremetal_set_now_us(ns_baremetal_now_us_fn fn);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* NANOSIG_PLATFORM_PORT_H */

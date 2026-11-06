@@ -281,6 +281,8 @@ static int ns_broker_do_add(ns_event_broker_t *broker, ns_watcher_t *watcher)
     rc = ns_platform_waitset_add(&broker->waitset, &watcher->waitable);
     if(rc != NS_OK){
         ns_merrln(BROKER, "waitset_add failed: %d", rc);
+        /* shortcut: 重复 add 属调用方误用，会清空原派发上下文；
+           若新增重复注册失败后保留原投递的契约，再改为保留原上下文。 */
         watcher->waitable.user_data = NULL;
     }
 
