@@ -53,7 +53,7 @@ enum {
 typedef struct ns_timer {
     /** 到期时触发的内嵌无 payload signal；必须保持为第一个字段。 */
     ns_signal_t signal;
-    /** 触发间隔，单位为微秒。 */
+    /** 触发间隔，单位为微秒，范围为 1 到 INT64_MAX。 */
     ns_time_us_t interval_us;
     /** 下一次到期时间，单位为微秒；实现层维护。 */
     ns_time_us_t expire_us;
@@ -77,7 +77,8 @@ NS_STATIC_ASSERT(ns_offsetof(ns_timer_t, signal) == 0u, "ns_timer_t.signal must 
  *            提供外部同步。
  *
  * @param timer 待初始化的 timer 对象。
- * @param interval_us 触发间隔，单位为微秒。
+ * @param interval_us 触发间隔，单位为微秒，必须满足 0 < interval_us <= INT64_MAX。
+ *                   超出范围返回 `NS_E_INVAL`。
  * @param attr `NS_TIMER_ATTR_*` 位图。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。
  */
@@ -88,6 +89,7 @@ extern int ns_timer_init(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t a
  *
  * 到期后，timer 触发其内嵌 signal。调用方通过连接 `timer->signal` 选择目标
  * loop 和 slot。
+ * `timer->interval_us` 必须满足 0 < interval_us <= INT64_MAX，否则返回 `NS_E_INVAL`。
  *
  * @attention 本函数不是线程安全的。同一 timer 对象上的并发调用需要外部同步。
  *
@@ -114,11 +116,12 @@ extern int ns_timer_cancel(ns_timer_t *timer);
  *
  * 若 timer 未运行，则等价于 `ns_timer_start`；若正在运行，则先移除旧 deadline，
  * 再以当前时间为基准重新装载。
+ * `timer->interval_us` 必须满足 0 < interval_us <= INT64_MAX；不满足时返回
+ * `NS_E_INVAL`，保留原有运行状态和 deadline。
  *
  * @attention 本函数不是线程安全的。同一 timer 对象上的并发调用需要外部同步。
- *            **失败时的状态**：如果 `ns_timer_restart` 失败（例如 runtime 已
- *            shutdown），正在运行的 timer 会被从树中移除但不会重新插入，状态
- *            从"运行中"变为"已停止"。
+ *            **失败时的状态**：入口校验失败时保留原状态；旧 deadline 移除后，
+ *            如果重新装载失败（例如读取时钟失败），timer 保持已停止状态。
  *
  * @param timer 要重启的 timer 对象。
  * @return `NS_OK` 表示成功，失败时返回负数状态码。

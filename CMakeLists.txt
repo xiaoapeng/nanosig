@@ -367,6 +367,8 @@ endif()
 if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "baremetal")
     # 裸机契约测试：假时钟驱动，覆盖 AC4–AC9 与 AC15。
     nanosig_add_unit_test(nanosig_test_baremetal test/baremetal/main.c)
+    nanosig_add_unit_test(nanosig_test_baremetal_cpp_link test/baremetal/test_cpp_link.cpp)
+    target_compile_features(nanosig_test_baremetal_cpp_link PRIVATE cxx_std_11)
 
     # 负向门：watcher/broker API 在裸机后端**必须**链接不过。
     # 放在配置期做，避免把一个注定失败的目标挂到默认构建里。

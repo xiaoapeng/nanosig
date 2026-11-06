@@ -6,6 +6,7 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include <nanosig/nanosig.h>
@@ -28,6 +29,56 @@ static int test_invalid_and_empty_paths(void)
     EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_E_NO_TIMER);
     EXPECT_OK(ns_timer_mgr_fire_expired() == NS_OK);
 
+    return 0;
+}
+
+static int test_interval_bounds(void)
+{
+    const ns_time_us_t invalid_intervals[] = {0u, (uint64_t)INT64_MAX + 1u, UINT64_MAX};
+    const uint32_t attrs[] = {
+        NS_TIMER_ATTR_ONESHOT,
+        NS_TIMER_ATTR_REPEAT,
+        NS_TIMER_ATTR_REPEAT | NS_TIMER_ATTR_RELOAD_FROM_NOW
+    };
+    ns_timer_t timer;
+    ns_platform_time_us_t timeout;
+    ns_time_us_t expire;
+    size_t i;
+    size_t j;
+
+    for(i = 0u; i < sizeof(attrs) / sizeof(attrs[0]); ++i){
+        for(j = 0u; j < sizeof(invalid_intervals) / sizeof(invalid_intervals[0]); ++j){
+            EXPECT_OK(ns_timer_init(&timer, invalid_intervals[j], attrs[i]) == NS_E_INVAL);
+        }
+
+        EXPECT_OK(ns_timer_init(&timer, (uint64_t)INT64_MAX, attrs[i]) == NS_OK);
+        for(j = 0u; j < sizeof(invalid_intervals) / sizeof(invalid_intervals[0]); ++j){
+            timer.interval_us = invalid_intervals[j];
+            EXPECT_OK(ns_timer_start(&timer) == NS_E_INVAL);
+            EXPECT_OK(ns_timer_restart(&timer) == NS_E_INVAL);
+            EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_E_NO_TIMER);
+        }
+
+        timer.interval_us = (uint64_t)INT64_MAX;
+        EXPECT_OK(ns_timer_start(&timer) == NS_OK);
+        EXPECT_OK(ns_timer_restart(&timer) == NS_OK);
+        EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
+        EXPECT_OK(timeout > 0u && timeout <= (uint64_t)INT64_MAX);
+        EXPECT_OK(ns_timer_mgr_fire_expired() == NS_OK);
+        EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
+        EXPECT_OK(timeout > 0u);
+
+        expire = timer.expire_us;
+        for(j = 0u; j < sizeof(invalid_intervals) / sizeof(invalid_intervals[0]); ++j){
+            timer.interval_us = invalid_intervals[j];
+            EXPECT_OK(ns_timer_start(&timer) == NS_E_INVAL);
+            EXPECT_OK(ns_timer_restart(&timer) == NS_E_INVAL);
+            EXPECT_OK(timer.expire_us == expire);
+        }
+        timer.interval_us = (uint64_t)INT64_MAX;
+        EXPECT_OK(ns_timer_mgr_next_timeout(&timeout) == NS_OK);
+        EXPECT_OK(ns_timer_deinit(&timer) == NS_OK);
+    }
     return 0;
 }
 
@@ -908,6 +959,7 @@ int main(void)
     EXPECT_OK(ns_init() == NS_OK);
 
     if(test_invalid_and_empty_paths() != 0) return 1;
+    if(test_interval_bounds() != 0) return 1;
     if(test_start_cancel_and_restart_semantics() != 0) return 1;
     if(test_oneshot_broker_fires_signal() != 0) return 1;
     if(test_repeat_timer_rearms_after_fire() != 0) return 1;

@@ -543,6 +543,47 @@ static void test_thread(void)
     CHECK(g_thread_ran == 1);
 }
 
+typedef struct join_retry_context {
+    TaskHandle_t joiner;
+    int waits_aborted;
+    int finished;
+} join_retry_context_t;
+
+static void thread_abort_join_wait(void *arg)
+{
+    join_retry_context_t *ctx = (join_retry_context_t *)arg;
+
+    /* runner 优先级更高，每次唤醒后会先重试 join，随后本任务才继续。 */
+    for(int i = 0; i < 2; i++){
+        CHECK(xTaskAbortDelay(ctx->joiner) == pdPASS);
+        ctx->waits_aborted++;
+    }
+    ctx->finished = 1;
+}
+
+static void test_thread_join_retries(void)
+{
+    ns_platform_thread_t t;
+    join_retry_context_t ctx = { .joiner = xTaskGetCurrentTaskHandle() };
+    int rc;
+
+    /* 宿主 tick 为 64 位：用 abort 走 semaphore take 的失败返回路径，无需实等溢出。 */
+    rc = ns_platform_thread_init(&t, thread_abort_join_wait, &ctx, "join-retry", 0u);
+    CHECK(rc == NS_OK);
+    if(rc != NS_OK) return;
+
+    CHECK(ns_platform_thread_join(&t) == NS_OK);
+    CHECK(ctx.finished == 1);
+    if(!ctx.finished){
+        /* 失败时任务仍存活，立即结束测试，避免继续访问已被错误清理的句柄。 */
+        fflush(NULL);
+        _Exit(1);
+    }
+    CHECK(ctx.waits_aborted == 2);
+    CHECK(t.join_sem == NULL);
+    CHECK(t.task == NULL);
+}
+
 /* 栈大小：显式字节数向上取整到 StackType_t 整数倍；过小被拒。 */
 static void test_thread_stack_size(void)
 {
@@ -624,6 +665,7 @@ static void runner_task(void *arg)
     test_wakeup();
     test_mutex();
     test_thread();
+    test_thread_join_retries();
     test_thread_stack_size();
     test_clock();
 

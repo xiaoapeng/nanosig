@@ -174,6 +174,20 @@ entries:
       - "test/unit/test_cpp_compat_compile.cpp:212"
       - "cmake/ApiCompileChecks.cmake:159"
       - "include/nanosig/nanosig_loop.h:63"
+  - id: "CORE-020"
+    module: "nanosig-core"
+    status: "closed-rejected"
+    severity: "medium"
+    type: "doc"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/nanosig-core-code-review.md#CORE-020"
+    locations:
+      - "platform/baremetal/nanosig_baremetal_api.h:43"
+      - "platform/baremetal/nanosig_platform_port.h:26"
+      - "src/nanosig.c:464"
+      - "src/nanosig.c:343"
+      - "src/nanosig.c:346"
 ---
 
 # Nanosig Core 代码审查报告
@@ -646,6 +660,58 @@ if(cfg.stack_size != 0u) {
 test/unit/test_cpp_compat_compile.cpp:212
 cmake/ApiCompileChecks.cmake:159
 include/nanosig/nanosig_loop.h:63
+
+<a id="CORE-020"></a>
+### CORE-020: 裸机 poll 的非重入调用前提未明确
+
+- **状态**: 关闭-已拒绝
+- **严重度**: 🟡 中（前提：应用主循环驱动已文档化，但是否禁止 slot 串行重入尚未明确；重复消费由 host harness 实测，本项按待作者确认的契约文档缺口处理）
+- **首次发现日期**: 2026-11-04
+- **类型**: doc
+- **关闭原因**: 合同前提保护：作者于 2026-11-06 确认仅支持非重入 poll。platform/baremetal/nanosig_baremetal_api.h:57 明确仅允许最外层应用主循环调用，同一 loop 前次调用返回前不得再次调用，slot 不得直接或间接重入；库不检测重入，违反前提的行为未定义。src/nanosig.c:466 保留 shortcut，若未来要求回调内嵌套派发则重新设计记录消费。满足前提时不存在本条重复消费问题，按已知调用约束关闭，永久保留。改动保留于工作区，未提交。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+裸机文档没有明确 slot 能否再次调用同一个 loop 的 poll，调用方可能把单线程误解为允许串行重入。实测嵌套 poll 会再次消费尚未 release 的当前记录；一次 emit 可以重复执行 slot，无门控时会无限递归。
+
+公共平台头已约定单执行上下文（应用主循环），裸机 API 头也明确由应用主循环驱动。因此，非重入可以是该模型下合理的调用前提，不能仅因当前未写出禁止语句，就断言必须增加运行期守卫。按 docs/review/AGENTS.md:364、386，先将缺少的前提交作者明确。
+
+#### review 建议
+
+请作者明确同一 loop 的 poll 是否只允许在最外层应用主循环中调用。若不支持嵌套，在 ns_loop_poll 的公开 @pre 写明：前一次调用返回前不得再次调用，slot 回调不得直接或间接重入同一 loop。按作者确认的非重入设计补足合同即可，不要求增加运行期检查。
+
+只有作者要求支持嵌套或可靠拒绝重入时，再决定运行守卫与错误码；不得把 ring release 前移到 callback 前来规避问题，以免改变 payload 生命周期。
+
+#### 作者建议
+
+作者于 2026-11-06 确认“那先合同保护吧”：裸机 ns_loop_poll 仅由最外层应用主循环驱动，同一 loop 前一次调用返回前禁止再次调用，slot 不得直接或间接重入。补充公开 @pre 与代码现场 shortcut，按合同前提保护关闭，不增加运行期守卫。
+
+#### 可重现的失败场景
+
+注入恒为 100 的时钟，初始化裸机 loop、无 payload signal 和 connection。slot 先 hits++，第一次进入时将 nested=1 并调用 ns_loop_poll(loop,0)。只 emit 一次，再从主循环 poll。实测 nested poll rc=0、outer poll rc=0、one emit callback count=2。去掉 nested 一次性门控即重复进入同一 slot；无需 slot 再 emit。
+
+#### 影响面
+
+公开 ns_loop_poll 的所有裸机主循环和辅助 pump 调用者；库内无其他直接 poll 调用。下级 ns_loop_dispatch_pending 在 callback 后调用 ns_mpsc_record_ring_release。现有 test/baremetal/main.c 覆盖普通 poll、timer、参数错误，没有回调内重入。
+
+#### 文档仲裁与历史去重
+
+platform/baremetal/nanosig_platform_port.h:26 明确单执行上下文（应用主循环）；platform/baremetal/nanosig_baremetal_api.h:9 明确由应用主循环驱动。这些是已有设计依据，但没有明确前一次 poll 返回前不得再次调用，故尚不足以按严格的合同前提规则直接关闭。
+
+docs/review/AGENTS.md:364 要求对隐含但未写出的前提先交作者文档化，:386 将其作为文档缺陷处理。CORE-014 保护持续 emit 的排空语义，与此复现不同，不重开该历史条目。
+
+2026-11-06 复核：原条目定为高优先级实现 bug 并直接建议增加守卫，跳过了上述隐含前提分支；现保留原 ID 和复现证据，改为中优先级 doc，作者建议继续留空，未据此修改源码或公共合同。
+
+#### 定位
+
+platform/baremetal/nanosig_baremetal_api.h:43
+platform/baremetal/nanosig_platform_port.h:26
+src/nanosig.c:464
+src/nanosig.c:343
+src/nanosig.c:346
+
+---
 
 ---
 

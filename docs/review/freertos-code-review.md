@@ -62,6 +62,18 @@ entries:
       - "platform/freertos/port.c:389"
       - "platform/freertos/port.c:421"
       - "src/nanosig.c:91"
+  - id: "FREERTOS-009"
+    module: "freertos"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-06"
+    location: "docs/review/freertos-code-review.md#FREERTOS-009"
+    locations:
+      - "platform/freertos/port.c:458"
+      - "platform/freertos/port.c:364"
+      - "include/nanosig/nanosig_port.h:477"
 ---
 
 # FreeRTOS Backend 代码审查报告
@@ -189,6 +201,8 @@ entries:
 
 - **FREERTOS-008（2026-10-23）**: ns_platform_thread_stack_range 的 max 改为按 configSTACK_DEPTH_TYPE 宽度换算（溢出时以 SIZE_MAX 封顶），并加不变量断言（在显式调窄 configSTACK_DEPTH_TYPE 的配置下具备判别力） — commit `05320ca`
 
+- **FREERTOS-009（2026-11-06）**: join 在信号量等待失败后继续重试，确认退出信号才释放资源；补两次失败等待的回归。修复基线：master；改动保留于工作区，未提交（并行工作随后切换至 fix/timer-021-interval-bound）。FreeRTOS Release / ASAN / UBSAN 各 3 项及 sanitizer 审计通过；硬件 16 位 tick 超时未实测。
+
 ## 现在打开的问题
 
 （暂无。）
@@ -243,5 +257,50 @@ ns_loop_start(loop)          -> NS_E_INVAL （:404 上界检查拒绝）
 platform/freertos/port.c:389
 platform/freertos/port.c:421
 src/nanosig.c:91
+
+<a id="FREERTOS-009"></a>
+### FREERTOS-009: join 将有限信号量等待超时当作线程退出
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高（前提：INCLUDE_vTaskSuspend=0、16 位 tick、1 kHz；join 超时后目标任务仍运行；官方 V11.1.0 源码走查和独立反证核验，未硬件实测）
+- **首次发现日期**: 2026-11-04
+- **类型**: bug
+- **关闭原因**: 已在工作区修复（未提交）：platform/freertos/port.c:459 循环等待 xSemaphoreTake 返回 pdTRUE 后才清理退出信号量与句柄，不增加 INCLUDE_vTaskSuspend 配置限制。test/freertos/test_freertos_waitset.c:564 回归通过两次 xTaskAbortDelay 触发真实 semaphore take 失败返回，验证 join 等到 entry 完成才返回。修复前断言 ctx.finished == 1 失败，修复后 FreeRTOS Release、ASAN、UBSAN 各 3 项通过，两种 sanitizer 的 sanitize-all 通过；未实等 16 位硬件 tick 超时。
+- **关闭日期**: 2026-11-06
+
+#### 问题描述
+
+join 会在线程仍运行时返回成功，并提前删除其退出信号量。任务稍后返回时会向 NULL 信号量执行 give；调用方若依照 join 成功回收线程对象或参数，还可能发生释放后访问。
+
+ns_platform_thread_join 忽略 xSemaphoreTake 的返回值。portMAX_DELAY 只有 INCLUDE_vTaskSuspend=1 时才表示无限等待；配置为 0 时是有限 tick 数。此时超时并不能证明目标已退出。
+
+#### review 建议
+
+循环等待到 xSemaphoreTake 明确返回 pdTRUE，再删除信号量和清空句柄。另一选择是新增并强制检查 INCLUDE_vTaskSuspend=1 的配置前提，但这会缩小支持范围，应由作者决定。补有限 tick 等待超时仍不提前 join 成功的验收。
+
+#### 作者建议
+
+作者于 2026-11-06 要求修复 FREERTOS-009。采用最小修复：xSemaphoreTake 未返回 pdTRUE 时继续等待，确认退出信号后才清理 join 资源；保持现有 FreeRTOS 配置支持范围。补充失败等待重试回归，改动保留在工作区，不提交。
+
+#### 可重现的失败场景
+
+使用官方支持 16 位 tick 的 port，配置 INCLUDE_vTaskSuspend=0、1000 Hz。成功创建任务，entry 连续两次 vTaskDelay(35000)，总时长约 70 秒；另一任务立即 join。保证 join 超时后及时得到调度，且第三个任务按平台时钟合同定期采样。约 65535 ticks 后信号量仍为空，take 返回失败，join 却返回 NS_OK 并清空 join_sem。entry 稍后返回，在 trampoline 中向 NULL join_sem give。
+
+官方依据：[V11.1.0 semphr.h](https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/dbf70559b27d39c1fdb68dfb9a32140b6a6777a0/include/semphr.h)、[tasks.c 超时判定](https://github.com/FreeRTOS/FreeRTOS-Kernel/blob/dbf70559b27d39c1fdb68dfb9a32140b6a6777a0/tasks.c#L5561-L5592)。这是源码证明，宿主 64 位 tick 测试未实等至溢出。
+
+#### 影响面
+
+内部调用者：src/nanosig.c:450（ns_loop_stop）、src/ns_broker.c:592（全局 broker 关闭）；另影响外部 ns_platform_thread_join 用户。下级为 xSemaphoreTake/vSemaphoreDelete，退出方为 ns_freertos_task_entry。ns_loop_stop 会提前清 async_started，但 destroy 另有 running 守卫，不能推断必然由 destroy 造成释放后访问。现有 FreeRTOS thread 测试只覆盖立即结束任务。
+
+#### 文档仲裁与历史去重
+
+公共 join 合同承诺等待线程退出，平台配置未要求 INCLUDE_vTaskSuspend=1；platform/README.md 明确支持 16 位 tick。已核对 FREERTOS-001 至 FREERTOS-008、PORT-030/032 及相关历史；不是自 join、失败 init 后 join 或违反时钟采样前提。平台 reviewer 与独立 researcher 均确认。
+
+#### 定位
+platform/freertos/port.c:458
+platform/freertos/port.c:364
+include/nanosig/nanosig_port.h:477
+
+---
 
 ---

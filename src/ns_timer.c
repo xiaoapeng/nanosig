@@ -133,7 +133,7 @@ static int ns_timer_validate_user_input(const ns_timer_t *timer)
     int rc = ns_timer_validate_created(timer);
 
     if(rc != NS_OK) return rc;
-    if(timer->interval_us == 0u) return NS_E_INVAL;
+    if((timer->interval_us == 0u) || (timer->interval_us > (uint64_t)INT64_MAX)) return NS_E_INVAL;
     if(!ns_timer_attr_is_valid(timer->attr)) return NS_E_INVAL;
     return NS_OK;
 }
@@ -359,7 +359,7 @@ int ns_timer_init(ns_timer_t *timer, ns_time_us_t interval_us, uint32_t attr)
     int rc;
 
     if(timer == NULL) return NS_E_INVAL;
-    if(interval_us == 0u) return NS_E_INVAL;
+    if((interval_us == 0u) || (interval_us > (uint64_t)INT64_MAX)) return NS_E_INVAL;
     if(!ns_timer_attr_is_valid(attr)) return NS_E_INVAL;
 
     rc = ns_timer_runtime_ready();

@@ -149,9 +149,11 @@ int ns_broker_remove(ns_watcher_t *watcher);
 
 - `ns_broker()`：返回全局 broker 指针（仅供内部和测试使用）。`ns_init` 前返回 `NULL`。
   公开 API 用户通常不需要此函数；`add` / `remove` 自动访问全局 broker。
-- `add`：注册 watcher 到 broker 的 waitset。同一 watcher 重复 add 返回
-  `NS_E_EXISTS`（由平台 waitset add 的 `registered_waitset` 判定）。内部设置
-  `watcher->waitable.user_data = watcher`。
+- `add`：注册已初始化且尚未注册的 watcher 到 broker 的 waitset。成功后必须先
+  成功 `remove` 才能再次 `add`；调用方须自行协调同一 watcher，避免重复注册。
+  本函数不幂等：重复 `add` 虽返回 `NS_E_EXISTS`（由平台的 `registered_waitset`
+  判定），但会清空 `watcher->waitable.user_data`，原 waitset 注册仍存在且不再
+  投递 handler。这是调用方违反前提后的已知行为；恢复时须先 `remove` 再 `add`。
 - `remove`：从 waitset 注销 watcher，平台 waitset remove 清除 waitable
   注册状态；未注册时返回 `NS_E_INVAL`。已入队的 slot 调用不撤回。
 - `add` / `remove` 是**同步会合**：请求经内部 op 队列交给 broker 线程执行，

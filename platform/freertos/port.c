@@ -455,7 +455,9 @@ int ns_platform_thread_join(ns_platform_thread_t *thread)
 {
     if((thread == NULL) || (thread->join_sem == NULL)) return NS_E_INVAL;
 
-    (void)xSemaphoreTake(thread->join_sem, portMAX_DELAY);
+    /* INCLUDE_vTaskSuspend=0 时 portMAX_DELAY 仍会超时，必须确认收到退出信号。 */
+    while(xSemaphoreTake(thread->join_sem, portMAX_DELAY) != pdTRUE){
+    }
     vSemaphoreDelete(thread->join_sem);
     thread->join_sem = NULL;
     thread->task = NULL;

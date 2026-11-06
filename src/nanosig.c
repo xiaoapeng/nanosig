@@ -463,6 +463,7 @@ int ns_loop_stop(ns_loop_t *loop)
 
 int ns_loop_poll(ns_loop_t *loop, uint32_t max_wait_us)
 {
+    /* shortcut: poll 依赖调用方保证非重入；需支持回调内嵌套派发时必须重设计记录消费。 */
     int      rc = NS_OK;
     int      round;
     int      max_round;

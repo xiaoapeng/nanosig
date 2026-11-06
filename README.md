@@ -11,11 +11,12 @@ signal 是「发生了某事」的通知，slot 是收到通知后执行的回�
 - **loop（事件循环）不绑线程**：同一个信号可以从任意线程发，处理永远发生在你指定的那个 loop 的线程里。
 - **不只管信号**：定时器、平台 fd / 句柄就绪，都能变成信号。
 
-## 接入前要满足的三件事
+## 接入前要满足的四件事
 
 1. **两个头文件路径**：`include/` 和 `platform/<你的平台>/`。六个后端各有一份同名 `nanosig_platform_port.h`，靠 include 路径选中——选错会在编译期直接报错，不会悄悄用错平台。另外，`include/nanosig/nanosig_version.h.in` 要生成成 `nanosig_version.h`：把里面的 `@PROJECT_VERSION_*@` 换成 `0` / `1` / `0`，版本串换成 `"0.1.0"`。
 2. **编译这些文件**：`src/nanosig.c`、`src/ns_timer.c`、`src/ns_broker.c`、`src/ns_formatio.c`、`src/ns_debug.c`、`src/ds/ns_hashtbl.c`、`src/ds/ns_mpsc_record_ring.c`、`src/ds/ns_rbtree.c`、`src/ds/ns_ringbuf.c`，加 `platform/<你的平台>/port.c`（裸机没有 broker，`src/ns_broker.c` 与 `src/ds/ns_hashtbl.c` 不编入）。
 3. **平台前提**：C11 编译器；Linux / macOS 另需 pthread；Windows 无外部依赖；FreeRTOS 需要 queue set（`configUSE_QUEUE_SETS=1`）；Zephyr 需要 `CONFIG_POLL=y`；裸机需要你自己提供一个**微秒、单调不减、永不回绕的 64 位时钟函数**，并在 `ns_init()` 之前用 `ns_baremetal_set_now_us()` 装进去。
+4. **broker 栈编译定义**：手工编译含 broker 的后端时，必须定义 `NANOSIG_BROKER_STACK_SIZE`，例如 `-DNANOSIG_BROKER_STACK_SIZE=0`；单位是字节，`0` 表示平台默认值。CMake target 和 Zephyr module 会自动注入，裸机不编入 broker，无需此定义。平台默认值、最小栈限制及 RTOS 回调栈预算见 [broker 线程的栈](platform/README.md#broker-线程的栈)。
 
 程序入口固定一对：`ns_init()` 一次，`ns_shutdown()` 最后调一次。
 
