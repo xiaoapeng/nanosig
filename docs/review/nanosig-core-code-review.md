@@ -172,7 +172,7 @@ entries:
     location: "docs/review/nanosig-core-code-review.md#CORE-019"
     locations:
       - "test/unit/test_cpp_compat_compile.cpp:212"
-      - "cmake/ApiCompileChecks.cmake:159"
+      - "cmake/ApiCompileChecks.cmake:28"
       - "include/nanosig/nanosig_loop.h:63"
   - id: "CORE-020"
     module: "nanosig-core"
@@ -707,9 +707,13 @@ if(cfg.stack_size != 0u) {
 实证：把 C++ 分支改成少一个初始化成员后，`clang++ -std=c++11 -Wall -Wextra -fsyntax-only` 只输出 `warning: missing field 'd' initializer`，**退出码 0** —— api-compile-checks 仍判通过。
 
 #### 定位
+
 test/unit/test_cpp_compat_compile.cpp:212
-cmake/ApiCompileChecks.cmake:159
+cmake/ApiCompileChecks.cmake:28
 include/nanosig/nanosig_loop.h:63
+
+
+---
 
 <a id="CORE-020"></a>
 ### CORE-020: 裸机 poll 的非重入调用前提未明确

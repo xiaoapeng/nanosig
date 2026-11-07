@@ -18,8 +18,9 @@ configure_file(
 include(cmake/CompileWarnings.cmake)
 include(cmake/Sanitizers.cmake)
 include(cmake/Coverage.cmake)
-include(cmake/ApiCompileChecks.cmake)
 include(cmake/SanitizeAll.cmake)
+include(cmake/ModuleConfig.cmake)
+include(cmake/TestPrograms.cmake)
 
 if(UNIX)
     find_package(Threads REQUIRED)
@@ -30,41 +31,7 @@ option(NANOSIG_BUILD_DEMOS "Build nanosig demo executables" ON)
 option(NANOSIG_BUILD_BENCH "Build nanosig benchmarks" OFF)
 option(NANOSIG_BUILD_API_CHECKS "Register compile-only API checks" ON)
 
-# ── 平台后端选择 ────────────────────────────────────────────────
-# host    : 桌面三后端（默认）。
-# freertos: FreeRTOS queue-set 后端；需 NANOSIG_FREERTOS_INCLUDE_DIRS
-#           提供 FreeRTOS SDK 头文件路径，或开启 host POSIX harness 自动填充。
-# zephyr  : Zephyr k_poll 后端。**不通过顶层 CMake 构建**：Zephyr 有自己的
-#           构建系统，本后端经仓库根目录的 zephyr/module.yml 作为 Zephyr module
-#           编入（见 zephyr/CMakeLists.txt）。顶层给出 zephyr 时只打印引导信息。
-set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host, baremetal, freertos, or zephyr (zephyr builds via Zephyr module)")
-set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host baremetal freertos zephyr)
-
-set(NANOSIG_FREERTOS_INCLUDE_DIRS "" CACHE STRING
-    "FreeRTOS SDK include dirs (required when NANOSIG_PLATFORM=freertos)")
-
-# FreeRTOS 后端可配置常量；仅 NANOSIG_PLATFORM=freertos 时编入。
-set(NANOSIG_FREERTOS_WAITSET_CAP "32" CACHE STRING
-    "FreeRTOS queue-set token capacity (Sigma member capacity + max member capacity)")
-set(NANOSIG_FREERTOS_TASK_PRIORITY "1" CACHE STRING
-    "FreeRTOS platform task priority")
-
-# 裸机后端可配置常量；仅 NANOSIG_PLATFORM=baremetal 时编入。
-# 裸机内建一个静态 loop，ring 存储是编译期固定大小的静态数组，故容量不可按
-# loop 定制：更小的请求按本值分配，更大的请求使 ns_loop_create 返回 NS_E_INVAL。
-set(NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES "1024" CACHE STRING
-    "Baremetal static loop MPSC ring capacity in bytes (power of two, >= 3*sizeof(size_t))")
-set(NANOSIG_BAREMETAL_POLL_MAX_ROUNDS "4" CACHE STRING
-    "Baremetal ns_loop_poll() maximum dispatch rounds per call")
-
-# broker（timer）线程的栈大小，单位字节。0 = 使用平台默认栈大小。
-# 编译期锁死：库内只有这一个对外可配的栈旋钮，注入缺失即编译失败
-# （src/ns_broker.c 的 #error），不会静默回落到平台默认。
-set(NANOSIG_BROKER_STACK_SIZE "0" CACHE STRING
-    "Broker (timer) thread stack size in bytes (0 = platform default)")
-
-option(NANOSIG_BUILD_FREERTOS_POSIX
-    "Build the FreeRTOS POSIX host harness and FreeRTOS contract tests" OFF)
+include(cmake/Platform.cmake)
 
 set(NANOSIG_DS_SOURCES
     src/ds/ns_hashtbl.c
@@ -73,88 +40,11 @@ set(NANOSIG_DS_SOURCES
     src/ds/ns_ringbuf.c
 )
 
-if(NANOSIG_PLATFORM STREQUAL "freertos")
-    if(NANOSIG_BUILD_FREERTOS_POSIX)
-        include(cmake/FreeRTOSPosix.cmake)
-        nanosig_configure_freertos_posix()
-    endif()
-    if(NOT NANOSIG_FREERTOS_INCLUDE_DIRS)
-        message(FATAL_ERROR
-            "NANOSIG_PLATFORM=freertos requires NANOSIG_FREERTOS_INCLUDE_DIRS "
-            "(or configure with -DNANOSIG_BUILD_FREERTOS_POSIX=ON)")
-    endif()
-    set(NANOSIG_PLATFORM_SOURCES
-        platform/freertos/port.c
-    )
-elseif(NANOSIG_PLATFORM STREQUAL "baremetal")
-    # 裸机后端是**能力子集后端**：只提供 init/shutdown/clock_monotonic_us
-    # 三个 ns_platform_* 符号；其余平台原语有意不定义（引用即链接期失败）。
-    # broker 与 hashtbl 不编入：前者依赖线程/waitset，后者在 signal+timer
-    # 路径上没有任何调用者。
-    set(NANOSIG_PLATFORM_SOURCES
-        platform/baremetal/port.c
-    )
-    set(NANOSIG_BAREMETAL 1)
-elseif(NANOSIG_PLATFORM STREQUAL "host")
-    if(WIN32)
-        set(NANOSIG_PLATFORM_SOURCES
-            platform/windows/port.c
-        )
-    elseif(APPLE)
-        set(NANOSIG_PLATFORM_SOURCES
-            platform/macos/port.c
-        )
-    elseif(UNIX AND NOT APPLE)
-        set(NANOSIG_PLATFORM_SOURCES
-            platform/linux/port.c
-        )
-    else()
-        message(FATAL_ERROR
-            "nanosig host backends support only Linux, macOS, and Windows; "
-            "use NANOSIG_PLATFORM=freertos for RTOS targets")
-    endif()
-elseif(NANOSIG_PLATFORM STREQUAL "zephyr")
-    # Zephyr 有独立构建系统；后端经 zephyr/module.yml 作为 module 编入。
-    # 顶层构建不链接 Zephyr kernel，故这里给出引导信息而非静默失败。
-    message(FATAL_ERROR
-        "NANOSIG_PLATFORM=zephyr 不通过顶层 CMake 构建。\n"
-        "Zephyr 后端以 Zephyr module 形式接入，请用 Zephyr 构建系统构建测试应用：\n"
-        "  west build -b native_sim/native/64 ${CMAKE_CURRENT_SOURCE_DIR}/test/zephyr \\\n"
-        "      -- -DEXTRA_ZEPHYR_MODULES=${CMAKE_CURRENT_SOURCE_DIR}\n"
-        "或在 west workspace 中把本仓库作为 module 后构建 test/zephyr。\n"
-        "顶层构建请使用 -DNANOSIG_PLATFORM=host（默认）。")
-else()
-    message(FATAL_ERROR
-        "NANOSIG_PLATFORM must be 'host', 'baremetal', 'freertos', or 'zephyr' "
-        "(got '${NANOSIG_PLATFORM}')")
-endif()
-
-# ── 平台类型头选择 ──────────────────────────────────────────────
-# 平台类型（ns_waitable_handle_t + wakeup/mutex/thread/waitset）由平台后端头
-# `nanosig_platform_port.h` 提供；nanosig_port.h 自身不含任何平台判定宏。各平台
-# 后端头同名，由 include 路径决定选中哪一个——这是平台选择的唯一注入点，
-# 库与消费者共用同一份类型定义。
-if(NANOSIG_PLATFORM STREQUAL "freertos")
-    set(NANOSIG_PLATFORM_DIR platform/freertos)
-elseif(NANOSIG_PLATFORM STREQUAL "baremetal")
-    set(NANOSIG_PLATFORM_DIR platform/baremetal)
-elseif(WIN32)
-    set(NANOSIG_PLATFORM_DIR platform/windows)
-elseif(APPLE)
-    set(NANOSIG_PLATFORM_DIR platform/macos)
-else()
-    set(NANOSIG_PLATFORM_DIR platform/linux)
-endif()
-
 # 裸机后端不编入 broker（依赖 thread/waitset）与 hashtbl（signal+timer 路径上
 # 没有任何调用者）。源列表是显式列表而非 glob，故此处逐项裁掉。
 if(NANOSIG_PLATFORM STREQUAL "baremetal")
     set(NANOSIG_BROKER_SOURCES "")
-    set(NANOSIG_DS_SOURCES
-        src/ds/ns_mpsc_record_ring.c
-        src/ds/ns_rbtree.c
-        src/ds/ns_ringbuf.c
-    )
+    list(REMOVE_ITEM NANOSIG_DS_SOURCES src/ds/ns_hashtbl.c)
 else()
     set(NANOSIG_BROKER_SOURCES src/ns_broker.c)
 endif()
@@ -197,321 +87,19 @@ target_include_directories(nanosig PRIVATE
     ${PROJECT_SOURCE_DIR}
 )
 
-# PUBLIC: consumers (contract tests / app) must see the same platform types as
-# the library — the platform header is the single source of that layout, and it
-# is selected purely by the include path.
-target_include_directories(nanosig PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}>
-)
-
-# broker（timer）线程的栈大小：库内部旋钮，PRIVATE 注入（不外泄给消费者，
-# 也不占用公共 API 面）。PRIVATE 而非 PUBLIC，因为唯一使用者是 src/ns_broker.c。
-# 裸机后端不编入 ns_broker.c，故也省略该注入（否则其 #error 守卫会误报）。
-if(NOT NANOSIG_PLATFORM STREQUAL "baremetal")
-    target_compile_definitions(nanosig PRIVATE
-        NANOSIG_BROKER_STACK_SIZE=${NANOSIG_BROKER_STACK_SIZE}
-    )
-endif()
-
-if(NANOSIG_PLATFORM STREQUAL "baremetal")
-    # PUBLIC: 测试 harness 需要能读到同一份容量/轮数配置值。
-    target_compile_definitions(nanosig PUBLIC
-        NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES=${NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES}
-        NANOSIG_BAREMETAL_POLL_MAX_ROUNDS=${NANOSIG_BAREMETAL_POLL_MAX_ROUNDS}
-    )
-endif()
-
-if(NANOSIG_PLATFORM STREQUAL "freertos")
-    # PUBLIC: 后端常量让契约测试能断言同一份配置值（容量与优先级）。
-    target_compile_definitions(nanosig PUBLIC
-        NANOSIG_FREERTOS_WAITSET_CAP=${NANOSIG_FREERTOS_WAITSET_CAP}
-        NANOSIG_FREERTOS_TASK_PRIORITY=${NANOSIG_FREERTOS_TASK_PRIORITY}
-    )
-    target_include_directories(nanosig PUBLIC ${NANOSIG_FREERTOS_INCLUDE_DIRS})
-    if(TARGET nanosig_freertos_kernel)
-        target_link_libraries(nanosig PRIVATE nanosig_freertos_kernel)
-    endif()
-endif()
-
-if(UNIX)
-    target_link_libraries(nanosig PRIVATE Threads::Threads)
-endif()
-
-if(WIN32 OR UNIX)
-    # PUBLIC so consumers (tests, demos) get the same struct layout as the library
-    target_compile_definitions(nanosig PUBLIC NS_MPSC_CACHELINE_ALIGNED)
-endif()
-
+nanosig_apply_platform(nanosig)
+nanosig_apply_module_config(nanosig)
 nanosig_apply_private_warnings(nanosig)
 nanosig_apply_sanitizers(nanosig)
 nanosig_apply_coverage(nanosig)
 
 enable_testing()
-
-function(nanosig_add_unit_test name source)
-    add_executable(${name}
-        ${source}
-    )
-    target_link_libraries(${name} PRIVATE nanosig::nanosig)
-    target_include_directories(${name} PRIVATE
-        ${PROJECT_SOURCE_DIR}
-        ${PROJECT_SOURCE_DIR}/test
-    )
-    nanosig_apply_private_warnings(${name})
-    nanosig_apply_sanitizers(${name})
-
-    add_test(
-        NAME ${name}
-        COMMAND ${name}
-    )
-endfunction()
-
-if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
-    # Event broker tests — split by concern for faster parallel builds
-    nanosig_add_unit_test(nanosig_test_broker_lifecycle test/unit/test_broker_lifecycle.c)
-    target_compile_definitions(nanosig_test_broker_lifecycle PRIVATE NANOSIG_TEST)
-    nanosig_add_unit_test(nanosig_test_broker_event test/unit/test_broker_event.c)
-    target_compile_definitions(nanosig_test_broker_event PRIVATE NANOSIG_TEST)
-    nanosig_add_unit_test(nanosig_test_broker_handler test/unit/test_broker_handler.c)
-    target_compile_definitions(nanosig_test_broker_handler PRIVATE NANOSIG_TEST)
-    nanosig_add_unit_test(nanosig_test_broker_multi test/unit/test_broker_multi.c)
-    target_compile_definitions(nanosig_test_broker_multi PRIVATE NANOSIG_TEST)
-    nanosig_add_unit_test(nanosig_test_broker_delivery test/unit/test_broker_delivery.c)
-    target_compile_definitions(nanosig_test_broker_delivery PRIVATE NANOSIG_TEST)
-    # broker add/remove 是同步会合且无等待上界：契约被违反时表现为永久阻塞，
-    # 没有 TIMEOUT 会拖到 ctest 默认上限（1500s）并烧掉 CI job。
-    set_tests_properties(
-        nanosig_test_broker_lifecycle
-        nanosig_test_broker_event
-        nanosig_test_broker_handler
-        nanosig_test_broker_multi
-        nanosig_test_broker_delivery
-        PROPERTIES TIMEOUT 60)
-    target_compile_definitions(nanosig PRIVATE NANOSIG_TEST)
-    nanosig_add_unit_test(nanosig_test_platform_backend test/unit/test_platform_backend.c)
-    nanosig_add_unit_test(nanosig_test_loop test/unit/test_loop.c)
-    nanosig_add_unit_test(nanosig_test_signal test/unit/test_signal.c)
-    nanosig_add_unit_test(nanosig_test_timer test/unit/test_timer.c)
-    nanosig_add_unit_test(nanosig_test_mpsc_record_ring test/unit/test_mpsc_record_ring.c)
-    nanosig_add_unit_test(nanosig_test_ds_list test/unit/test_ds_list.c)
-    nanosig_add_unit_test(nanosig_test_ds_slist test/unit/test_ds_slist.c)
-    nanosig_add_unit_test(nanosig_test_ds_ringbuf test/unit/test_ds_ringbuf.c)
-    nanosig_add_unit_test(nanosig_test_ds_hashtable test/unit/test_ds_hashtable.c)
-    nanosig_add_unit_test(nanosig_test_ds_rbtree test/unit/test_ds_rbtree.c)
-    nanosig_add_unit_test(nanosig_test_formatio test/unit/test_formatio.c)
-    nanosig_add_unit_test(nanosig_test_debug test/unit/test_debug.c)
-
-    # ── 高危 API 缺口补齐 ─────────────────────────────────────────
-    # 单一文件、单一关注点；每文件对应报告 §2.1 表格中的一行。
-    nanosig_add_unit_test(nanosig_test_signal_null_slot test/unit/test_signal_null_slot.c)
-    nanosig_add_unit_test(nanosig_test_signal_double_deinit test/unit/test_signal_double_deinit.c)
-    nanosig_add_unit_test(nanosig_test_loop_reuse test/unit/test_loop_reuse.c)
-    # C++ 侧的运行时契约：test_cpp_compat_compile.cpp 只做 -fsyntax-only 且无 main，
-    # 覆盖不到 NS_LOOP_CONFIG_DEFAULT() 的 C++ 位置初始化分支。
-    nanosig_add_unit_test(nanosig_test_cpp_compat_runtime test/unit/test_cpp_compat_runtime.cpp)
-    nanosig_add_unit_test(nanosig_test_timer_deinit_use test/unit/test_timer_deinit_use.c)
-    nanosig_add_unit_test(nanosig_test_broker_concurrent_remove test/unit/test_broker_concurrent_remove.c)
-    set_tests_properties(nanosig_test_broker_concurrent_remove PROPERTIES TIMEOUT 60)
-
-    # Previously unregistered stress test
-    nanosig_add_unit_test(nanosig_test_mpsc_record_ring_stress test/unit/test_mpsc_record_ring_stress.c)
-    set_tests_properties(nanosig_test_mpsc_record_ring_stress PROPERTIES
-        TIMEOUT 1300
-        LABELS "stress;long-stability"
-        ENVIRONMENT "NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=20")
-
-    # ==========================================
-    # Integration tests — layered targets
-    # ==========================================
-    # Layer-1: Basic complex combinations (4 scenarios)
-    nanosig_add_unit_test(nanosig_test_integration_layer1 test/integration/test_layer1.c)
-    set_tests_properties(nanosig_test_integration_layer1 PROPERTIES LABELS "integration;quick" TIMEOUT 30)
-
-    # Layer-2: Stress tests (4 scenarios)
-    nanosig_add_unit_test(nanosig_test_integration_layer2 test/integration/test_layer2.c)
-    set_tests_properties(nanosig_test_integration_layer2 PROPERTIES LABELS "integration;quick" TIMEOUT 60)
-
-    # Layer-3: Behavior verification (6 scenarios — includes marathon/idle)
-    nanosig_add_unit_test(nanosig_test_integration_layer3 test/integration/test_layer3.c)
-    set_tests_properties(nanosig_test_integration_layer3 PROPERTIES LABELS "integration;nightly" TIMEOUT 180)
-
-    # Long-stability: standalone for TIMEOUT+LABELS (1 scenario)
-    nanosig_add_unit_test(nanosig_test_integration_hive test/integration/test_hive.c)
-    set_tests_properties(nanosig_test_integration_hive PROPERTIES
-        LABELS "integration;nightly;long-stability" TIMEOUT 1500)
-
-    # ── Individual scenarios — each is also a standalone test ──
-    foreach(scenario_name
-        cascade cleanup_verify cocktail dual_loop idle
-        lifecycle_chaos lifecycle_marathon multi_route
-        random_chaos reentrant_race signal_storm
-        timer_precision timer_storm watchdog)
-        nanosig_add_unit_test(nanosig_test_scenario_${scenario_name}
-            test/integration/scenario_${scenario_name}.c)
-        target_compile_definitions(nanosig_test_scenario_${scenario_name} PRIVATE SCENARIO_MAIN)
-        set_tests_properties(nanosig_test_scenario_${scenario_name}
-            PROPERTIES LABELS "integration;quick" TIMEOUT 30)
-    endforeach()
-endif()
-
-# ── FreeRTOS contract tests (host POSIX harness only) ────────────────
-# These exercise platform/freertos/port.c against real queue-set semantics.
-# Host-only tests above are intentionally NOT registered in this configuration.
-if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "freertos" AND NANOSIG_BUILD_FREERTOS_POSIX)
-    nanosig_add_unit_test(nanosig_test_freertos_waitset test/freertos/test_freertos_waitset.c)
-    set_tests_properties(nanosig_test_freertos_waitset PROPERTIES TIMEOUT 60)
-    nanosig_add_unit_test(nanosig_test_freertos_broker test/freertos/test_freertos_broker.c)
-    set_tests_properties(nanosig_test_freertos_broker PROPERTIES TIMEOUT 60)
-endif()
-
-if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "baremetal")
-    # 裸机契约测试：假时钟驱动，覆盖 AC4–AC9 与 AC15。
-    nanosig_add_unit_test(nanosig_test_baremetal test/baremetal/main.c)
-    nanosig_add_unit_test(nanosig_test_baremetal_cpp_link test/baremetal/test_cpp_link.cpp)
-    target_compile_features(nanosig_test_baremetal_cpp_link PRIVATE cxx_std_11)
-
-    # 负向门：watcher/broker API 在裸机后端**必须**链接不过。
-    # 放在配置期做，避免把一个注定失败的目标挂到默认构建里。
-    # 把库源与负向用例一起编：configure 期还没有 libnanosig.a，
-    # 用 LINK_LIBRARIES 会退化成 "library not found"，门就成了永真摆设。
-    set(NANOSIG_NEGLINK_SOURCES ${NANOSIG_LIB_SOURCES})
-    list(TRANSFORM NANOSIG_NEGLINK_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
-    try_compile(NANOSIG_BAREMETAL_NEGLINK_OK
-        ${CMAKE_CURRENT_BINARY_DIR}/neg_link
-        SOURCES ${NANOSIG_NEGLINK_SOURCES} ${PROJECT_SOURCE_DIR}/test/baremetal/no_watcher.c
-        CMAKE_FLAGS
-            "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/include;${PROJECT_SOURCE_DIR}/include/nanosig;${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR};${PROJECT_BINARY_DIR}/include"
-        OUTPUT_VARIABLE NANOSIG_BAREMETAL_NEGLINK_OUT
-    )
-    if(NANOSIG_BAREMETAL_NEGLINK_OK)
-        message(FATAL_ERROR
-            "baremetal backend must NOT link ns_watcher_init: watcher/broker "
-            "APIs are out of scope and their symbols must be absent.\n"
-            "${NANOSIG_BAREMETAL_NEGLINK_OUT}")
-    endif()
-    # 反向断言：try_compile 失败也可能只是"根本没编译到链接阶段"（include 路径错、
-    # 语法错等），那样这道门什么都没验证却照样打印通过。要求输出里确实出现
-    # 未定义符号的诊断，否则视为门本身失效。
-    if(NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "ns_watcher_init"
-       AND NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "undefined reference"
-       AND NOT NANOSIG_BAREMETAL_NEGLINK_OUT MATCHES "Undefined symbols")
-        message(FATAL_ERROR
-            "baremetal negative-link gate did not reach the linker: the try_compile "
-            "output contains no unresolved-symbol diagnostic, so 'link failure' was "
-            "caused by something else (bad include path, syntax error, ...) and the "
-            "gate verified nothing.\n"
-            "${NANOSIG_BAREMETAL_NEGLINK_OUT}")
-    endif()
-    message(STATUS "baremetal: ns_watcher_init correctly absent (link-time gate ok)")
-endif()
-
+add_subdirectory(test)
 if(NANOSIG_BUILD_DEMOS AND NANOSIG_PLATFORM STREQUAL "host")
-    nanosig_add_unit_test(nanosig_demo_same_thread demos/demo_same_thread.c)
-    nanosig_add_unit_test(nanosig_demo_cross_thread demos/demo_cross_thread.c)
-    set_tests_properties(nanosig_demo_cross_thread PROPERTIES TIMEOUT 10)
-    nanosig_add_unit_test(nanosig_demo_timer_cross_thread demos/demo_timer_cross_thread.c)
-    set_tests_properties(nanosig_demo_timer_cross_thread PROPERTIES TIMEOUT 10)
-    nanosig_add_unit_test(nanosig_demo_watcher_ready demos/demo_watcher_ready.c)
-    set_tests_properties(nanosig_demo_watcher_ready PROPERTIES TIMEOUT 30)
-    nanosig_add_unit_test(nanosig_demo_watcher_loop demos/demo_watcher_loop.c)
-    set_tests_properties(nanosig_demo_watcher_loop PROPERTIES TIMEOUT 30)
+    add_subdirectory(demos)
 endif()
-
 if(NANOSIG_BUILD_BENCH AND NANOSIG_PLATFORM STREQUAL "host")
-    nanosig_add_unit_test(nanosig_bench_same_thread bench/bench_same_thread.c)
-    nanosig_add_unit_test(nanosig_bench_cross_thread bench/bench_cross_thread.c)
-    nanosig_add_unit_test(nanosig_bench_throughput bench/bench_throughput.c)
-    set_tests_properties(nanosig_bench_throughput PROPERTIES TIMEOUT 30)
-endif()
-
-if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "host")
-    nanosig_add_api_compile_check(nanosig_api_check_macro_matrix
-        test/unit/test_macro_expansion.c
-    )
-
-    # 平台契约头语法检查。跨平台的类型正确性由各平台 CI 的真实编译覆盖
-    # （Windows / FreeRTOS / Zephyr 各自的工具链），host 上不再伪造
-    # NANOSIG_PLATFORM_* 分支——平台类型现在来自平台后端头，host 上无法提供
-    # 其它平台的 SDK 类型。
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        test/unit/test_platform_contract_compile.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_broker_contract
-        test/unit/test_broker_contract_compile.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_data_structures
-        test/unit/test_data_structures_contract_compile.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_types
-        test/unit/test_types_contract_compile.c
-    )
-
-    nanosig_add_cpp_compat_check(nanosig_api_check_cpp_compat
-        test/unit/test_cpp_compat_compile.cpp
-    )
-
-    add_custom_target(api-compile-checks
-        DEPENDS
-            nanosig_api_check_macro_matrix
-            nanosig_api_check_platform_contract
-            nanosig_api_check_broker_contract
-            nanosig_api_check_data_structures
-            nanosig_api_check_types
-            nanosig_api_check_cpp_compat
-    )
-endif()
-
-# FreeRTOS 也注册平台契约编译检查，使 `api-compile-checks` 目标在
-# NANOSIG_PLATFORM=freertos 下存在（AC：api-compile-checks 覆盖 FreeRTOS 分支）。
-# POSIX harness 与真实目标都只对公共头做 -fsyntax-only，不链接。
-if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "freertos")
-    # 平台后端头 include FreeRTOS SDK，故语法检查必须带上 SDK include 目录。
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        test/unit/test_platform_contract_compile.c
-        INCLUDE_DIRS ${NANOSIG_FREERTOS_INCLUDE_DIRS}
-    )
-
-    add_custom_target(api-compile-checks
-        DEPENDS
-            nanosig_api_check_platform_contract
-    )
-endif()
-
-if(NANOSIG_BUILD_API_CHECKS AND NANOSIG_PLATFORM STREQUAL "baremetal")
-    # 裸机是能力子集后端：broker/watcher 不在范围内，故不注册 broker 契约检查
-    # （注册它等于宣称该能力存在）。其余公共头契约检查照做——它们验证的正是
-    # 「哑类型 + 成员条件编译」这套形态在 C 与 C++ TU 下都自洽。
-    nanosig_add_api_compile_check(nanosig_api_check_macro_matrix
-        test/unit/test_macro_expansion.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_platform_contract
-        test/unit/test_platform_contract_compile.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_data_structures
-        test/unit/test_data_structures_contract_compile.c
-    )
-
-    nanosig_add_api_compile_check(nanosig_api_check_types
-        test/unit/test_types_contract_compile.c
-    )
-
-    nanosig_add_cpp_compat_check(nanosig_api_check_cpp_compat
-        test/unit/test_cpp_compat_compile.cpp
-    )
-
-    add_custom_target(api-compile-checks
-        DEPENDS
-            nanosig_api_check_macro_matrix
-            nanosig_api_check_platform_contract
-            nanosig_api_check_data_structures
-            nanosig_api_check_types
-            nanosig_api_check_cpp_compat
-    )
+    add_subdirectory(bench)
 endif()
 
 # sanitize-all — driven by cmake/SanitizeAll.cmake; see that module for the
@@ -531,22 +119,4 @@ if(NANOSIG_PYTHON3)
     )
 endif()
 
-# ── Coverage report ──────────────────────────────────────────────────
-if(NANOSIG_ENABLE_COVERAGE)
-    find_program(LCOV lcov)
-    find_program(GENHTML genhtml)
-    if(LCOV AND GENHTML)
-        add_custom_target(coverage
-            COMMAND ${LCOV} --capture --ignore-errors gcov,negative --directory . --output-file coverage.info
-            COMMAND ${LCOV} --remove coverage.info --ignore-errors unused '/usr/*' '*/test/*' '*/include/nanosig/internal/*' --output-file coverage.info
-            COMMAND ${GENHTML} coverage.info --output-directory coverage_report
-            COMMAND ${CMAKE_COMMAND} -E echo "Coverage report: file://${CMAKE_BINARY_DIR}/coverage_report/index.html"
-            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-            COMMENT "Generating code coverage report..."
-        )
-    else()
-        add_custom_target(coverage
-            COMMAND ${CMAKE_COMMAND} -E echo "lcov and/or genhtml not found — install with: sudo apt install lcov"
-        )
-    endif()
-endif()
+nanosig_configure_coverage_report()

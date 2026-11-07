@@ -1,188 +1,69 @@
-# API compile checks — syntax-only (-fsyntax-only) contract checks over the
-# public headers. Each check is emitted both as a custom target and as a ctest
-# test that invokes the compiler directly, so a contract TU can be checked
-# under several platform macro sets without linking. The cross-TU ABI probe
-# link check is covered by the runtime/contract tests, not here.
+# Syntax-only checks share the library's public configuration. Linking/ABI
+# checks remain the responsibility of the runtime and negative-link tests.
 
-# _nanosig_api_c_syntax_flags(<out_var> <include_dirs> <defines>)
-#
-# C syntax-only flag set for the active compiler frontend. The platform backend
-# header (selected by NANOSIG_PLATFORM_DIR, i.e. the include path) is part of
-# the base flag set: every public header transitively needs it.
-# <include_dirs> and <defines> are lists appended with the frontend's own
-# `-I`/`-D` (or `/I`/`/D`) prefix; each element must be unprefixed.
-function(_nanosig_api_c_syntax_flags out_var include_dirs defines)
-    if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-        set(_msvc_frontend ON)
-    elseif(MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
-        set(_msvc_frontend ON)
-    else()
-        set(_msvc_frontend OFF)
-    endif()
-
-    if(_msvc_frontend)
-        set(_flags
-            /nologo
-            /std:c11
-            /Zs
-            /W4
-            /permissive-
-            /Zc:preprocessor
-            /I${PROJECT_SOURCE_DIR}/include
-            /I${PROJECT_SOURCE_DIR}
-            /I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
-        )
-    else()
-        set(_flags
-            -std=c11
-            -fsyntax-only
-            -Wall
-            -Wextra
-            -Wconversion
-            -Wsign-conversion
-            -Wno-psabi
-            -I${PROJECT_SOURCE_DIR}/include
-            -I${CMAKE_BINARY_DIR}/include
-            -I${PROJECT_SOURCE_DIR}
-            -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
-        )
-    endif()
-
-    foreach(_dir IN LISTS include_dirs)
-        if(_msvc_frontend)
-            list(APPEND _flags "/I${_dir}")
-        else()
-            list(APPEND _flags "-I${_dir}")
-        endif()
-    endforeach()
-
-    foreach(_define IN LISTS defines)
-        if(_msvc_frontend)
-            list(APPEND _flags "/D${_define}")
-        else()
-            list(APPEND _flags "-D${_define}")
-        endif()
-    endforeach()
-
-    set(${out_var} "${_flags}" PARENT_SCOPE)
-endfunction()
-
-# _nanosig_add_syntax_target(<name> <flags> <source>...)
-#
-# Emit the compile-only custom target and its ctest entry for an existing
-# (already computed) flag list.
-function(_nanosig_add_syntax_target name flags)
-    set(_sources ${ARGN})
-    if(NOT _sources)
+# nanosig_add_api_compile_check(name source... [LANGUAGE C|CXX])
+function(nanosig_add_api_compile_check name)
+    cmake_parse_arguments(PARSE_ARGV 1 check "" "LANGUAGE" "")
+    if(NOT check_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "${name} requires at least one source")
     endif()
+    if(NOT check_LANGUAGE)
+        set(check_LANGUAGE C)
+    endif()
+    if(NOT check_LANGUAGE MATCHES "^(C|CXX)$")
+        message(FATAL_ERROR "${name}: LANGUAGE must be C or CXX")
+    endif()
 
-    set(_source_deps "")
-    foreach(_source IN LISTS _sources)
-        if(IS_ABSOLUTE "${_source}")
-            list(APPEND _source_deps "${_source}")
+    if(CMAKE_${check_LANGUAGE}_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+       OR (MSVC AND NOT CMAKE_${check_LANGUAGE}_COMPILER_ID STREQUAL "Clang"))
+        set(flags /nologo /Zs /W4 /permissive- /Zc:preprocessor)
+        set(include_prefix /I)
+        set(define_prefix /D)
+        if(check_LANGUAGE STREQUAL "CXX")
+            list(APPEND flags /std:c++11)
         else()
-            list(APPEND _source_deps "${PROJECT_SOURCE_DIR}/${_source}")
+            list(APPEND flags /std:c11)
         endif()
-    endforeach()
-
-    add_custom_target(${name}
-        COMMAND ${CMAKE_C_COMPILER} ${flags} ${_sources}
-        DEPENDS ${_source_deps}
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-        VERBATIM
-    )
-
-    add_test(
-        NAME ${name}
-        COMMAND ${CMAKE_C_COMPILER} ${flags} ${_sources}
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-    )
-endfunction()
-
-# nanosig_add_api_compile_check(<name> <source>... [DEFINES <define>...]
-#                               [INCLUDE_DIRS <dir>...])
-#
-# Optional DEFINES / INCLUDE_DIRS are appended to the compiler command line,
-# allowing the same contract header to be checked with extra platform headers
-# (for example the FreeRTOS SDK include dirs, which the platform backend header
-# includes).
-function(nanosig_add_api_compile_check name)
-    cmake_parse_arguments(_nanosig_arg "" "" "DEFINES;INCLUDE_DIRS" ${ARGN})
-    if(NOT _nanosig_arg_UNPARSED_ARGUMENTS)
-        message(FATAL_ERROR "nanosig_add_api_compile_check requires at least one source")
-    endif()
-
-    _nanosig_api_c_syntax_flags(_nanosig_flags
-        "${_nanosig_arg_INCLUDE_DIRS}" "${_nanosig_arg_DEFINES}")
-    _nanosig_add_syntax_target(${name} "${_nanosig_flags}"
-        ${_nanosig_arg_UNPARSED_ARGUMENTS})
-endfunction()
-
-function(nanosig_add_cpp_compat_check name)
-    set(_sources ${ARGN})
-    if(NOT _sources)
-        message(FATAL_ERROR "nanosig_add_cpp_compat_check requires at least one source")
-    endif()
-
-    set(_source_deps "")
-    foreach(_source IN LISTS _sources)
-        if(IS_ABSOLUTE "${_source}")
-            list(APPEND _source_deps "${_source}")
-        else()
-            list(APPEND _source_deps "${PROJECT_SOURCE_DIR}/${_source}")
-        endif()
-    endforeach()
-
-    set(_msvc_frontend OFF)
-    if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-        set(_msvc_frontend ON)
-    elseif(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        set(_msvc_frontend ON)
-    endif()
-
-    if(_msvc_frontend)
-        set(_syntax_flags
-            /nologo
-            /std:c++11
-            /Zs
-            /W4
-            /permissive-
-            /Zc:preprocessor
-            /I${PROJECT_SOURCE_DIR}/include
-            /I${CMAKE_BINARY_DIR}/include
-            /I${PROJECT_SOURCE_DIR}
-            /I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
-        )
     else()
-        set(_syntax_flags
-            -std=c++11
-            -fsyntax-only
-            -Wall
-            -Wextra
-            # NS_LOOP_CONFIG_DEFAULT() 的 C++ 分支是**位置初始化**（C++11 无指定
-            # 初始化器），漏写新字段只会产生警告；升级为错误，否则新增字段时
-            # CI 不会变红。运行时逐字段断言见 test_cpp_compat_runtime.cpp。
-            -Werror=missing-field-initializers
-            -Wconversion
-            -Wsign-conversion
-            -I${PROJECT_SOURCE_DIR}/include
-            -I${CMAKE_BINARY_DIR}/include
-            -I${PROJECT_SOURCE_DIR}
-            -I${PROJECT_SOURCE_DIR}/${NANOSIG_PLATFORM_DIR}
-        )
+        set(flags -fsyntax-only -Wall -Wextra -Wconversion -Wsign-conversion)
+        set(include_prefix -I)
+        set(define_prefix -D)
+        if(check_LANGUAGE STREQUAL "CXX")
+            # Positional C++ initializers must cover every public field.
+            list(APPEND flags -std=c++11 -Werror=missing-field-initializers)
+        else()
+            list(APPEND flags -std=c11 -Wno-psabi)
+        endif()
     endif()
 
+    get_target_property(public_includes nanosig INTERFACE_INCLUDE_DIRECTORIES)
+    # Filter empty INSTALL_INTERFACE results before adding prefixes; CTest keeps empty arguments.
+    set(include_flags "${include_prefix}$<JOIN:$<FILTER:${public_includes},EXCLUDE,^$>,;${include_prefix}>")
+    list(APPEND flags "${include_prefix}${PROJECT_SOURCE_DIR}")
+    get_target_property(public_definitions nanosig INTERFACE_COMPILE_DEFINITIONS)
+    if(public_definitions)
+        foreach(definition IN LISTS public_definitions)
+            list(APPEND flags "${define_prefix}${definition}")
+        endforeach()
+    endif()
+
+    set(sources "")
+    foreach(source IN LISTS check_UNPARSED_ARGUMENTS)
+        get_filename_component(source "${source}" ABSOLUTE
+            BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        list(APPEND sources "${source}")
+    endforeach()
     add_custom_target(${name}
-        COMMAND ${CMAKE_CXX_COMPILER} ${_syntax_flags} ${_sources}
-        DEPENDS ${_source_deps}
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        COMMAND ${CMAKE_${check_LANGUAGE}_COMPILER} ${flags} "${include_flags}" ${sources}
+        DEPENDS ${sources}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        COMMAND_EXPAND_LISTS
         VERBATIM
     )
-
-    add_test(
-        NAME ${name}
-        COMMAND ${CMAKE_CXX_COMPILER} ${_syntax_flags} ${_sources}
-        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    add_test(NAME ${name}
+        COMMAND ${CMAKE_${check_LANGUAGE}_COMPILER} ${flags} "${include_flags}" ${sources}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        COMMAND_EXPAND_LISTS
     )
+    add_dependencies(api-compile-checks ${name})
 endfunction()

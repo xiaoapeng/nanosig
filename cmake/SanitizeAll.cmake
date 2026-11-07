@@ -18,6 +18,12 @@ set(_nanosig_audit_runner "${PROJECT_SOURCE_DIR}/cmake/scripts/audit_runner.sh")
 
 function(nanosig_add_sanitize_subtarget _kind)
     set(_name "nanosig_audit_${_kind}")
+    # Normalize all CMake false spellings before crossing the shell boundary.
+    if(NANOSIG_BUILD_API_CHECKS)
+        set(_api_checks ON)
+    else()
+        set(_api_checks OFF)
+    endif()
 
     add_custom_target(${_name}
         COMMAND
@@ -26,7 +32,7 @@ function(nanosig_add_sanitize_subtarget _kind)
                 "${NANOSIG_ENABLE_ASAN}"
                 "${NANOSIG_ENABLE_TSAN}"
                 "${NANOSIG_ENABLE_UBSAN}"
-                "${NANOSIG_BUILD_API_CHECKS}"
+                "${_api_checks}"
                 "${PROJECT_SOURCE_DIR}"
                 "${CMAKE_BINARY_DIR}"
                 "${NANOSIG_PYTHON3_EXECUTABLE}"

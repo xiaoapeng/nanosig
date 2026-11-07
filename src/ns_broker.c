@@ -35,10 +35,10 @@
 #include "nanosig/internal/ns_timer_mgr.h"
 
 #include <nanosig/ns_debug.h>
-/* Default SYS; overridable at build time (e.g. project CMake
+/* Module overrides take precedence over the shared default (e.g. project CMake
  * target_compile_definitions(nanosig PRIVATE NS_DBG_MODULE_LEVEL_BROKER=NS_DBG_DEBUG)). */
 #ifndef NS_DBG_MODULE_LEVEL_BROKER
-#define NS_DBG_MODULE_LEVEL_BROKER NS_DBG_SYS
+#define NS_DBG_MODULE_LEVEL_BROKER NS_DBG_MODULE_LEVEL_DEFAULT
 #endif
 
 /* broker（timer）线程的栈大小，单位字节。0 = 后端默认栈大小。

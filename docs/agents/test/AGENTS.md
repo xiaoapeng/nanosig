@@ -4,7 +4,7 @@
 # test
 
 ## Purpose
-Guidance for source directory `test/`, which contains nanosig unit, integration, stress, audit, and compile-only API checks wired into CTest through the root CMake build.
+Guidance for source directory `test/`, which contains nanosig unit, integration, stress, audit, and compile-only API checks registered by `test/CMakeLists.txt`.
 
 ## Key Files
 | File | Description |
@@ -21,6 +21,7 @@ Guidance for source directory `test/`, which contains nanosig unit, integration,
 | Directory | Purpose |
 |-----------|---------|
 | `unit/` | Runtime unit tests plus compile-only API/contract checks. |
+| `cmake/` | Standalone build-configuration regression fixtures; run explicitly to avoid recursive CTest builds. |
 
 ## For AI Agents
 

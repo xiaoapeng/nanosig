@@ -1,0 +1,4 @@
+#cmakedefine CHECK_CUSTOM_CONFIG
+#cmakedefine CHECK_ZERO_CONFIG
+#cmakedefine CHECK_ESCAPED_CONFIG
+#include "@CMAKE_CURRENT_SOURCE_DIR@/main.c"

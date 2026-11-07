@@ -111,6 +111,7 @@ entries:
     location: "docs/review/global-review.md#GLOBAL-012"
     locations:
       - "cmake/scripts/audit_runner.sh:46"
+      - "test/CMakeLists.txt:146"
       - "cmake/SanitizeAll.cmake:21"
   - id: "GLOBAL-013"
     module: "global-review"
@@ -121,7 +122,19 @@ entries:
     location: "docs/review/global-review.md#GLOBAL-013"
     locations:
       - "cmake/CompileWarnings.cmake:3"
-      - "cmake/CompileWarnings.cmake:30"
+  - id: "GLOBAL-014"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "medium"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-07"
+    location: "docs/review/global-review.md#GLOBAL-014"
+    locations:
+      - "cmake/ModuleConfig.cmake:25"
+      - "cmake/ModuleConfig.cmake:50"
+      - "cmake/ApiCompileChecks.cmake:45"
+      - "docs/BUILD_CONFIG.md:48"
 ---
 
 # 全局视角 Review（跨模块问题）
@@ -221,6 +234,8 @@ entries:
 - **GLOBAL-010（2026-11-06）**: 补齐手工接入必须注入 broker 栈宏的说明与平台默认值链接。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
 - **GLOBAL-011（2026-11-06）**: 纠正 MPSC 预留位置、payload 提交及槽位回收的同步说明。修复分支：fix/timer-021-interval-bound（工作区未提交）；验证证据见该条关闭原因。
 
+- **GLOBAL-014（2026-11-07）**: 配置期拒绝原始 #，保留等价 C 转义；新增拒绝/库与消费者一致传播回归。代码复核批准，架构阻塞解除。 — commit `refactor/cmake-module-config（工作区未提交）`
+
 ## 现在打开的问题
 
 <a id="GLOBAL-012"></a>
@@ -256,11 +271,13 @@ cmake/SanitizeAll.cmake:21 通过自定义目标调用 audit_runner，影响启�
 已核对 global 当前与归档，没有同根记录。本项涉及顶层构建定义与审计入口的重复配置，归全局文档。
 
 #### 定位
+
 cmake/scripts/audit_runner.sh:46
-CMakeLists.txt:456
-CMakeLists.txt:477
-CMakeLists.txt:507
+test/CMakeLists.txt:146
 cmake/SanitizeAll.cmake:21
+
+
+---
 
 <a id="GLOBAL-013"></a>
 ### GLOBAL-013: 未使用的 interface warning 函数重复整套警告配置
@@ -295,12 +312,8 @@ nanosig_apply_interface_warnings 无仓库调用者，却复制 private 版本�
 已核对 global 当前/历史及 cmake 指引，未找到保留该无调用者函数的合同。本项是构建公共配置清理，不涉及源码 API。
 
 #### 定位
+
 cmake/CompileWarnings.cmake:3
-cmake/CompileWarnings.cmake:30
-
----
-
----
 
 ## 现在关闭的问题
 
@@ -631,6 +644,63 @@ src/ds/ns_mpsc_record_ring.c:156
 src/ds/ns_mpsc_record_ring.c:414
 src/ds/ns_mpsc_record_ring.c:421
 src/ds/ns_mpsc_record_ring.c:458
+
+---
+
+<a id="GLOBAL-014"></a>
+### GLOBAL-014: 含 # 的配置被真实构建丢弃，API 检查仍使用该配置
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟡 中（前提：使用包含原始 # 的自定义字符串配置；macOS AppleClang/Ninja 实测，默认配置不受影响）
+- **类型**: bug
+- **关闭原因**: 修复 commit refactor/cmake-module-config（工作区未提交）
+- **关闭日期**: 2026-11-07
+
+#### 问题描述
+
+本轮 CMake 模块配置入口将 NS_CONFIG_DEBUG_ENTER_SIGN 的合法输入定义为带双引号的 C 字符串，只排除分号和实际换行。输入 "#" 能通过校验，但 target_compile_definitions 的生成阶段会警告并丢弃含 # 的定义。库和普通消费者因而使用源码默认值；API helper 直接读取未经生成器过滤的 INTERFACE_COMPILE_DEFINITIONS 并手拼 -D，仍使用 "#"。配置与构建成功不能证明两条路径使用了相同参数。
+
+#### review 建议
+
+在共享配置校验边界明确拒绝原始 #，报错提示 C 字符串使用八进制转义（例如 "\043"）；同步有效输入文档，增加原始字符拒绝和等价转义在库/消费者/C/C++ API 中一致生效的回归。无需为此引入生成配置头或拆分工具 targets。
+
+#### 作者建议
+
+作者于 2026-11-07 明确要求“先修一下”：采纳最小修复，在共享配置入口拒绝原始 #，提示等价 C 转义，补拒绝与一致传播回归；改动保留工作区，不提交。
+
+#### 可重现的失败场景
+
+macOS AppleClang + Ninja 隔离实测：
+
+cmake -S . -B /tmp/nanosig-review-hashsign -G Ninja -DNANOSIG_BUILD_TESTS=OFF -DNANOSIG_BUILD_DEMOS=OFF '-DNS_CONFIG_DEBUG_ENTER_SIGN="#"' -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build /tmp/nanosig-review-hashsign --target nanosig api-compile-checks
+
+配置和构建成功；生成阶段输出 CMake is dropping a preprocessor definition: NS_CONFIG_DEBUG_ENTER_SIGN="#"。compile_commands.json 中 ns_debug.c 的编译命令没有该定义；test/CTestTestfile.cmake 与 build.ninja 中 API C/C++ 命令仍带该定义。两条独立审查 lane 已核对产物。
+
+#### 影响面
+
+CMakeLists.txt:91 调用 nanosig_apply_module_config；所有经此入口配置的 nanosig 库及其链接消费者受影响。cmake/ModuleConfig.cmake:51 将换行参数标为 PUBLIC；include/nanosig/ns_debug.h:88 提供未定义时的默认换行，src/ns_debug.c 使用该配置。test/CMakeLists.txt:146 注册 API 聚合入口，其 C/C++ helper 单独构造编译命令。现有配置验证覆盖 CRLF 和位表达式，未覆盖原始 # 的生成器过滤；本轮不对测试源码做扩展审查。
+
+#### 文档仲裁与历史去重
+
+已核对 GLOBAL-012/013 及当前 global 历史，无同根问题。docs/BUILD_CONFIG.md:42、47–49 声明 quoted C string 和 PUBLIC 一致传播，没有记录 # 会被丢弃的限制。既有共享 build、Zephyr 独立入口和 broker 强制注入合同均不受本发现影响。
+
+#### 架构审查结论
+
+2026-11-07 初审：code-reviewer 为 REQUEST CHANGES，architect 为 BLOCK，均指向本条同一配置一致性缺陷，不重复计数。
+
+2026-11-07 修复复核：配置入口已拒绝原始 # 并提示 C 转义；code-reviewer 为 APPROVE，architect 为 WATCH，确认本条实现阻塞解除。WATCH 仅保留 API 手工编译参数桥接的非阻塞扩展边界，不要求进一步拆分模块或库目标。
+
+验证：新拒绝回归修复前失败；修复后默认、自定义、零值、转义四组配置，以及七种非法输入和四种 API 关闭写法均通过。独立 Ninja 转义配置的库构建、API 聚合与 CTest 9/9 通过；捕获库内 ns_dbg_hex 输出验证实际库宏与消费者一致。macOS Release 常规测试 51/51、API 聚合与审计入口通过。Linux/Windows/Zephyr/云端 CI 和 nightly 的验证范围未扩大。改动保留工作区，未提交。
+
+#### 定位
+
+cmake/ModuleConfig.cmake:25
+cmake/ModuleConfig.cmake:50
+cmake/ApiCompileChecks.cmake:45
+docs/BUILD_CONFIG.md:48
+
+---
 
 ---
 

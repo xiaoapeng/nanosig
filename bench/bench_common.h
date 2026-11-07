@@ -90,8 +90,8 @@ static inline void bench_stats_report(const bench_stats_t *s)
     min_ns = s->samples[0];
     max_ns = s->samples[s->count - 1];
     avg_ns = s->total_ns / s->count;
-    p50_ns = s->samples[(size_t)(s->count * 0.50)];
-    p99_ns = s->samples[(size_t)(s->count * 0.99)];
+    p50_ns = s->samples[(size_t)((double)s->count * 0.50)];
+    p99_ns = s->samples[(size_t)((double)s->count * 0.99)];
 
     fprintf(stdout, "\n=== nanosig bench: %s ===\n", s->name);
     fprintf(stdout, "  iterations: %zu\n", s->count);

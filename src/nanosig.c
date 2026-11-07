@@ -21,10 +21,10 @@
 #include <nanosig_baremetal_api.h>
 #endif
 
-/* Default SYS; overridable at build time (e.g. project CMake
+/* Module overrides take precedence over the shared default (e.g. project CMake
  * target_compile_definitions(nanosig PRIVATE NS_DBG_MODULE_LEVEL_CORE=NS_DBG_DEBUG)). */
 #ifndef NS_DBG_MODULE_LEVEL_CORE
-#define NS_DBG_MODULE_LEVEL_CORE NS_DBG_SYS
+#define NS_DBG_MODULE_LEVEL_CORE NS_DBG_MODULE_LEVEL_DEFAULT
 #endif
 
 struct ns_loop {
