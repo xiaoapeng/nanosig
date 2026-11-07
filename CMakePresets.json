@@ -7,306 +7,206 @@
   },
   "configurePresets": [
     {
-      "name": "linux-debug-asan",
-      "displayName": "Linux Debug ASAN",
+      "name": "_base",
+      "hidden": true,
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "NANOSIG_PLATFORM": "host",
+        "NANOSIG_BUILD_FREERTOS_POSIX": "OFF",
+        "NANOSIG_ENABLE_ASAN": "OFF",
+        "NANOSIG_ENABLE_TSAN": "OFF",
+        "NANOSIG_ENABLE_UBSAN": "OFF",
+        "NANOSIG_ENABLE_COVERAGE": "OFF"
+      }
+    },
+    {
+      "name": "_linux",
+      "hidden": true,
+      "inherits": "_base",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
+      }
+    },
+    {
+      "name": "_macos",
+      "hidden": true,
+      "inherits": "_base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "_windows",
+      "hidden": true,
+      "inherits": "_base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Ninja"
+    },
+    {
+      "name": "_freertos",
+      "hidden": true,
+      "inherits": "_base",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "ON",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_PLATFORM": "freertos",
+        "NANOSIG_BUILD_FREERTOS_POSIX": "ON"
+      }
+    },
+    {
+      "name": "_baremetal",
+      "hidden": true,
+      "inherits": "_base",
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
+      },
+      "cacheVariables": {
+        "NANOSIG_PLATFORM": "baremetal",
+        "NANOSIG_BUILD_DEMOS": "OFF",
+        "NANOSIG_BUILD_BENCH": "OFF"
+      }
+    },
+    {
+      "name": "linux-debug-asan",
+      "displayName": "Linux Debug ASAN",
+      "inherits": "_linux",
+      "cacheVariables": {
+        "NANOSIG_ENABLE_ASAN": "ON"
       }
     },
     {
       "name": "linux-debug-tsan",
       "displayName": "Linux Debug TSAN",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
+      "inherits": "_linux",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "ON",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_ENABLE_TSAN": "ON"
       }
     },
     {
       "name": "linux-debug-ubsan",
       "displayName": "Linux Debug UBSAN",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
+      "inherits": "_linux",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "ON"
       }
     },
     {
       "name": "linux-release",
       "displayName": "Linux Release",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
+      "inherits": "_linux",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
       "name": "linux-coverage",
       "displayName": "Linux Coverage (gcov/lcov)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
+      "inherits": "_linux",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF",
         "NANOSIG_ENABLE_COVERAGE": "ON"
       }
     },
     {
       "name": "macos-debug-asan",
       "displayName": "macOS Debug ASAN",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      },
+      "inherits": "_macos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "ON",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_ENABLE_ASAN": "ON"
       }
     },
     {
       "name": "macos-debug-ubsan",
       "displayName": "macOS Debug UBSAN",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      },
+      "inherits": "_macos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "ON"
       }
     },
     {
       "name": "macos-release",
       "displayName": "macOS Release",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      },
+      "inherits": "_macos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
       "name": "windows-debug-asan",
       "displayName": "Windows Debug ASAN",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
+      "inherits": "_windows",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "ON",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_ENABLE_ASAN": "ON"
       }
     },
     {
       "name": "windows-release",
       "displayName": "Windows Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
+      "inherits": "_windows",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
       "name": "freertos-release",
       "displayName": "FreeRTOS POSIX harness (Release)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
+      "inherits": "_freertos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "freertos",
-        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
       "name": "freertos-debug-asan",
       "displayName": "FreeRTOS POSIX harness (Debug ASAN)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
+      "inherits": "_freertos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "freertos",
-        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
-        "NANOSIG_ENABLE_ASAN": "ON",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_ENABLE_ASAN": "ON"
       }
     },
     {
       "name": "freertos-debug-ubsan",
       "displayName": "FreeRTOS POSIX harness (Debug UBSAN)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
+      "inherits": "_freertos",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "freertos",
-        "NANOSIG_BUILD_FREERTOS_POSIX": "ON",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "ON"
       }
     },
     {
       "name": "baremetal-debug",
       "displayName": "Baremetal backend (Debug, host harness)",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-baremetal-debug",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "baremetal",
-        "NANOSIG_BUILD_DEMOS": "OFF",
-        "NANOSIG_BUILD_BENCH": "OFF",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
-      }
+      "inherits": "_baremetal",
+      "binaryDir": "${sourceDir}/build-baremetal-debug"
     },
     {
       "name": "baremetal-debug-asan",
       "displayName": "Baremetal backend (Debug ASAN, host harness)",
-      "generator": "Unix Makefiles",
+      "inherits": "_baremetal",
       "binaryDir": "${sourceDir}/build-baremetal-debug-asan",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "baremetal",
-        "NANOSIG_BUILD_DEMOS": "OFF",
-        "NANOSIG_BUILD_BENCH": "OFF",
-        "NANOSIG_ENABLE_ASAN": "ON",
-        "NANOSIG_ENABLE_TSAN": "OFF",
-        "NANOSIG_ENABLE_UBSAN": "OFF"
+        "NANOSIG_ENABLE_ASAN": "ON"
       }
     },
     {
       "name": "baremetal-debug-ubsan",
       "displayName": "Baremetal backend (Debug UBSAN, host harness)",
-      "generator": "Unix Makefiles",
+      "inherits": "_baremetal",
       "binaryDir": "${sourceDir}/build-baremetal-debug-ubsan",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "NANOSIG_PLATFORM": "baremetal",
-        "NANOSIG_BUILD_DEMOS": "OFF",
-        "NANOSIG_BUILD_BENCH": "OFF",
-        "NANOSIG_ENABLE_ASAN": "OFF",
-        "NANOSIG_ENABLE_TSAN": "OFF",
         "NANOSIG_ENABLE_UBSAN": "ON"
       }
     }
@@ -330,85 +230,22 @@
     { "name": "baremetal-debug-ubsan", "configurePreset": "baremetal-debug-ubsan" }
   ],
   "testPresets": [
-    {
-      "name": "linux-debug-asan",
-      "configurePreset": "linux-debug-asan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "linux-debug-tsan",
-      "configurePreset": "linux-debug-tsan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "linux-debug-ubsan",
-      "configurePreset": "linux-debug-ubsan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "linux-release",
-      "configurePreset": "linux-release",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "linux-coverage",
-      "configurePreset": "linux-coverage",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "macos-debug-asan",
-      "configurePreset": "macos-debug-asan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "macos-debug-ubsan",
-      "configurePreset": "macos-debug-ubsan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "windows-debug-asan",
-      "configurePreset": "windows-debug-asan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "freertos-release",
-      "configurePreset": "freertos-release",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "freertos-debug-asan",
-      "configurePreset": "freertos-debug-asan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "freertos-debug-ubsan",
-      "configurePreset": "freertos-debug-ubsan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "baremetal-debug",
-      "configurePreset": "baremetal-debug",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "baremetal-debug-asan",
-      "configurePreset": "baremetal-debug-asan",
-      "output": { "outputOnFailure": true }
-    },
-    {
-      "name": "baremetal-debug-ubsan",
-      "configurePreset": "baremetal-debug-ubsan",
-      "output": { "outputOnFailure": true }
-    }
+    { "name": "_output", "hidden": true, "output": {"outputOnFailure": true} },
+    { "name": "linux-debug-asan", "configurePreset": "linux-debug-asan", "inherits": "_output" },
+    { "name": "linux-debug-tsan", "configurePreset": "linux-debug-tsan", "inherits": "_output" },
+    { "name": "linux-debug-ubsan", "configurePreset": "linux-debug-ubsan", "inherits": "_output" },
+    { "name": "linux-release", "configurePreset": "linux-release", "inherits": "_output" },
+    { "name": "linux-coverage", "configurePreset": "linux-coverage", "inherits": "_output" },
+    { "name": "macos-debug-asan", "configurePreset": "macos-debug-asan", "inherits": "_output" },
+    { "name": "macos-debug-ubsan", "configurePreset": "macos-debug-ubsan", "inherits": "_output" },
+    { "name": "macos-release", "configurePreset": "macos-release", "inherits": "_output" },
+    { "name": "windows-debug-asan", "configurePreset": "windows-debug-asan", "inherits": "_output" },
+    { "name": "windows-release", "configurePreset": "windows-release", "inherits": "_output" },
+    { "name": "freertos-release", "configurePreset": "freertos-release", "inherits": "_output" },
+    { "name": "freertos-debug-asan", "configurePreset": "freertos-debug-asan", "inherits": "_output" },
+    { "name": "freertos-debug-ubsan", "configurePreset": "freertos-debug-ubsan", "inherits": "_output" },
+    { "name": "baremetal-debug", "configurePreset": "baremetal-debug", "inherits": "_output" },
+    { "name": "baremetal-debug-asan", "configurePreset": "baremetal-debug-asan", "inherits": "_output" },
+    { "name": "baremetal-debug-ubsan", "configurePreset": "baremetal-debug-ubsan", "inherits": "_output" }
   ]
 }

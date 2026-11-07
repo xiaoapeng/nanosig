@@ -43,23 +43,8 @@ if [ "${API_CHECKS_FLAG:-ON}" = "OFF" ]; then
     echo "[${KIND}] A1 api-compile-checks disabled (NANOSIG_BUILD_API_CHECKS=OFF), skipped"
 else
     echo "[${KIND}] A1 api-compile-checks starting"
-    API_TARGETS=""
-    for tgt in nanosig_api_check_macro_matrix \
-               nanosig_api_check_platform_contract \
-               nanosig_api_check_broker_contract \
-               nanosig_api_check_data_structures \
-               nanosig_api_check_types \
-               nanosig_api_check_cpp_compat; do
-        if grep -q "^${tgt}:" "${BINARY_DIR}/Makefile" 2>/dev/null || \
-           grep -q "^${tgt}:" "${BINARY_DIR}/build.ninja" 2>/dev/null; then
-            API_TARGETS="${API_TARGETS} ${tgt}"
-        fi
-    done
-    if [ -n "${API_TARGETS}" ]; then
-        ( cd "${BINARY_DIR}" && "${CMAKE}" --build . --target ${API_TARGETS} )
-    else
-        echo "[${KIND}] A1 api-compile-checks targets not present, skipped"
-    fi
+    "${CMAKE}" --build "${BINARY_DIR}" --target api-compile-checks
+
 fi
 
 # --- A2: configuration consistency ---

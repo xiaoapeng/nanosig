@@ -17,7 +17,9 @@
 
 #include <nanosig/nanosig_types.h>
 #include <nanosig/nanosig_port.h>
-#define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_SYS
+#ifndef NS_DBG_MODULE_LEVEL_PLATFORM
+#define NS_DBG_MODULE_LEVEL_PLATFORM NS_DBG_MODULE_LEVEL_DEFAULT
+#endif
 #include <nanosig/ns_debug.h>
 
 /* 平台类型（ns_platform_wakeup_t / mutex / thread / waitset）由构建内头

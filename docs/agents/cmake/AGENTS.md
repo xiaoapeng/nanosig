@@ -12,6 +12,10 @@ Guidance for source directory `cmake/`, which contains reusable CMake modules fo
 | `ApiCompileChecks.cmake` | Registers syntax-only API compile checks as custom targets and CTest tests. |
 | `CompileWarnings.cmake` | Defines helper functions that apply warning flags and MSVC `/Zc:preprocessor`. |
 | `Sanitizers.cmake` | Defines sanitizer options and helper logic for ASAN, TSAN, and UBSAN flags. |
+| `Platform.cmake` | Selects one backend directory and applies its public/private configuration. |
+| `ModuleConfig.cmake` | Exposes optional module settings; empty values preserve source defaults. |
+| `TestPrograms.cmake` | Shared setup for test, demo, and benchmark executables. |
+| `Coverage.cmake` | Applies coverage instrumentation and registers the report target. |
 
 ## Subdirectories
 | Directory | Purpose |
@@ -23,7 +27,9 @@ Guidance for source directory `cmake/`, which contains reusable CMake modules fo
 ### Working In `cmake/`
 - Keep helpers small and target-scoped; do not add global compiler flags unless the top-level build explicitly needs them.
 - Preserve `/Zc:preprocessor` on MSVC because the public API macro design depends on conforming preprocessing.
-- Keep API compile checks syntax-only; demos should not be linked as runnable targets until intentionally promoted.
+- Keep API compile checks syntax-only and share the library's public definitions and include paths.
+- Register executable tests, demos, and benchmarks in their own directory's CMakeLists.txt; preserve their root build output paths and working directories.
+- Module settings use existing C macro names as cache entries; empty means the source default, while `0` remains an explicit value. See `docs/BUILD_CONFIG.md`.
 
 ### Testing Requirements
 - Reconfigure at least one preset after editing these files.

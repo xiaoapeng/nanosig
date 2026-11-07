@@ -1,0 +1,4 @@
+nanosig_add_test_program(nanosig_bench_same_thread bench_same_thread.c)
+nanosig_add_test_program(nanosig_bench_cross_thread bench_cross_thread.c)
+nanosig_add_test_program(nanosig_bench_throughput bench_throughput.c)
+set_tests_properties(nanosig_bench_throughput PROPERTIES TIMEOUT 30)
