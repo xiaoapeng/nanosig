@@ -10,6 +10,7 @@ Guidance for source directory `platform/`, which contains nanosig's OS abstracti
 | File | Description |
 |------|-------------|
 | `README.md` | Platform contract, backend mapping, lifecycle/ownership rules, and platform-type injection. |
+| `cache_line_probe.c` | Build-time hardware probe used by CMake; its main function is never linked into nanosig. |
 | `.gitkeep` | Historical placeholder. |
 
 Each `<platform>/` directory holds both the backend implementation `port.c` and the

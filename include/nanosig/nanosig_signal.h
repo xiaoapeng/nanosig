@@ -168,9 +168,9 @@ NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u, "NS_NO_PAYLOAD
         typename std::remove_cv< \
             typename std::remove_pointer<decltype(payload_ptr)>::type>::type>::value)
 
-static_assert(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u,
+NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_SIZE(ns_no_payload_t) == 0u,
     "ns_no_payload_t payload size must be 0");
-static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
+NS_STATIC_ASSERT(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
     "NS_NO_PAYLOAD payload size must be 0");
 
 #else
@@ -228,7 +228,9 @@ static_assert(NS_SIGNAL_PAYLOAD_PTR_SIZE(NS_NO_PAYLOAD) == 0u,
  * @param payload_type 期望的 payload 类型。
  */
 #define NS_SLOT_TYPECHECK(slot_fn, payload_type) \
-    ((void)sizeof(char[(_Generic((slot_fn), void (*)(void *, const payload_type *): 1, default: 0)) ? 1 : -1]))
+    NS_STATIC_ASSERT_EXPR( \
+        _Generic((slot_fn), void (*)(void *, const payload_type *): 1, default: 0), \
+        "slot function signature does not match payload type")
 #else
 #define NS_SLOT_TYPECHECK(slot_fn, payload_type) ((void)0)
 #endif

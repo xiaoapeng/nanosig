@@ -21,6 +21,32 @@ configure_file(
 )
 
 if(CONFIG_NANOSIG_ZEPHYR)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CacheLine.cmake)
+    set(_nanosig_cacheline 64)
+    set(_nanosig_cacheline_reason "fallback; set NS_MPSC_CACHELINE_SIZE for the target CPU")
+    if(NOT "${NS_MPSC_CACHELINE_SIZE}" STREQUAL "")
+        _nanosig_cacheline_is_valid("${NS_MPSC_CACHELINE_SIZE}" _valid)
+        if(NOT _valid)
+            message(FATAL_ERROR "NS_MPSC_CACHELINE_SIZE must be a decimal power of two >= 16 that fits a signed 64-bit integer")
+        endif()
+        set(_nanosig_cacheline "${NS_MPSC_CACHELINE_SIZE}")
+        set(_nanosig_cacheline_reason "explicit configuration")
+    else()
+        _nanosig_cacheline_is_valid("${CONFIG_DCACHE_LINE_SIZE}" _valid)
+        if(_valid)
+            set(_nanosig_cacheline "${CONFIG_DCACHE_LINE_SIZE}")
+            set(_nanosig_cacheline_reason "Zephyr Kconfig")
+        elseif(COMMAND dt_prop)
+            dt_prop(_nanosig_dt_cacheline PATH "/cpus/cpu@0" PROPERTY "d-cache-line-size")
+            _nanosig_cacheline_is_valid("${_nanosig_dt_cacheline}" _valid)
+            if(_valid)
+                set(_nanosig_cacheline "${_nanosig_dt_cacheline}")
+                set(_nanosig_cacheline_reason "Zephyr DeviceTree")
+            endif()
+        endif()
+    endif()
+    message(STATUS "MPSC cache-line spacing: ${_nanosig_cacheline} bytes (${_nanosig_cacheline_reason})")
+
     # 应用与库必须选到同一平台类型定义，故 include 路径对整棵构建树
     # 可见（等价于顶层 CMake 的 PUBLIC 传播）。平台类型来自 platform/zephyr 的
     # 构建内头 `nanosig_platform_port.h`，按固定名由 include 路径选中；
@@ -32,6 +58,7 @@ if(CONFIG_NANOSIG_ZEPHYR)
     )
     zephyr_compile_definitions(
         NS_MPSC_CACHELINE_ALIGNED
+        NS_MPSC_CACHELINE_SIZE=${_nanosig_cacheline}
         # broker（timer）线程的栈大小：库内部旋钮，prj.conf 的
         # CONFIG_NANOSIG_BROKER_STACK_SIZE 转发为同名宏。注入缺失即编译失败。
         NANOSIG_BROKER_STACK_SIZE=${CONFIG_NANOSIG_BROKER_STACK_SIZE}

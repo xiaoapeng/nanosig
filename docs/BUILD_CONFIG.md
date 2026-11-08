@@ -6,6 +6,7 @@
 |---|---|
 | CMakeLists.txt | 项目、构建开关、库源码和目标、子目录入口 |
 | cmake/Platform.cmake | 选择同一后端的源文件与平台头，应用平台参数及依赖 |
+| cmake/CacheLine.cmake | 缓存行间距的显式覆盖、本机探测、回退及 PUBLIC 传播 |
 | cmake/ModuleConfig.cmake | 工具模块的可选参数入口及 PUBLIC/PRIVATE 传播 |
 | test/CMakeLists.txt | 单元、集成、后端测试，以及统一的 API 检查聚合目标 |
 | demos/CMakeLists.txt、bench/CMakeLists.txt | 各自的可执行目标及 CTest 注册 |
@@ -79,11 +80,41 @@ cmake --build --preset macos-release
 | `NANOSIG_FREERTOS_TASK_PRIORITY` | 1 | FreeRTOS | PUBLIC |
 | `NANOSIG_BAREMETAL_LOOP_QUEUE_BYTES` | 1024 字节 | 裸机 | PUBLIC |
 | `NANOSIG_BAREMETAL_POLL_MAX_ROUNDS` | 4 | 裸机 | PUBLIC |
+| `NS_MPSC_CACHELINE_SIZE` | 空值自动探测；无法探测时 64 字节 | 启用 MPSC 缓存行隔离的构建 | PUBLIC |
 
 这些原有入口仍保留原默认值和契约。broker 栈必须由构建系统注入，源码缺少该宏即报错。
 `NS_MPSC_CACHELINE_ALIGNED` 影响结构体布局，由构建层向库和调用方一致传递，
-顶层在 `WIN32 OR UNIX` 时启用，Zephyr 模块入口也启用；本轮不改变该选择策略。
+顶层在 `WIN32 OR UNIX` 时启用，Zephyr 模块入口也启用；不改变该选择策略。
 `NANOSIG_BAREMETAL` 由所选平台头定义，不另设 CMake 开关。
+
+### MPSC 缓存行间距
+
+`NS_MPSC_CACHELINE_SIZE` 必须是不小于 16 的十进制 2 的幂。它控制 `write_pos`、
+`read_pos` 和只读字段之间的 padding，用 `sizeof(atomic_size_t)` 计算余量，不增加运行时查询或分配。
+默认不再写死 64：本机 CMake 构建运行 platform/cache_line_probe.c，然后将数值作为
+PUBLIC 编译定义传给库、应用以及 C/C++ API 检查。探针只在配置时编译运行，不编入库。
+
+- macOS：查询 `sysctlbyname("hw.cachelinesize")`；本机 Apple M4 得到 128。
+- Linux：优先读取各 CPU/cache 的 sysfs `coherency_line_size`，取最大正值；不可用时尝试
+  `sysconf(_SC_LEVEL1_DCACHE_LINESIZE)`。后者在部分架构只返回最小缓存行大小，不保证覆盖所有核心。
+- Windows：用 `GetLogicalProcessorInformationEx(RelationCache)` 查询各处理器组，取数据/统一缓存的最大行长。
+- 交叉编译、目标架构/SDK 不匹配或探测失败：不把构建机参数当作目标值，输出状态提示并回退 64。
+
+可以显式指定部署目标的间距，优先级高于探测：
+
+```sh
+cmake --preset macos-release -DNS_MPSC_CACHELINE_SIZE=128
+# 恢复自动探测
+cmake --preset macos-release -DNS_MPSC_CACHELINE_SIZE=
+```
+
+该值影响 `ns_mpsc_record_ring_t` 的 ABI，修改后库和使用方必须一起重新编译；预编译库不能
+由应用单方面换一个宏改变布局。对其他机器发布或交叉编译时，应按部署目标显式设置。
+缓存行隔离不等于所有负载吞吐都提高；前述测试中单生产者与多生产者的布局偏好不同。
+
+接口依据：[Apple 架构差异说明](https://developer.apple.com/documentation/apple-silicon/addressing-architectural-differences-in-your-macos-code)、
+[Linux CPU sysfs 文档](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-devices-system-cpu)、
+[Windows 缓存拓扑](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-cache_relationship)。
 
 ## 直接集成源码与 Zephyr
 
@@ -92,21 +123,34 @@ cmake --build --preset macos-release
 直接集成源码仍可用编译器定义覆盖模块的 `#ifndef` 默认值；涉及头文件的配置必须同时
 传给库及应用，不能仅在应用源文件中定义后期待已经编译的库发生改变。
 同一参数选择 cache 入口或直接编译定义其中一种，避免重复、冲突的 `-D`。
+直接集成 MPSC 源码时，`NS_MPSC_CACHELINE_SIZE` 的头文件回退为 64；需要隔离时同时定义
+`NS_MPSC_CACHELINE_ALIGNED`，并按目标 CPU 向所有翻译单元传入相同的间距。
 
 Zephyr 保留独立 module/Kconfig 入口，本轮不把顶层 cache 参数自动映射为 Kconfig。
 `CONFIG_NANOSIG_BROKER_STACK_SIZE` 由 Zephyr 构建转发；waitset 容量与线程优先级遵循
 `CONFIG_NANOSIG_*` > 同名去掉 `CONFIG_` 的编译定义 > 平台头默认值。
 Zephyr 中调整工具模块参数仍使用其构建系统的编译定义，并保持公共配置对应用可见。
+MPSC 间距在 Zephyr 模块入口单独解析：显式 `-DNS_MPSC_CACHELINE_SIZE=<n>` 优先，
+否则使用有效的 `CONFIG_DCACHE_LINE_SIZE`，再尝试 `/cpus/cpu@0` 的 DeviceTree
+`d-cache-line-size`，最后回退 64；不探测构建宿主，也不使用运行时缓存查询改变布局。
+解析结果通过全局 Zephyr 编译定义传给应用和库，数值约束与顶层 CMake 一致。
 
 ## 配置回归验证
 
 ```sh
 cmake -DTEST_BINARY_ROOT=/tmp/nanosig-module-config \
   -P test/cmake/check_module_config.cmake
+# Zephyr 配置选择及公共布局验证，不要求安装 SDK
+cmake -DTEST_BINARY_ROOT=/tmp/nanosig-zephyr-cacheline \
+  -P test/cmake/check_zephyr_cacheline.cmake
 ```
 
 独立消费者分别验证默认配置和自定义配置：公共宏传播、内部宏隔离、运行时初始日志门限、
 CRLF 换行、stdout 缓冲容量和哈希表实际初始桶数；另验证非法参数在配置期失败。
+MPSC 额外覆盖自动间距、显式 64/128、C/C++ 字段间距和库/调用方实际入出队，
+以及 0、8、96、非数字等非法间距的拒绝。
+Zephyr 配置夹具加载真实模块入口，验证 Kconfig/DeviceTree/覆盖/回退的优先级及 C 头布局；
+它不代替真实 SDK/backend 的构建和执行测试。
 原始 `#` 必须在配置期被拒绝；`"\043"` 则同时经过 C/C++ API 检查、消费者字符串断言及库内 hex 日志的输出捕获。
 该检查单独运行，避免普通 CTest 递归配置整个项目。
 

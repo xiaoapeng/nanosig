@@ -135,6 +135,32 @@ entries:
       - "cmake/ModuleConfig.cmake:50"
       - "cmake/ApiCompileChecks.cmake:45"
       - "docs/BUILD_CONFIG.md:48"
+  - id: "GLOBAL-015"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "low"
+    type: "cleanup"
+    section: "closed"
+    closed_date: "2026-11-08"
+    location: "docs/review/global-review.md#GLOBAL-015"
+    locations:
+      - "include/nanosig/nanosig_signal.h:171"
+      - "include/nanosig/nanosig_signal.h:173"
+      - "src/ds/ns_mpsc_record_ring.c:26"
+      - "include/nanosig/nanosig_types.h:55"
+      - "test/cmake/static_assert/CMakeLists.txt:14"
+  - id: "GLOBAL-016"
+    module: "global-review"
+    status: "closed-fixed"
+    severity: "low"
+    type: "cleanup"
+    section: "closed"
+    closed_date: "2026-11-08"
+    location: "docs/review/global-review.md#GLOBAL-016"
+    locations:
+      - "platform/linux/port.c:374"
+      - "platform/macos/port.c:412"
+      - "include/nanosig/nanosig_types.h:187"
 ---
 
 # 全局视角 Review（跨模块问题）
@@ -184,7 +210,25 @@ entries:
 
 **2026-11-06 四项修复完成**：按作者要求完成 FORMATIO-031、GLOBAL-009、GLOBAL-010、GLOBAL-011，均关闭-已修复，改动保留在工作区未提交。格式化与裸机 C++ 链接回归均取得修复前失败、修复后通过的证据；macOS Release 全量 53 项、裸机 7 项、ASAN/UBSAN 格式化与日志各 2 项、API 编译检查和两种 sanitize-all 审计通过。普通 MPSC 压测使用 20 秒配置；README 宏参数经手工语法编译验证，MPSC 文档经独立源码复核。当前剩余 2 条打开问题：FORMATIO-021（高）和 DEBUG-001（中）。历史快照、文档保护决定及其审计记录保留。
 
+**2026-11-08 公共工具头引用盘点（架构观察）**
+
+范围为当前工作区 include/src/platform 的生产代码，以及 test/demos/bench/cmake 中 C/C++ 源码的引用计数；排除 tmp、构建产物和隐藏缓存，计数去除注释。未修改源码，未运行构建或测试。
+
+| 分类 | 工具定义 | 证据与解释 |
+|---|---|---|
+| 仓库内无使用点 | NS_SECTION、NS_NORETURN、NS_PACKED、NS_FUNCTION_CONST、NS_USED | 定义依次位于 include/nanosig/nanosig_types.h:39、:294、:304、:305、:306；定义及 NS_SECTION 的自身覆盖 guard 不算调用。公开工具未在仓库使用，不证明外部消费者未使用，不直接作为删除依据。 |
+| 仅有测试引用 | NS_ARRAY_SIZE、NS_LIKELY、NS_CONTAINER_OF_CONST、NS_MEMBER_ADDRESS_IS_NONNULL、ns_read_once、ns_align_down、ns_ctz、ns_clz | 主要见 test/unit/test_types_contract_compile.c:18、:37、:42、:51、:54、:56、:59、:60，另有 C++/数据结构编译契约覆盖；生产代码中无引用。ns_ctz_u32/ns_clz_u32 通过包装宏间接被测试覆盖。 |
+| 工具头内部使用 | NS_HAS_ATTRIBUTE、NS_HAS_GNU_TYPEOF | 前者用于 NS_FALLTHROUGH / NS_NO_SANITIZE_FUNCTION；后者选择类型比较与 container_of 实现。外部无引用不能认定为无用。 |
+
+静态全文扫描确认：include/src/platform 中，工具头以外未直接使用 __builtin_*、__attribute__、__declspec、__has_attribute、__typeof__。遍历宏的 typeof 已通过该头的兼容定义收口。未发现手写数组长度、clz/ctz、align_down 等价重复；MPSC 的局部 align_up 包装已委托公共宏。
+
+边界观察：src/nanosig.c:58 的标准 _Alignas 有明确对齐保证，NS_ALIGNED 在未知编译器分支为空，不作机械替换；platform/cache_line_probe.c:28、:29 的标准 offsetof 属独立构建探针，不要求引入公共工具头；FreeRTOS 的 bytes→words 取整使用不同单位和防溢出方法，不等价于公共对齐宏。确认的复用 cleanup 记录于 GLOBAL-015、GLOBAL-016；既有表达式断言重复保留 CORE-021。
+
 ## 修复历史
+
+- **2026-11-08 — 本地提交整理（GLOBAL-015 / GLOBAL-016）**：作者明确授权新建特性分支并提交，交付分支为 codex/fix-mpsc-aba-cacheline-helpers。此前修复记录中的旧分支和未提交状态是当时工作区快照；本次源码、回归及相关文档一起整理提交，不推送、不创建 PR。远端 CI 和 nightly 尚未运行。
+
+- **2026-11-08 — GLOBAL-015 / GLOBAL-016**：统一声明式静态断言和 POSIX 页对齐工具；修正公共断言在 C++11 下被空展开的问题，新增真/假断言编译回归。分支 codex/fix-mpsc-counter-aba，工作区未提交。macOS Release 53/53、ASAN 针对性 12/12、API 检查和 ASAN sanitize-all 通过；MPSC 压测设置 20 秒，两个改动 C 翻译单元静态分析无诊断。Linux/Windows 未做原生运行验证。
 
 ### 2026-09-21 — sanitize-all 真正化（CMake 多阶段审计入口）
 
@@ -701,6 +745,88 @@ cmake/ApiCompileChecks.cmake:45
 docs/BUILD_CONFIG.md:48
 
 ---
+
+---
+
+<a id="GLOBAL-015"></a>
+### GLOBAL-015: 跨模块静态断言仍有三处未复用公共 NS_STATIC_ASSERT
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：当前支持的 C11/C++11+ 构建，静态走查；仅拼写复用问题，无功能故障证据）
+- **类型**: cleanup
+- **关闭原因**: 三处声明式断言已复用 NS_STATIC_ASSERT。同时修正公共宏 C++11 版本门槛错误：按项目最低 C++11 契约直接选择 static_assert，兼容 MSVC 默认旧 __cplusplus。新增严格 C++11 真/假断言编译检查，已实测修复前假断言被接受导致用例失败、修复后正确拒绝；接入 api-compile-checks 和 CTest。 macOS Release 53/53（排除 nightly，MPSC 压测设置 20 秒）、ASAN 针对性 12/12、API 编译检查与 ASAN sanitize-all 四段审计通过；slot 签名正反编译探针与 size_t 高位对齐检查通过；MPSC/macOS port 的 Clang 静态分析无诊断。Linux/Windows 未做原生运行验证。 修复位于分支 codex/fix-mpsc-counter-aba 的工作区，未提交。作者于 2026-11-08 明确要求修复及回归，现将本条关闭-已修复。
+- **关闭日期**: 2026-11-08
+
+#### 问题描述
+
+signal 的 C++ 分支两次直接使用 static_assert，MPSC record header 一次直接使用 _Static_assert；nanosig_types.h 已提供 NS_STATIC_ASSERT，且两个文件的邻近断言已经复用它。这些是标准语言关键字，不是编译器内建调用。
+
+#### 影响面
+signal 的两处断言由 C++ 消费者包含头文件触发，下级为 NS_SIGNAL_PAYLOAD_SIZE / NS_SIGNAL_PAYLOAD_PTR_SIZE 类型映射；MPSC 的断言检查翻译单元内 record header 尺寸。无运行时调用者。相关覆盖为 test/unit/test_cpp_compat_compile.cpp:81、:87 和 MPSC 编译/运行检查，本轮仅核对静态证据。
+
+#### 文档仲裁与历史去重
+已核对 global 当前与历史，无实质重复。CORE-021 是 slot 签名的表达式断言重复，保留原 ID。本条仅按公共工具优先复用规则收口拼写，不改变断言条件。
+
+#### review 建议
+
+将三处改为 NS_STATIC_ASSERT，保留条件、消息和 C/C++ 分支。
+
+#### 作者建议
+
+作者于 2026-11-08 明确要求“帮我修一下，然后做一次回归测试”。按本条 review 建议做最小工具复用修复，保留现有条件、类型宽度、错误路径与兼容分支，并执行回归；不删除未使用的公开宏。
+
+#### 可重现的失败场景
+
+静态对比三个定位点与 signal C 分支、MPSC 紧邻的 NS_STATIC_ASSERT，即可看到两套拼写并存；支持的 C11/C++11+ 下检查等价，没有已证实功能失败。
+
+#### 定位
+
+include/nanosig/nanosig_signal.h:171
+include/nanosig/nanosig_signal.h:173
+src/ds/ns_mpsc_record_ring.c:26
+include/nanosig/nanosig_types.h:55
+test/cmake/static_assert/CMakeLists.txt:14
+
+
+---
+
+---
+
+<a id="GLOBAL-016"></a>
+### GLOBAL-016: POSIX 线程栈取整重复公共 ns_align_up
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟢 较低（前提：Linux/macOS 当前固定 4096 粒度、已有加法防溢出且保留 size_t 宽度，静态走查；仅维护性重复）
+- **类型**: cleanup
+- **关闭原因**: Linux/macOS 两处线程栈取整已复用 ns_align_up，保留原请求下界、防溢出上界、4096 粒度和 size_t 转换。 macOS Release 53/53（排除 nightly，MPSC 压测设置 20 秒）、ASAN 针对性 12/12、API 编译检查与 ASAN sanitize-all 四段审计通过；slot 签名正反编译探针与 size_t 高位对齐检查通过；MPSC/macOS port 的 Clang 静态分析无诊断。Linux/Windows 未做原生运行验证。 修复位于分支 codex/fix-mpsc-counter-aba 的工作区，未提交。作者于 2026-11-08 明确要求修复及回归，现将本条关闭-已修复。
+- **关闭日期**: 2026-11-08
+
+#### 问题描述
+
+Linux/macOS 的 ns_platform_thread_init 各自手写加法、除法、乘法完成向上取整，未复用公共 ns_align_up。当前粒度固定为 4096u，前置检查已经排除加法溢出；保留 size_t 宽度时两者等价。
+
+#### 影响面
+两个后端的 ns_platform_thread_init 非零 stack_size 分支；直接库调用者为 src/nanosig.c 的 loop 线程创建、src/ns_broker.c 的 broker 线程创建。下级 pthread_attr_setstacksize 消费取整结果。test/unit/test_platform_backend.c:133 的 test_thread_stack_size 覆盖默认、指定、非页对齐和低于下限请求，本轮未运行。合同见 include/nanosig/nanosig_port.h:463、platform/README.md:36。
+
+#### 文档仲裁与历史去重
+PORT-031（docs/review/platform-ports-code-review.md:914）已修复缺少取整，本条保留该项作者决定的 4096 粒度、原始请求下界检查和防溢出上界，只收口表达式，不重提已关闭 bug。global 当前与历史无同类工具复用条目。
+
+#### review 建议
+
+保留原始请求下界与加法溢出检查，将两处赋值改为 ns_align_up(stack_size, (size_t)NS_POSIX_THREAD_STACK_GRANULARITY)。必须保留 size_t 转换，避免公共宏的按位取反掩码宽度变窄。不替换 FreeRTOS 的 bytes→words 换算。
+
+#### 作者建议
+
+作者于 2026-11-08 明确要求“帮我修一下，然后做一次回归测试”。按本条 review 建议做最小工具复用修复，保留现有条件、类型宽度、错误路径与兼容分支，并执行回归；不删除未使用的公开宏。
+
+#### 可重现的失败场景
+
+静态对比：两处以 (stack_size + 4095) / 4096 * 4096 取整；ns_align_up 使用等价掩码。粒度为 2 的幂、加法预先防溢出且使用 size_t 时结果相同，没有当前功能失败证据。
+
+#### 定位
+platform/linux/port.c:374
+platform/macos/port.c:412
+include/nanosig/nanosig_types.h:187
 
 ---
 

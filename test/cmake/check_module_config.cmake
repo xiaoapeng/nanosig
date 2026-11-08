@@ -28,10 +28,14 @@ set(_custom_args
     -DNS_CONFIG_HASHTBL_MIN_SIZE=32
     -DNS_PLATFORM_WAIT_EMPTY_MAX_US=250000)
 
-foreach(_case default custom zero escaped)
+foreach(_case default custom zero escaped cacheline64 cacheline128)
     set(_args "")
-    if(NOT _case STREQUAL "default")
+    if(_case MATCHES "^(custom|zero|escaped)$")
         set(_args ${_custom_args})
+    endif()
+    if(_case MATCHES "^cacheline([0-9]+)$")
+        list(APPEND _args "-DNS_MPSC_CACHELINE_SIZE=${CMAKE_MATCH_1}"
+            "-DCHECK_EXPECTED_CACHELINE_SIZE=${CMAKE_MATCH_1}")
     endif()
     if(_case STREQUAL "zero")
         list(APPEND _args -DCHECK_ZERO_CONFIG=ON
@@ -76,7 +80,11 @@ foreach(_setting
         [=[NS_CONFIG_DEBUG_ENTER_SIGN="#"]=]
         NS_CONFIG_STDOUT_MEM_CACHE_SIZE=0
         NS_CONFIG_HASHTBL_MIN_SIZE=12
-        NS_PLATFORM_WAIT_EMPTY_MAX_US=-1)
+        NS_PLATFORM_WAIT_EMPTY_MAX_US=-1
+        NS_MPSC_CACHELINE_SIZE=0
+        NS_MPSC_CACHELINE_SIZE=8
+        NS_MPSC_CACHELINE_SIZE=96
+        NS_MPSC_CACHELINE_SIZE=invalid)
     string(REGEX REPLACE "=.*" "" _name "${_setting}")
     execute_process(COMMAND "${CMAKE_COMMAND}" -S "${_source}"
         -B "${TEST_BINARY_ROOT}/invalid-${_name}" "-D${_setting}"

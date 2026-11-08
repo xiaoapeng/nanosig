@@ -28,6 +28,24 @@ extern "C" {
 #define NS_MPSC_RECORD_RING_ALIGNMENT ((size_t)sizeof(size_t))
 
 /**
+ * @brief 启用缓存行隔离时的位置间距，单位为字节，必须是不小于 16 的 2 的幂。
+ *
+ * CMake 本机构建自动探测并向库和调用方统一传递；直接集成源码时默认 64。
+ * 该值影响结构体布局，库与所有调用方必须保持一致。
+ */
+#ifndef NS_MPSC_CACHELINE_SIZE
+#define NS_MPSC_CACHELINE_SIZE 64u
+#endif
+
+#ifdef NS_MPSC_CACHELINE_ALIGNED
+NS_STATIC_ASSERT(NS_MPSC_CACHELINE_SIZE >= 16u &&
+                 (NS_MPSC_CACHELINE_SIZE & (NS_MPSC_CACHELINE_SIZE - 1u)) == 0u,
+                 "NS_MPSC_CACHELINE_SIZE must be a power of two and at least 16");
+NS_STATIC_ASSERT(NS_MPSC_CACHELINE_SIZE > sizeof(atomic_size_t),
+                 "NS_MPSC_CACHELINE_SIZE must exceed atomic_size_t size");
+#endif
+
+/**
  * @brief scatter-gather 记录片段描述符。
  *
  * 用于 try_pushv，描述一条记录中的一个连续内存块。多个片段按数组
@@ -42,26 +60,24 @@ typedef struct ns_mpsc_record_part {
  * @brief MPSC 记录环主结构。
  *
  * 调用方应将其视为不透明类型，仅通过公开接口访问。
+ * write_pos 的最低位为内部 busy 标志，其余位表示已发布的写入位置。
  *
- * 桌面平台（NS_MPSC_CACHELINE_ALIGNED）使用手动 padding 将
- * reserve_pos/write_pos（生产者写入）与 read_pos（消费者写入）
- * 分离到不同的 64 字节 cache line，避免 false sharing。
+ * 启用 NS_MPSC_CACHELINE_ALIGNED 时使用手动 padding 将
+ * write_pos（生产者写入）与 read_pos（消费者写入）
+ * 按 NS_MPSC_CACHELINE_SIZE 间隔布置，用于隔离位置计数器的缓存行。
  */
 typedef struct ns_mpsc_record_ring  {
 #ifdef NS_MPSC_CACHELINE_ALIGNED
-    /* 生产者侧：reserve_pos, write_pos 各占独立 cache line */
-    atomic_size_t reserve_pos;
-    char          _cl0[56];
+    /* 生产者侧 */
     atomic_size_t write_pos;
-    char          _cl1[56];
+    char          _cl0[NS_MPSC_CACHELINE_SIZE - sizeof(atomic_size_t)];
     /* 消费者侧 */
     atomic_size_t read_pos;
-    char          _cl2[56];
+    char          _cl1[NS_MPSC_CACHELINE_SIZE - sizeof(atomic_size_t)];
     /* 只读 */
     uint8_t      *storage;
     size_t        capacity;
 #else
-    atomic_size_t reserve_pos;
     atomic_size_t write_pos;
     atomic_size_t read_pos;
     uint8_t      *storage;
@@ -108,8 +124,9 @@ extern size_t ns_mpsc_record_ring_capacity(const ns_mpsc_record_ring_t *ring);
 /**
  * @brief 返回环当前的空闲字节数。
  *
- * 该值基于 reserve_pos 和 read_pos 计算，反映的是"尚可被生产者抢占的
- * 空间"，在多生产者并发推送期间可能短暂偏大（乐观估计）。
+ * 该值基于去除 busy 标志后的 write_pos 和 read_pos 计算，反映的是
+ * "尚可被生产者抢占的空间"，在多生产者并发推送期间可能短暂偏大
+ * （乐观估计），不能代替 try_push/try_pushv 的容量检查。
  *
  * @param[in] ring 已初始化的环。
  *
@@ -132,10 +149,11 @@ extern size_t ns_mpsc_record_ring_max_record_size(const ns_mpsc_record_ring_t *r
 /**
  * @brief 尝试推送一条记录（单块）。
  *
- * 非阻塞；空间不足时立即返回 `NS_E_QUEUE_FULL`，不自旋。该函数是
+ * 不等待消费者腾出空间；容量检查发现空间不足时返回 `NS_E_QUEUE_FULL`。该函数是
  * `ns_mpsc_record_ring_try_pushv` 的便捷封装，等价于传入单个 part。
  *
  * 线程安全：可被多个生产者并发调用。
+ * 预留规划与位置发布串行，竞争时可能自旋等待；payload 复制可并行。
  *
  * @param[in,out] ring        已初始化的环。
  * @param[in]     record      指向记录数据的指针；record_size 为 0 时可为 NULL。
@@ -156,9 +174,10 @@ extern int ns_mpsc_record_ring_try_push(
  * 将 @p parts 数组中的多个片段拼接为一条连续记录写入环中。各片段按
  * 数组顺序依次拼接，最终记录大小为所有片段大小之和。
  *
- * 非阻塞；空间不足时立即返回 `NS_E_QUEUE_FULL`。
+ * 不等待消费者腾出空间；容量检查发现空间不足时返回 `NS_E_QUEUE_FULL`。
  *
  * 线程安全：可被多个生产者并发调用。
+ * 预留规划与位置发布串行，竞争时可能自旋等待；payload 复制可并行。
  *
  * @param[in,out] ring       已初始化的环。
  * @param[in]     parts      记录片段数组。
