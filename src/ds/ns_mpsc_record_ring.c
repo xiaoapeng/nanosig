@@ -23,8 +23,14 @@ typedef struct ns_mpsc_record_header {
     atomic_size_t meta;
 } ns_mpsc_record_header_t;
 
-_Static_assert(sizeof(ns_mpsc_record_header_t) == sizeof(size_t),
-               "ns_mpsc_record_header_t must be exactly one size_t");
+NS_STATIC_ASSERT(sizeof(ns_mpsc_record_header_t) == sizeof(size_t),
+                 "ns_mpsc_record_header_t must be exactly one size_t");
+
+NS_STATIC_ASSERT((NS_MPSC_RECORD_RING_ALIGNMENT & 1u) == 0u,
+                 "record positions must leave the low bit available");
+
+/* 对齐位置的最低位标记预留占用，避免跨零的在途预留匹配旧空闲值。 */
+#define NS_MPSC_WRITE_BUSY ((size_t)1u)
 
 /*
  * meta 位布局（64 位）:
@@ -246,8 +252,7 @@ static bool ns_mpsc_record_ring_plan_push(
  * @brief 初始化 MPSC 记录环。
  *
  * 将 storage 的每个对齐槽位的 header 标记为 uncommitted（valid=0），
- * 保证消费者不会误读残留数据。reserve_pos / write_pos / read_pos
- * 均归零。
+ * 保证消费者不会误读残留数据。write_pos / read_pos 均归零。
  *
  * @return NS_OK 或 NS_E_INVAL。
  */
@@ -264,7 +269,6 @@ int ns_mpsc_record_ring_init(ns_mpsc_record_ring_t *ring, void *storage, ns_capa
 
     ring->storage = (uint8_t *)storage;
     ring->capacity = capacity_value;
-    ns_atomic_init(&ring->reserve_pos, 0u);
     ns_atomic_init(&ring->write_pos, 0u);
     ns_atomic_init(&ring->read_pos, 0u);
 
@@ -291,25 +295,25 @@ size_t ns_mpsc_record_ring_capacity(const ns_mpsc_record_ring_t *ring)
 /**
  * @brief 返回当前空闲字节数。
  *
- * 基于 reserve_pos（生产者侧）和 read_pos（消费者侧）计算。
- * 在多生产者并发场景下，reserve_pos 可能超前于 write_pos，因此返回值
- * 是乐观估计，可能短暂偏大。
+ * 基于去除 busy 标志后的 write_pos 和 read_pos 计算。
+ * 在多生产者并发场景下仅为快照估计，不能代替推送时的容量检查。
  *
  * @return 空闲字节数；ring 无效时返回 0。0 也可能表示环已满。
  */
 size_t ns_mpsc_record_ring_free_capacity(const ns_mpsc_record_ring_t *ring)
 {
     ns_mpsc_record_ring_t *nc_ring = (ns_mpsc_record_ring_t *)(void *)ring;
-    size_t reserve_pos;
+    size_t write_pos;
     size_t read_pos;
     size_t used;
 
     if(!ns_mpsc_record_ring_is_valid(ring)) return 0u;
 
-    reserve_pos = ns_atomic_load_explicit(&nc_ring->reserve_pos, ns_memory_order_relaxed);
+    write_pos = ns_atomic_load_explicit(&nc_ring->write_pos, ns_memory_order_relaxed);
+    write_pos &= ~NS_MPSC_WRITE_BUSY;
     read_pos = ns_atomic_load_explicit(&nc_ring->read_pos, ns_memory_order_relaxed);
 
-    used = ns_mpsc_record_ring_used(reserve_pos, read_pos);
+    used = ns_mpsc_record_ring_used(write_pos, read_pos);
     if(used > ring->capacity) return 0u;
     return ring->capacity - used;
 }
@@ -354,7 +358,7 @@ int ns_mpsc_record_ring_try_pushv(
 {
     ns_mpsc_record_push_plan_t plan;
     size_t record_size = 0u;
-    size_t reserve_pos;
+    size_t write_pos;
     size_t read_pos;
     size_t i;
 
@@ -372,30 +376,27 @@ int ns_mpsc_record_ring_try_pushv(
     if(record_size > ns_mpsc_record_ring_max_record_size(ring)) return NS_E_INVAL;
 
     for(;;){
-        size_t desired;
         size_t expected;
-        size_t write_pos;
 
-        write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_acquire);
-        read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_acquire);
-
-        if(!ns_mpsc_record_ring_plan_push(ring, record_size, write_pos, read_pos, &plan)){
-            return NS_E_QUEUE_FULL;
-        }
-
-        /* expected = write_pos：只有 reserve_pos == write_pos 时才能抢占 */
+        write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_relaxed);
+        if((write_pos & NS_MPSC_WRITE_BUSY) != 0u) continue;
         expected = write_pos;
-        desired = write_pos + plan.publish_size;
 
         if(ns_atomic_compare_exchange_weak_explicit(
-               &ring->reserve_pos,
+               &ring->write_pos,
                &expected,
-               desired,
+               write_pos | NS_MPSC_WRITE_BUSY,
                ns_memory_order_acq_rel,
                ns_memory_order_relaxed)){
-            reserve_pos = write_pos;
             break;
         }
+    }
+
+    /* 取得占用后重算容量，即使 CAS 的旧空闲值跨整周再次匹配也安全。 */
+    read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_acquire);
+    if(!ns_mpsc_record_ring_plan_push(ring, record_size, write_pos, read_pos, &plan)){
+        ns_atomic_store_explicit(&ring->write_pos, write_pos, ns_memory_order_release);
+        return NS_E_QUEUE_FULL;
     }
 
     {
@@ -410,8 +411,8 @@ int ns_mpsc_record_ring_try_pushv(
 
         ns_mpsc_record_ring_mark_uncommitted(plan.record_header);
 
-        /* 2. 步进 write_pos（release），允许后续生产者抢占下一个槽位 */
-        ns_atomic_store_explicit(&ring->write_pos, reserve_pos + plan.publish_size, ns_memory_order_release);
+        /* 2. 一次发布新位置并清除占用，允许后续生产者预留 */
+        ns_atomic_store_explicit(&ring->write_pos, write_pos + plan.publish_size, ns_memory_order_release);
 
         /* 3. memcpy 数据（真实记录已保证连续，padding 无需写零） */
         ns_mpsc_record_ring_write_parts(ring, plan.record_pos, parts, part_count);
@@ -446,6 +447,7 @@ int ns_mpsc_record_ring_try_acquire(
 
         read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
         write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_acquire);
+        write_pos &= ~NS_MPSC_WRITE_BUSY;
         used = ns_mpsc_record_ring_used(write_pos, read_pos);
         if(used > ring->capacity){
             ns_merrln(MPSC, "try_acquire: corrupted, used=%zu > capacity=%zu",
@@ -491,6 +493,7 @@ int ns_mpsc_record_ring_release(
 
     read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_relaxed);
     write_pos = ns_atomic_load_explicit(&ring->write_pos, ns_memory_order_acquire);
+    write_pos &= ~NS_MPSC_WRITE_BUSY;
     used = ns_mpsc_record_ring_used(write_pos, read_pos);
     if(used > ring->capacity){
         ns_merrln(MPSC, "release: corrupted, used=%zu > capacity=%zu",

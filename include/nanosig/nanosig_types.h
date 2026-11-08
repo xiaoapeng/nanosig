@@ -51,7 +51,8 @@
 #define ns_offsetof(type, member) offsetof(type, member)
 #endif
 
-#if defined(__cplusplus) && (__cplusplus >= 201112L)
+/* C++ 至少要求 C++11；兼容未启用 /Zc:__cplusplus 的 MSVC。 */
+#if defined(__cplusplus)
 #define NS_STATIC_ASSERT(expr, msg) static_assert((expr), msg)
 #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define NS_STATIC_ASSERT(expr, msg) _Static_assert((expr), msg)

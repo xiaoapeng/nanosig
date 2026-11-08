@@ -371,9 +371,7 @@ int ns_platform_thread_init(
 
     /* 向上取整到页粒度（防溢出）。 */
     if(stack_size > SIZE_MAX - (size_t)(NS_POSIX_THREAD_STACK_GRANULARITY - 1u)) return NS_E_INVAL;
-    stack_aligned = ((stack_size + (size_t)(NS_POSIX_THREAD_STACK_GRANULARITY - 1u))
-                     / (size_t)NS_POSIX_THREAD_STACK_GRANULARITY)
-                    * (size_t)NS_POSIX_THREAD_STACK_GRANULARITY;
+    stack_aligned = ns_align_up(stack_size, (size_t)NS_POSIX_THREAD_STACK_GRANULARITY);
 
     rc = pthread_attr_init(&attr);
     if(rc != 0) return NS_E_NOMEM;

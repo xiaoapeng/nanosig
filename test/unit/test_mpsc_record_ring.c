@@ -400,12 +400,8 @@ static int test_reserved_slot_does_not_replay_stale_record(void)
     ns_mpsc_record_ring_t ring;
     uint8_t out[16];
     size_t record_size = 0u;
-    size_t stale_record_total_size;
 
     if(expect_true(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) == NS_OK) != 0) return 1;
-
-    /* Compute a valid total_size for a 1-byte payload */
-    stale_record_total_size = ns_align_up(sizeof(size_t) + 1u, NS_MPSC_RECORD_RING_ALIGNMENT);
 
     /* push/pop one record to advance positions past 0 */
     if(expect_true(ns_mpsc_record_ring_try_push(&ring, "A", 1u) == NS_OK) != 0) return 1;
@@ -414,14 +410,11 @@ static int test_reserved_slot_does_not_replay_stale_record(void)
     if(expect_true(out[0] == (uint8_t)'A') != 0) return 1;
 
     /*
-     * Simulate a slow producer: reserve_pos advanced but write_pos lags.
-     * reserve_pos == write_pos ensures CAS consistency if try_push is called.
-     * The consumer sees write_pos == read_pos → NS_E_EMPTY.
+     * Simulate a slow producer holding busy before publishing its next position.
+     * Masking busy leaves write_pos == read_pos, so the consumer sees NS_E_EMPTY.
      */
-    ns_atomic_store_explicit(&ring.reserve_pos, ring.capacity, ns_memory_order_relaxed);
-    ns_atomic_store_explicit(&ring.write_pos, ring.capacity, ns_memory_order_relaxed);
     ns_atomic_store_explicit(&ring.read_pos, ring.capacity, ns_memory_order_relaxed);
-    ns_atomic_store_explicit(&ring.reserve_pos, ring.capacity + stale_record_total_size, ns_memory_order_release);
+    ns_atomic_store_explicit(&ring.write_pos, ring.capacity | (size_t)1u, ns_memory_order_release);
 
     record_size = 99u;
     out[0] = 0u;

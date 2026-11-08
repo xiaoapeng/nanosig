@@ -4,10 +4,12 @@
  * @date 2026-11-07
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <nanosig/nanosig_hashtbl.h>
+#include <nanosig/nanosig_mpsc_record_ring.h>
 #include <nanosig/nanosig_port.h>
 #include <nanosig/ns_debug.h>
 
@@ -16,6 +18,19 @@
     defined(NS_DBG_MODULE_LEVEL_BROKER) || defined(NS_DBG_MODULE_LEVEL_MPSC) || \
     defined(NS_DBG_MODULE_LEVEL_PLATFORM)
 #error "Private module settings must not propagate to the consumer"
+#endif
+
+NS_STATIC_ASSERT(NS_MPSC_CACHELINE_SIZE == CHECK_CACHELINE_SIZE, "public cache-line size");
+NS_STATIC_ASSERT(NS_MPSC_CACHELINE_SIZE >= 16 &&
+                 (NS_MPSC_CACHELINE_SIZE & (NS_MPSC_CACHELINE_SIZE - 1)) == 0,
+                 "valid cache-line size");
+#ifdef NS_MPSC_CACHELINE_ALIGNED
+NS_STATIC_ASSERT(offsetof(ns_mpsc_record_ring_t, read_pos) -
+                 offsetof(ns_mpsc_record_ring_t, write_pos) == NS_MPSC_CACHELINE_SIZE,
+                 "producer and consumer counters occupy separate cache-line spans");
+NS_STATIC_ASSERT(offsetof(ns_mpsc_record_ring_t, storage) -
+                 offsetof(ns_mpsc_record_ring_t, read_pos) == NS_MPSC_CACHELINE_SIZE,
+                 "read-only fields do not share the consumer cache-line span");
 #endif
 
 #ifdef CHECK_CUSTOM_CONFIG
@@ -45,7 +60,19 @@ void platform_stdout_write(void *stream, const uint8_t *buf, size_t size)
 int main(void)
 {
     ns_hashtbl_t table = NULL;
+    ns_mpsc_record_ring_t ring;
+    size_t storage[128u / sizeof(size_t)];
+    const uint8_t payload[16] = { 42 };
+    void *record = NULL;
+    size_t record_size = 0u;
     int rc = 1;
+
+    if(ns_mpsc_record_ring_init(&ring, storage, NS_CAPACITY_128) != NS_OK) return 1;
+    if(ns_mpsc_record_ring_try_push(&ring, payload, sizeof(payload)) != NS_OK) return 1;
+    if(ns_mpsc_record_ring_try_acquire(&ring, &record, &record_size) != NS_OK) return 1;
+    if(record_size != sizeof(payload) || memcmp(record, payload, record_size) != 0) return 1;
+    if(ns_mpsc_record_ring_release(&ring, record) != NS_OK) return 1;
+    if(ns_mpsc_record_ring_free_capacity(&ring) != sizeof(storage)) return 1;
 
     if(ns_platform_init() != 0) return 1;
     if(ns_debug_init() != 0) goto out_platform;

@@ -13,6 +13,7 @@ Guidance for source directory `cmake/`, which contains reusable CMake modules fo
 | `CompileWarnings.cmake` | Defines helper functions that apply warning flags and MSVC `/Zc:preprocessor`. |
 | `Sanitizers.cmake` | Defines sanitizer options and helper logic for ASAN, TSAN, and UBSAN flags. |
 | `Platform.cmake` | Selects one backend directory and applies its public/private configuration. |
+| `CacheLine.cmake` | Resolves and validates MPSC cache-line spacing, probes native hardware, and propagates the ABI setting. |
 | `ModuleConfig.cmake` | Exposes optional module settings; empty values preserve source defaults. |
 | `TestPrograms.cmake` | Shared setup for test, demo, and benchmark executables. |
 | `Coverage.cmake` | Applies coverage instrumentation and registers the report target. |

@@ -25,6 +25,8 @@ if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     nanosig_add_test_program(nanosig_test_signal unit/test_signal.c)
     nanosig_add_test_program(nanosig_test_timer unit/test_timer.c)
     nanosig_add_test_program(nanosig_test_mpsc_record_ring unit/test_mpsc_record_ring.c)
+    nanosig_add_test_program(nanosig_test_mpsc_record_ring_aba unit/test_mpsc_record_ring_aba.c)
+    set_tests_properties(nanosig_test_mpsc_record_ring_aba PROPERTIES TIMEOUT 10)
     nanosig_add_test_program(nanosig_test_ds_list unit/test_ds_list.c)
     nanosig_add_test_program(nanosig_test_ds_slist unit/test_ds_slist.c)
     nanosig_add_test_program(nanosig_test_ds_ringbuf unit/test_ds_ringbuf.c)
@@ -155,6 +157,18 @@ if(NANOSIG_BUILD_API_CHECKS)
             unit/test_types_contract_compile.c)
         nanosig_add_api_compile_check(nanosig_api_check_cpp_compat
             unit/test_cpp_compat_compile.cpp LANGUAGE CXX)
+        set(_static_assert_cpp11_command
+            ${CMAKE_COMMAND}
+            -S ${CMAKE_CURRENT_SOURCE_DIR}/cmake/static_assert
+            -B ${CMAKE_CURRENT_BINARY_DIR}/static_assert_cpp11
+            -G "${CMAKE_GENERATOR}"
+            -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER})
+        add_custom_target(nanosig_api_check_static_assert_cpp11
+            COMMAND ${_static_assert_cpp11_command}
+            VERBATIM)
+        add_test(NAME nanosig_api_check_static_assert_cpp11
+            COMMAND ${_static_assert_cpp11_command})
+        add_dependencies(api-compile-checks nanosig_api_check_static_assert_cpp11)
     endif()
     if(NANOSIG_PLATFORM STREQUAL "host")
         nanosig_add_api_compile_check(nanosig_api_check_broker_contract

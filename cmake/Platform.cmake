@@ -5,6 +5,8 @@
 # zephyr  : Zephyr k_poll 后端。**不通过顶层 CMake 构建**：Zephyr 有自己的
 #           构建系统，本后端经仓库根目录的 zephyr/module.yml 作为 Zephyr module
 #           编入（见 zephyr/CMakeLists.txt）。顶层给出 zephyr 时只打印引导信息。
+include("${CMAKE_CURRENT_LIST_DIR}/CacheLine.cmake")
+
 set(NANOSIG_PLATFORM "host" CACHE STRING "nanosig platform backend: host, baremetal, freertos, or zephyr (zephyr builds via Zephyr module)")
 set_property(CACHE NANOSIG_PLATFORM PROPERTY STRINGS host baremetal freertos zephyr)
 
@@ -127,5 +129,6 @@ function(nanosig_apply_platform target)
     if(WIN32 OR UNIX)
         # PUBLIC so consumers (tests, demos) get the same struct layout as the library
         target_compile_definitions(${target} PUBLIC NS_MPSC_CACHELINE_ALIGNED)
+        nanosig_apply_cacheline(${target})
     endif()
 endfunction()
