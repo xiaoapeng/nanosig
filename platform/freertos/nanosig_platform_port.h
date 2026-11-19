@@ -76,4 +76,21 @@ typedef struct ns_platform_waitset {
     struct ns_platform_waitable    *slots[NANOSIG_FREERTOS_WAITSET_CAP];
 } ns_platform_waitset_t;
 
+/** 抢占保护状态为不透明标记；FreeRTOS 通过任务临界区嵌套计数恢复。 */
+typedef UBaseType_t ns_platform_preempt_state_t;
+
+/** 仅任务上下文使用；必须与 leave 配对，不与手工中断掩码操作混用。 */
+static inline ns_platform_preempt_state_t ns_platform_preempt_enter(void)
+{
+    taskENTER_CRITICAL();
+    return 0u;
+}
+
+/** 恢复进入前的 FreeRTOS 任务临界区嵌套层数。 */
+static inline void ns_platform_preempt_leave(ns_platform_preempt_state_t state)
+{
+    (void)state;
+    taskEXIT_CRITICAL();
+}
+
 #endif

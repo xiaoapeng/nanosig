@@ -131,6 +131,20 @@ entries:
       - "src/ds/ns_mpsc_record_ring.c:415"
       - "src/ds/ns_mpsc_record_ring.c:418"
       - "src/ds/ns_mpsc_record_ring.c:450"
+  - id: "MPSC-016"
+    module: "mpsc-record-ring"
+    status: "closed-fixed"
+    severity: "high"
+    type: "bug"
+    section: "closed"
+    closed_date: "2026-11-17"
+    location: "docs/review/mpsc-record-ring-code-review.md#MPSC-016"
+    locations:
+      - "src/ds/ns_mpsc_record_ring.c:381"
+      - "src/ds/ns_mpsc_record_ring.c:403"
+      - "src/ds/ns_mpsc_record_ring.c:420"
+      - "src/ds/ns_mpsc_record_ring.c:421"
+      - "include/nanosig/nanosig_mpsc_record_ring.h:183"
 ---
 
 # MPSC Record Ring 代码审查报告
@@ -205,6 +219,8 @@ src/ds/ns_mpsc_record_ring.c:411
 ---
 
 ---
+
+- **MPSC-016（2026-11-17）**: 按作者授权先在 fly 验证再回灌：六个 port 头提供必需的 enter/leave，RTOS 保护短预留区，host/裸机为空实现；满队列恢复、payload 复制在保护外，保留 CAS/ABA。旧实现确定性回归失败、新实现通过，真实 FreeRTOS 嵌套掩码恢复通过；host 50/50、裸机 9/9、FreeRTOS 4/4，host/FreeRTOS ASAN 和 UBSAN 各 4/4 及审计通过；fly ARM 11/11、Kconfig 与 scheduler 检查通过。固定 pin 加持久补丁从干净源码重建通过。详见 docs/review/evidence/mpsc-preempt-2026-11-17.json；未烧录上板，未验证 Zephyr/Windows/SMP 运行。 — commit `codex/fix-mpsc-preemption（工作区未提交）`
 
 ## 现在打开的问题
 
@@ -472,6 +488,49 @@ src/ds/ns_mpsc_record_ring.c:450
 #### 影响面
 
 直接生产调用：src/nanosig.c:673 的 ns_signal_emit_raw，以及本模块 try_push 封装；直接消费调用：src/nanosig.c:335 的 ns_loop_dispatch_pending。影响所有基于该队列的跨线程 signal 投递。现有单元/压力测试覆盖普通绕环、零长度、大小上限、并发 payload 校验，但未覆盖暂停跨越完整计数器周期的旧计划。
+
+<a id="MPSC-016"></a>
+### MPSC-016: 单核优先级抢占下 WRITE_BUSY 自旋使持有者无法恢复
+
+- **状态**: 关闭-已修复
+- **严重度**: 🟠 高（前提：单核固定优先级抢占调度，高优先级生产者抢占持 busy 的低优先级生产者；源码时序走查，未做 RTOS 实机复现）
+- **类型**: bug
+- **关闭原因**: 修复 commit codex/fix-mpsc-preemption（工作区未提交）
+- **关闭日期**: 2026-11-17
+
+#### 问题描述
+
+单核固定优先级抢占调度下，高优先级生产者可能永久停在 WRITE_BUSY 自旋，低优先级持有者无法恢复并释放它。try_pushv 在 CAS 取得 busy 后，到容量复核、header 初始化、位置发布清 busy 之间没有禁止同核抢占。
+
+#### 影响面
+直接调用者为 try_push 包装和 src/nanosig.c 的 ns_signal_emit_raw。不同 signal 指向同一 target_loop 时，其各自 signal mutex 不会串行化两个生产者，因此可到达此时序；同一 signal 的外层 mutex 不能证明共享 ring 安全。下级是原子 load/CAS/store、plan_push 和 header 初始化。try_acquire 在未提交头上返回 NS_E_EMPTY，不属于本条的 busy 自旋。已有主机单元/压力测试未强制单核固定优先级抢占；本轮是源码时序走查，尚未执行 RTOS 实机复现。
+
+#### 文档仲裁与历史去重
+公共头允许多个生产者并发并注明可能自旋，但未限制其必须同优先级，也未要求外层禁止抢占。区别于 MPSC-012：持有者存活，未取消或异常终止；不能恢复是本实现使高优先级等待者保持就绪的结果。MPSC-015 修复计数器 ABA 后引入 busy 协议，本条不建议回退其正确性保护。RTOS ISR 调用在 platform/README.md 已明确不承诺，不把 ISR 场景列为本条成立前提。
+
+#### review 建议
+
+在平台层提供短预留保护：先禁止本核生产者抢占，再取得 busy，完成容量复核、fake/真实 header 初始化、发布 write_pos 并清 busy，然后立即解除保护。容量不足返回路径同样解除保护；payload memcpy 和有效 meta 提交保留在保护区外。FreeRTOS 单核且仅普通任务访问时可用 vTaskSuspendAll/xTaskResumeAll；使用 taskENTER_CRITICAL 或 Zephyr k_spin_lock 时核对中断优先级、嵌套/状态恢复与 SMP 语义。Zephyr scheduler lock 单独使用需排除 meta-IRQ 线程参与。不得以 yield、volatile、内存序加强或定时 sleep 代替进展保证；不增加阻塞 mutex 到现有 try API。
+
+#### 作者建议
+
+作者于 2026-11-17 授权先在 fly 工程中落地验证，再回灌 nanosig 并同步到 fly。采用平台必需的 ns_platform_preempt_enter/leave，不新增用户配置项；RTOS 保护 busy 预留阶段，其他后端空实现；payload 复制和提交在保护区外，保留现有 CAS/ABA 协议。FreeRTOS 使用任务临界区嵌套语义，Zephyr 保存并恢复 IRQ key。
+
+#### 可重现的失败场景
+
+单核、抢占、H 优先级高于 L；两个 signal 连接到同一 loop。L emit 后 CAS 设置 WRITE_BUSY，在清 busy 前由外部中断唤醒 H。H emit 进入相同 ring，在 src/ds/ns_mpsc_record_ring.c:382 持续 continue。L 一直就绪但无法运行；H 不返回。修复验收应注入该抢占点，确认 H 只能在 L 清 busy 后执行预留、两条记录最终可消费；另检查队列满失败后保护解除、memcpy 阶段可抢占、wrap/fake record 与既有 ABA 回归。
+
+2026-11-19 实机补验：连接的 J-Link MCU-Link / MCXN947 Cortex-M33（FreeRTOS V11.1.0）真实 SysTick/PendSV 抢占对照中，旧实现输出 MPSC HIGH entered while busy，停在 stage=3、high_saw_busy=1、high_runs=0；修复版 128 轮、2571 项检查全部通过，stage=5、failures=0。真实 BASEPRI 嵌套和满队列恢复通过。已备份原 Flash 并在结束后恢复带修复的正常 fly FreeRTOS demo，RTT 启动及 tick/灯效计数推进正常。详见 docs/review/evidence/mpsc-preempt-hardware-2026-11-19.json，测试源见 test/hardware/mcxn947_mpsc_preempt.c。此前关闭原因中“未烧录上板”为当时验证状态，本补记补齐 MCXN947 实机证据，不覆盖 Zephyr/Windows/SMP 或长期稳定性。
+
+#### 定位
+
+src/ds/ns_mpsc_record_ring.c:381
+src/ds/ns_mpsc_record_ring.c:403
+src/ds/ns_mpsc_record_ring.c:420
+src/ds/ns_mpsc_record_ring.c:421
+include/nanosig/nanosig_mpsc_record_ring.h:183
+
+---
 
 ---
 

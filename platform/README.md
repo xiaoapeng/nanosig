@@ -21,6 +21,7 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 - 内存：`ns_platform_alloc`、`ns_platform_free`。
 - wakeup：`init`、`deinit`、signal、单个等待。
 - 同步：mutex 的 `init`、`deinit`、加锁和解锁。
+- 短预留保护：`ns_platform_preempt_enter` / `ns_platform_preempt_leave`。
 - 时间：单调微秒时钟。
 - 线程：`init`、join（`ns_platform_thread_join` 保留 join 命名：它确实阻塞至线程结束）、
   栈大小上下限查询（`ns_platform_thread_stack_range`）。
@@ -30,6 +31,19 @@ Windows（WaitForMultipleObjects + SRWLOCK）、FreeRTOS（queue set + 每对象
 两者都**不**分配或释放对象本身。对应的类型由构建内头
 `platform/<os>/nanosig_platform_port.h` 以**透明别名**形式提供（见“平台类型注入”节）。
 （唯一例外：Zephyr 后端的线程对象由 port 分配 —— 见“Zephyr 后端”一节。）
+
+每个后端头必须提供 `ns_platform_preempt_state_t` 和内联的 enter/leave，不能依靠
+公共头的默认空实现。FreeRTOS 使用 `taskENTER_CRITICAL` / `taskEXIT_CRITICAL`，
+由内核嵌套计数恢复任务临界区；state 是不透明标记，不用于恢复应用手工修改的中断掩码。
+Zephyr 使用 `irq_lock` / `irq_unlock` 保存并恢复 key，调用任务必须处于 supervisor mode，
+不支持用户态直接入队。宿主和单执行上下文裸机为空操作，
+不增加新的调度保证，也不增加裸机导出符号。
+
+MPSC 只在取得 busy 之前到容量复核、header 初始化、发布位置并清 busy 之间使用该保护；
+容量不足同样恢复状态，payload 复制和提交留在保护区外。调用方必须在同一任务中按
+嵌套顺序配对，保护区不得阻塞、分配、唤醒或调用用户回调。该机制不扩展 ISR 调用支持；
+FreeRTOS 高于内核屏蔽阈值的中断和 Zephyr zero-latency ISR 仍不得访问此队列。
+跨核的队列预留互斥仍由现有 CAS 协议保证；具体 RTOS 的 SMP 保护成本需按目标验证。
 
 ## 线程栈大小
 

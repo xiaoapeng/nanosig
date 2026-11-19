@@ -92,4 +92,19 @@ typedef struct ns_platform_waitset {
     struct k_poll_event           events[NS_ZEPHYR_WAITSET_CAP];
 } ns_platform_waitset_t;
 
+/** 保存 Zephyr IRQ 锁的恢复 key。 */
+typedef unsigned int ns_platform_preempt_state_t;
+
+/** supervisor 任务上下文中保存 IRQ 状态并禁止本核抢占，不支持用户态直接调用。 */
+static inline ns_platform_preempt_state_t ns_platform_preempt_enter(void)
+{
+    return irq_lock();
+}
+
+/** 按嵌套顺序恢复进入前的 IRQ 锁状态。 */
+static inline void ns_platform_preempt_leave(ns_platform_preempt_state_t state)
+{
+    irq_unlock(state);
+}
+
 #endif

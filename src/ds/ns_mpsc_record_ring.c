@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <nanosig/nanosig_port.h>
 #include <nanosig/nanosig_mpsc_record_ring.h>
 
 /* Module overrides take precedence over the shared default (e.g. project CMake
@@ -357,6 +358,7 @@ int ns_mpsc_record_ring_try_pushv(
     size_t part_count)
 {
     ns_mpsc_record_push_plan_t plan;
+    ns_platform_preempt_state_t preempt_state;
     size_t record_size = 0u;
     size_t write_pos;
     size_t read_pos;
@@ -375,6 +377,8 @@ int ns_mpsc_record_ring_try_pushv(
     }
     if(record_size > ns_mpsc_record_ring_max_record_size(ring)) return NS_E_INVAL;
 
+    /* busy 持有者不能被同核生产者抢占，否则高优先级等待者会饿死它。 */
+    preempt_state = ns_platform_preempt_enter();
     for(;;){
         size_t expected;
 
@@ -396,6 +400,7 @@ int ns_mpsc_record_ring_try_pushv(
     read_pos = ns_atomic_load_explicit(&ring->read_pos, ns_memory_order_acquire);
     if(!ns_mpsc_record_ring_plan_push(ring, record_size, write_pos, read_pos, &plan)){
         ns_atomic_store_explicit(&ring->write_pos, write_pos, ns_memory_order_release);
+        ns_platform_preempt_leave(preempt_state);
         return NS_E_QUEUE_FULL;
     }
 
@@ -413,6 +418,7 @@ int ns_mpsc_record_ring_try_pushv(
 
         /* 2. 一次发布新位置并清除占用，允许后续生产者预留 */
         ns_atomic_store_explicit(&ring->write_pos, write_pos + plan.publish_size, ns_memory_order_release);
+        ns_platform_preempt_leave(preempt_state);
 
         /* 3. memcpy 数据（真实记录已保证连续，padding 无需写零） */
         ns_mpsc_record_ring_write_parts(ring, plan.record_pos, parts, part_count);

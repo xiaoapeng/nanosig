@@ -1,0 +1,93 @@
+{
+  "date": "2026-11-17",
+  "branch": "codex/fix-mpsc-preemption",
+  "committed": false,
+  "order": [
+    "Implemented in fly/dl/nanosig-src first",
+    "Validated fly FreeRTOS and baremetal ARM demos plus native FreeRTOS harness",
+    "Copied verified implementation into nanosig",
+    "Synced feature to fly as a patch against its unchanged published pin"
+  ],
+  "interface": [
+    "ns_platform_preempt_enter",
+    "ns_platform_preempt_leave"
+  ],
+  "policy": "RTOS backend supplies protection; host/baremetal supply inline no-ops. No user option or struct layout change.",
+  "regression": {
+    "baseline_old_implementation": {
+      "exit_code": 1,
+      "first_failure": "busy owner cannot be preempted",
+      "log": "build/preempt-verification/baseline.log"
+    },
+    "missing_backend_implementation": "compile rejected; build/mpsc-preemption/missing-port/compile.log",
+    "host_release": {
+      "passed": 50,
+      "total": 50,
+      "nightly_excluded": true,
+      "mpsc_stress_seconds": 20
+    },
+    "baremetal_release": {
+      "passed": 9,
+      "total": 9
+    },
+    "freertos_posix_release": {
+      "passed": 4,
+      "total": 4
+    },
+    "host_asan": {
+      "passed": 4,
+      "total": 4,
+      "sanitize_all": "passed"
+    },
+    "host_ubsan": {
+      "passed": 4,
+      "total": 4,
+      "sanitize_all": "passed"
+    },
+    "freertos_posix_asan": {
+      "passed": 4,
+      "total": 4,
+      "sanitize_all": "passed"
+    },
+    "freertos_posix_ubsan": {
+      "passed": 4,
+      "total": 4,
+      "sanitize_all": "passed"
+    },
+    "api_compile_checks": "host, baremetal and FreeRTOS passed",
+    "fly_arm": {
+      "passed": 11,
+      "total": 11,
+      "toolchain": "Arm GNU Toolchain 15.3.Rel2",
+      "log": "build/fly-sync-arm.log"
+    },
+    "fly_kconfig": "17 defconfigs and choice sweep passed",
+    "fly_scheduler_config": "16 checks passed",
+    "clean_pin_patch": {
+      "apply": "passed",
+      "feature_files_match_upstream": true,
+      "freertos_runtime_passed": 4,
+      "freertos_runtime_total": 4
+    }
+  },
+  "coverage": [
+    "busy ownership protected before successful CAS",
+    "high-priority producer deferred until reservation protection released",
+    "payload copy permits nested producer; consumer respects uncommitted head",
+    "full queue and success restore outer guard; invalid arguments bypass guard",
+    "fake record wraparound and previous ABA regression",
+    "native FreeRTOS POSIX SIGALRM masks preserved across nested enter/leave"
+  ],
+  "fly_patch": "package/nanosig/patches/0001-mpsc-preempt-guard.patch",
+  "fly_pin": "b3e4d87ff777574baf00dc1199e831daa2f7c5a2",
+  "limits": [
+    "No physical MCU execution or interrupt latency measurements",
+    "No Windows/MSVC or Zephyr runtime validation in this change",
+    "No SMP runtime validation",
+    "ISR use remains unsupported; Zephyr requires supervisor mode",
+    "FreeRTOS state follows task critical nesting, not arbitrary application interrupt masks"
+  ],
+  "local_logs": "build/mpsc-preemption/<configuration>/{configure,build,tests,audit}.log",
+  "reproduce_fly": "PATH=<arm-none-eabi-bin>:$PATH .venv/bin/python tool/test/check_build_arm.py --only mcxn-freertos,mcxn-baremetal",
+  "reproduce_unit": "ctest --test-dir <configured-build> -R mpsc_record_ring --output-on-failure"
+}

@@ -57,6 +57,11 @@ struct ns_platform_waitable;
  * 平台后端头提供的符号：
  * - `ns_waitable_handle_t` 及其谓词 `ns_waitable_handle_is_valid(h)`；
  * - `NS_PLATFORM_ABI_PROBE`（跨 TU 平台错配的链接期探针）；
+ * - `ns_platform_preempt_state_t` 及内联 `ns_platform_preempt_enter/leave`：
+ *   RTOS 禁止同核任务抢占，其他后端为空操作；只用于不可阻塞的短元数据区，
+ *   必须在同一任务中按嵌套顺序配对，不扩展现有 ISR 调用契约；
+ *   FreeRTOS 恢复内核任务临界区嵌套，不承诺恢复手工修改的中断掩码；
+ *   Zephyr 要求调用任务处于 supervisor mode，不支持用户态直接调用；
  * - `ns_platform_wakeup_t` / `ns_platform_mutex_t` / `ns_platform_thread_t`
  *   / `ns_platform_waitset_t`，全部为平台内核原语的透明别名。
  *

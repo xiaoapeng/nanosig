@@ -148,9 +148,19 @@ static void platform_contract_check_waitset_types(void)
     (void)NS_WAITABLE_EVENT_ERR;
 }
 
+static void platform_contract_check_preemption(void)
+{
+    ns_platform_preempt_state_t outer = ns_platform_preempt_enter();
+    ns_platform_preempt_state_t inner = ns_platform_preempt_enter();
+
+    ns_platform_preempt_leave(inner);
+    ns_platform_preempt_leave(outer);
+}
+
 int main(void)
 {
     platform_contract_accept_caller_storage();
+    platform_contract_check_preemption();
     platform_contract_check_atomic_macros();
     platform_contract_check_waitset_types();
     (void)NS_PLATFORM_ABI_PROBE;

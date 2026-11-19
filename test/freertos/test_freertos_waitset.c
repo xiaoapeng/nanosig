@@ -13,6 +13,8 @@
  * @copyright Copyright (c) 2026 nanosig contributors
  */
 
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -631,6 +633,33 @@ static void test_thread_stack_size(void)
     CHECK(g_thread_ran == 0);
 }
 
+/* POSIX harness 的 tick 由 SIGALRM 驱动；直接检查真实 port 的嵌套保护。 */
+static void test_preempt_guard(void)
+{
+    sigset_t before;
+    sigset_t inside;
+    sigset_t after_inner;
+    sigset_t after;
+    ns_platform_preempt_state_t outer;
+    ns_platform_preempt_state_t inner;
+    int rc_inside;
+    int rc_inner;
+
+    CHECK(pthread_sigmask(SIG_SETMASK, NULL, &before) == 0);
+    outer = ns_platform_preempt_enter();
+    inner = ns_platform_preempt_enter();
+    rc_inside = pthread_sigmask(SIG_SETMASK, NULL, &inside);
+    ns_platform_preempt_leave(inner);
+    rc_inner = pthread_sigmask(SIG_SETMASK, NULL, &after_inner);
+    ns_platform_preempt_leave(outer);
+    CHECK(pthread_sigmask(SIG_SETMASK, NULL, &after) == 0);
+    CHECK(rc_inside == 0 && rc_inner == 0);
+    CHECK(sigismember(&before, SIGALRM) == 0);
+    CHECK(sigismember(&inside, SIGALRM) == 1);
+    CHECK(sigismember(&after_inner, SIGALRM) == 1);
+    CHECK(sigismember(&after, SIGALRM) == sigismember(&before, SIGALRM));
+}
+
 static void test_clock(void)
 {
     ns_platform_time_us_t t0 = 0u;
@@ -668,6 +697,7 @@ static void runner_task(void *arg)
     test_thread_join_retries();
     test_thread_stack_size();
     test_clock();
+    test_preempt_guard();
 
     fflush(NULL);
     _Exit(g_failures != 0 ? 1 : 0);

@@ -1,3 +1,8 @@
+if(NANOSIG_BUILD_TESTS)
+    nanosig_add_test_program(nanosig_test_mpsc_record_ring_preempt unit/test_mpsc_record_ring_preempt.c)
+    set_tests_properties(nanosig_test_mpsc_record_ring_preempt PROPERTIES TIMEOUT 10)
+endif()
+
 if(NANOSIG_BUILD_TESTS AND NANOSIG_PLATFORM STREQUAL "host")
     # Event broker tests — split by concern for faster parallel builds
     nanosig_add_test_program(nanosig_test_broker_lifecycle unit/test_broker_lifecycle.c)

@@ -154,6 +154,8 @@ extern size_t ns_mpsc_record_ring_max_record_size(const ns_mpsc_record_ring_t *r
  *
  * 线程安全：可被多个生产者并发调用。
  * 预留规划与位置发布串行，竞争时可能自旋等待；payload 复制可并行。
+ * RTOS 后端在预留阶段禁止同核任务抢占，payload 复制不延长该保护。
+ * 仅支持后端已声明的执行上下文，不因此获得 ISR 调用支持。
  *
  * @param[in,out] ring        已初始化的环。
  * @param[in]     record      指向记录数据的指针；record_size 为 0 时可为 NULL。
@@ -178,6 +180,8 @@ extern int ns_mpsc_record_ring_try_push(
  *
  * 线程安全：可被多个生产者并发调用。
  * 预留规划与位置发布串行，竞争时可能自旋等待；payload 复制可并行。
+ * RTOS 后端在预留阶段禁止同核任务抢占，payload 复制不延长该保护。
+ * 仅支持后端已声明的执行上下文，不因此获得 ISR 调用支持。
  *
  * @param[in,out] ring       已初始化的环。
  * @param[in]     parts      记录片段数组。
