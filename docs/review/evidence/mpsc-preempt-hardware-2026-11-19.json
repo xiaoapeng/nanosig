@@ -1,0 +1,85 @@
+{
+  "date": "2026-11-19",
+  "board": "MCXN947 Cortex-M33 core 0, single core FreeRTOS V11.1.0",
+  "debugger": "J-Link MCU-Link",
+  "debugger_serial": "1066535542",
+  "voltage": "3.300 V",
+  "toolchain": "Arm GNU Toolchain 15.3.Rel2",
+  "baseline_commit": "b3e4d87ff777574baf00dc1199e831daa2f7c5a2",
+  "method": "The real high-priority task delays for one tick. A CAS hook pends real SysTick while the low-priority task owns busy. Periodic tick requests are stopped during this deterministic test; real IRQ masking and PendSV task switching are exercised. Test-only symbol-renamed implementation; no production scheduling hook.",
+  "fixed": {
+    "magic": 1297109827,
+    "stage": 5,
+    "checks": 2571,
+    "failures": 0,
+    "round": 127,
+    "high_runs": 128,
+    "injections": 128,
+    "low_result": 0,
+    "high_result": 0,
+    "basepri_at_busy": 160,
+    "pending_at_busy": 67108864,
+    "high_saw_busy": 0,
+    "high_sleeping": 0,
+    "tick_before": 130,
+    "tick_after": 131,
+    "failure_line": 0,
+    "nested_mask": 160,
+    "restored_mask": 0,
+    "full_result": 4294967295,
+    "systick_priority": 7
+  },
+  "baseline": {
+    "magic": 1297109827,
+    "stage": 3,
+    "checks": 13,
+    "failures": 0,
+    "round": 0,
+    "high_runs": 0,
+    "injections": 1,
+    "low_result": 0,
+    "high_result": 4294967295,
+    "basepri_at_busy": 0,
+    "pending_at_busy": 0,
+    "high_saw_busy": 1,
+    "high_sleeping": 0,
+    "tick_before": 0,
+    "tick_after": 0,
+    "failure_line": 0,
+    "nested_mask": 160,
+    "restored_mask": 0,
+    "full_result": 4294967295,
+    "systick_priority": 7
+  },
+  "fixed_rtt": "freertos-demoMPSC hardware begin\nMPSC PASS rounds=128 checks=2571 high=128 irq=128\n",
+  "baseline_rtt": "freertos-demoMPSC hardware begin\nMPSC HIGH entered while busy\n",
+  "restored_demo_rtt": "freertos-demo[    0.000000] [ SYS] nanosig debug bridge -> SEGGER RTT\n[    0.000000] [ SYS] led: en=1 color=0 freq=0 (boot)\n",
+  "restored_firmware": "normal-demo.elf (fly normal FreeRTOS demo with the preemption fix)",
+  "backup": "build/hardware-mpsc/original-flash.bin (first 1 MiB saved before flashing)",
+  "test_source": "test/hardware/mcxn947_mpsc_preempt.c",
+  "local_artifacts": "build/hardware-mpsc/",
+  "sha256": {
+    "original-flash.bin": "17521b66f757e700ef9cf364af5b856f186c8e106ed83630ed7d8cf2b2664e69",
+    "normal-demo.elf": "cdee71c5753a60b72762dea5f1f0268d456153ed25665ade84751d0e9004d1e1",
+    "fixed-test.elf": "31f0db764a4ffcd8ccc675761387ad7dc0a40d30fdef892d81263d698207483b",
+    "baseline-test.elf": "001e7b7cfe612fb327d90f85f6da76fb587449feeca5772a4f4f240a2e2faba6",
+    "fixed-test-source.c": "33500b4a7fe5dadf168acf33dfdac4768e25d51236a888d9fe12bbacd128c8c7",
+    "baseline_ring.c": "74a081160d692be81883ec94ad66a1d2711eb48ed1483c6ef79625f2ce1fda2d"
+  },
+  "limits": [
+    "This verifies forced single-core task-preemption interleavings and nested/full-queue handling, not all RTOS or SMP configurations.",
+    "No worst-case interrupt-latency benchmark, long-duration stability test or physical button interaction test."
+  ],
+  "previous_evidence": "docs/review/evidence/mpsc-preempt-2026-11-17.json (historical pre-hardware results retained)",
+  "restored_progress": {
+    "tick_samples": [
+      52290,
+      53394
+    ],
+    "blink_timer_samples": [
+      28,
+      39
+    ],
+    "log": "build/hardware-mpsc/restored-progress.log"
+  }
+}

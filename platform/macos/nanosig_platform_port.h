@@ -64,4 +64,19 @@ typedef struct ns_platform_waitset {
     size_t count;
 } ns_platform_waitset_t;
 
+/** 本后端不增加抢占保护；状态仅用于统一调用接口。 */
+typedef unsigned int ns_platform_preempt_state_t;
+
+/** 保持本后端既有调度语义。 */
+static inline ns_platform_preempt_state_t ns_platform_preempt_enter(void)
+{
+    return 0u;
+}
+
+/** 与 enter 配对的空操作。 */
+static inline void ns_platform_preempt_leave(ns_platform_preempt_state_t state)
+{
+    (void)state;
+}
+
 #endif

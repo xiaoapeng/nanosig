@@ -2,10 +2,9 @@
  * @file test_mpsc_record_ring_stress.c
  * @brief 8-producer / 1-consumer stress test (20 minutes by default).
  *
- * NOT part of the normal test suite. Run manually:
- *   clang -I include -I . -O2 -o build/stress.exe \
- *       test/unit/test_mpsc_record_ring_stress.c src/ds/ns_mpsc_record_ring.c
- *   NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=5 ./build/stress.exe
+ * CTest limits the run to 20 seconds. Run the configured target manually:
+ *   cmake --build build --target nanosig_test_mpsc_record_ring_stress
+ *   NS_MPSC_RECORD_RING_STRESS_DURATION_SEC=5 ./build/nanosig_test_mpsc_record_ring_stress
  */
 
 #include <stdint.h>
